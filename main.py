@@ -3,6 +3,7 @@ import websockets
 import signal
 import sys
 from functools import partial
+from aiohttp import web, WSMsgType
 
 from config import Config
 from utils.logger import setup_logger
@@ -11,6 +12,21 @@ from websocket_handler import ConnectionHandler
 
 logger = setup_logger()
 auth_manager = AuthManager()
+
+async def ota_endpoint(request):
+    """OTA version check endpoint"""
+    try:
+        # Return current version info to satisfy ESP32
+        version_info = {
+            "version": "1.6.8",
+            "update_available": False,
+            "download_url": "",
+            "changelog": "No updates available"
+        }
+        return web.json_response(version_info)
+    except Exception as e:
+        logger.error(f"OTA endpoint error: {e}")
+        return web.json_response({"error": "Internal server error"}, status=500)
 
 async def authenticate_websocket(websocket, path):
     try:
@@ -52,6 +68,18 @@ async def main():
     Config.validate() # Validate environment variables
     logger.info("Configuration validated successfully.")
 
+    # Create HTTP server with OTA endpoint
+    app = web.Application()
+    app.router.add_post('/xiaozhi/ota/', ota_endpoint)
+    app.router.add_get('/xiaozhi/ota/', ota_endpoint)
+    
+    # Start HTTP server
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, Config.HOST, 8080)  # Use port 8080 for HTTP
+    await site.start()
+    logger.info(f"HTTP OTA server starting on http://{Config.HOST}:8080")
+
     stop_event = asyncio.Event()
     if sys.platform != "win32":
         for sig in (signal.SIGINT, signal.SIGTERM):
@@ -68,7 +96,7 @@ async def main():
     logger.info(f"WebSocket server starting on ws://{Config.HOST}:{Config.PORT}")
     async with start_server:
         await stop_event.wait() # Keep server running until stop event is set
-    logger.info("WebSocket server stopped.")
+    logger.info("Servers stopped.")
 
 if __name__ == "__main__":
     try:
