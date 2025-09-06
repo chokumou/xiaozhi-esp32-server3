@@ -1,123 +1,67 @@
 import httpx
-from typing import Optional, List, Dict
-from config import config
-from utils.logger import log
+from typing import Optional, Dict
+from config import Config
+from utils.logger import setup_logger
 
-class MemoryManager:
+logger = setup_logger()
+
+class MemoryService:
     """nekota-server連携メモリー管理"""
     
     def __init__(self):
-        self.base_url = config.NEKOTA_SERVER_URL
-        self.secret = config.NEKOTA_SERVER_SECRET
-        self.headers = {
-            "Authorization": f"Bearer {self.secret}",
-            "Content-Type": "application/json",
-            "User-Agent": "xiaozhi-server3/1.0"
-        }
+        self.api_url = Config.NEKOTA_API_URL
+        self.api_secret = Config.NEKOTA_API_SECRET
+        self.client = httpx.AsyncClient(
+            base_url=self.api_url,
+            headers={
+                "User-Agent": "XiaozhiESP32Server3/1.0",
+                "Accept": "application/json",
+                "Authorization": f"Bearer {self.api_secret}",
+            },
+            timeout=30
+        )
+        logger.info(f"MemoryService initialized with nekota-server URL: {self.api_url}")
     
     async def save_memory(self, device_id: str, text: str) -> bool:
-        """記憶をnekota-serverに保存"""
         try:
-            log.debug(f"Saving memory for device {device_id}: '{text[:50]}...'")
-            
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    f"{self.base_url}/api/memory/",
-                    headers=self.headers,
-                    json={
-                        "user_id": device_id,
-                        "text": text
-                    },
-                    timeout=10.0
-                )
-                
-                if response.status_code == 200:
-                    log.info(f"Memory saved successfully for device {device_id}")
-                    return True
-                else:
-                    log.error(f"Memory save failed: {response.status_code} - {response.text}")
-                    return False
-                    
+            response = await self.client.post(
+                "/api/memory/",
+                json={"user_id": device_id, "text": text}
+            )
+            response.raise_for_status()
+            result = response.json()
+            if result.get("status") == "ok":
+                logger.info(f"Memory saved for device {device_id}: {text[:50]}...")
+                return True
+            else:
+                logger.error(f"Failed to save memory: {result.get('msg', 'Unknown error')}")
+                return False
+        except httpx.HTTPStatusError as e:
+            logger.error(f"HTTP error saving memory: {e.response.status_code} - {e.response.text}")
+            return False
         except Exception as e:
-            log.error(f"Memory save error: {e}")
+            logger.error(f"Error saving memory: {e}")
             return False
     
-    async def search_memory(self, device_id: str, keyword: str) -> Optional[str]:
-        """記憶をnekota-serverから検索"""
+    async def query_memory(self, device_id: str, keyword: str) -> Optional[str]:
         try:
-            log.debug(f"Searching memory for device {device_id}, keyword: '{keyword}'")
-            
-            async with httpx.AsyncClient() as client:
-                response = await client.get(
-                    f"{self.base_url}/api/memory/search",
-                    headers=self.headers,
-                    params={
-                        "device_id": device_id,
-                        "keyword": keyword
-                    },
-                    timeout=10.0
-                )
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    if data and isinstance(data, list) and len(data) > 0:
-                        # 検索結果を文字列にまとめる
-                        memories = []
-                        for memory in data:
-                            if isinstance(memory, dict) and "text" in memory:
-                                memories.append(memory["text"])
-                            elif isinstance(memory, str):
-                                memories.append(memory)
-                        
-                        if memories:
-                            result = "\n".join(memories)
-                            log.info(f"Memory found for device {device_id}: {len(memories)} entries")
-                            return result
-                    
-                    log.info(f"No memory found for device {device_id}")
-                    return None
-                else:
-                    log.error(f"Memory search failed: {response.status_code} - {response.text}")
-                    return None
-                    
-        except Exception as e:
-            log.error(f"Memory search error: {e}")
+            response = await self.client.get(
+                "/api/memory/search",
+                params={"device_id": device_id, "keyword": keyword}
+            )
+            response.raise_for_status()
+            result = response.json()
+            if result and isinstance(result, list) and len(result) > 0:
+                # Assuming the API returns a list of memory objects, we'll just return the first one's text
+                memory_text = result[0].get("text", "")
+                logger.info(f"Memory queried for device {device_id}, keyword '{keyword}': {memory_text[:50]}...")
+                return memory_text
+            else:
+                logger.info(f"No memory found for device {device_id}, keyword '{keyword}'")
+                return None
+        except httpx.HTTPStatusError as e:
+            logger.error(f"HTTP error querying memory: {e.response.status_code} - {e.response.text}")
             return None
-    
-    async def get_recent_memories(self, device_id: str, limit: int = 5) -> Optional[List[str]]:
-        """最近の記憶を取得"""
-        try:
-            log.debug(f"Getting recent memories for device {device_id}")
-            
-            async with httpx.AsyncClient() as client:
-                response = await client.get(
-                    f"{self.base_url}/api/memory/recent",
-                    headers=self.headers,
-                    params={
-                        "device_id": device_id,
-                        "limit": limit
-                    },
-                    timeout=10.0
-                )
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    if data and isinstance(data, list):
-                        memories = []
-                        for memory in data:
-                            if isinstance(memory, dict) and "text" in memory:
-                                memories.append(memory["text"])
-                            elif isinstance(memory, str):
-                                memories.append(memory)
-                        
-                        log.info(f"Retrieved {len(memories)} recent memories for device {device_id}")
-                        return memories
-                    
-                    return []
-                else:
-                    log.error(f"Recent memories fetch failed: {response.status_code} - {response.text}")
-                    return None
-                    
         except Exception as e:
-            log.error(f"Recent memories fetch error: {e}")
+            logger.error(f"Error querying memory: {e}")
             return None

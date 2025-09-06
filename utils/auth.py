@@ -1,55 +1,39 @@
-from typing import Optional, Dict, Any
-from jose import JWTError, jwt
-from config import config
-from utils.logger import log
+import jwt
+from datetime import datetime, timedelta
+from config import Config
+from utils.logger import setup_logger
+
+logger = setup_logger()
+
+class AuthError(Exception):
+    pass
 
 class AuthManager:
-    """JWT認証管理"""
-    
-    @staticmethod
-    def verify_token(token: str) -> Optional[Dict[str, Any]]:
-        """JWTトークンを検証"""
+    def __init__(self):
+        self.secret = Config.JWT_SECRET_KEY
+        self.algorithm = Config.JWT_ALGORITHM
+        if not self.secret:
+            logger.error("JWT_SECRET_KEY is not set in config.")
+            raise AuthError("JWT_SECRET_KEY is not configured.")
+
+    def create_token(self, device_id: str, expires_delta: timedelta = None) -> str:
+        if expires_delta:
+            expire = datetime.utcnow() + expires_delta
+        else:
+            expire = datetime.utcnow() + timedelta(minutes=30) # Default 30 minutes
+
+        to_encode = {"exp": expire, "sub": device_id}
+        encoded_jwt = jwt.encode(to_encode, self.secret, algorithm=self.algorithm)
+        return encoded_jwt
+
+    def decode_token(self, token: str) -> str:
         try:
-            # Bearer プレフィックスを削除
-            if token.startswith("Bearer "):
-                token = token[7:]
-            
-            # トークンをデコード
-            payload = jwt.decode(
-                token,
-                config.JWT_SECRET_KEY,
-                algorithms=[config.JWT_ALGORITHM]
-            )
-            
-            # デバイスIDを取得
-            device_id = payload.get("device_id")
+            payload = jwt.decode(token, self.secret, algorithms=[self.algorithm])
+            device_id = payload.get("sub")
             if not device_id:
-                log.warning("Token missing device_id")
-                return None
-            
-            log.info(f"Authentication successful for device: {device_id}")
-            return payload
-            
-        except JWTError as e:
-            log.warning(f"JWT verification failed: {e}")
-            return None
-        except Exception as e:
-            log.error(f"Authentication error: {e}")
-            return None
-    
-    @staticmethod
-    def extract_device_id(headers: Dict[str, str]) -> Optional[str]:
-        """ヘッダーからデバイスIDを抽出"""
-        # Authorization ヘッダーから抽出
-        auth_header = headers.get("authorization") or headers.get("Authorization")
-        if auth_header:
-            payload = AuthManager.verify_token(auth_header)
-            if payload:
-                return payload.get("device_id")
-        
-        # Device-ID ヘッダーから抽出
-        device_id = headers.get("device-id") or headers.get("Device-ID")
-        if device_id:
+                raise AuthError("Invalid token payload: 'sub' not found.")
             return device_id
-        
-        return None
+        except jwt.ExpiredSignatureError:
+            raise AuthError("Token has expired.")
+        except jwt.InvalidTokenError:
+            raise AuthError("Invalid token.")

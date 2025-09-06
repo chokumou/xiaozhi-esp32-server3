@@ -1,44 +1,34 @@
-import asyncio
-from typing import Optional
-from openai import AsyncOpenAI
-from config import config
-from utils.logger import log
+import openai
+from config import Config
+from utils.logger import setup_logger
 
-class TTSProvider:
-    """OpenAI TTS音声合成プロバイダー"""
-    
+logger = setup_logger()
+
+class TTSService:
     def __init__(self):
-        self.client = AsyncOpenAI(api_key=config.OPENAI_API_KEY)
-    
-    async def synthesize(self, text: str) -> Optional[bytes]:
-        """テキストを音声に変換"""
+        self.client = openai.OpenAI(api_key=Config.OPENAI_API_KEY)
+        self.voice = Config.OPENAI_TTS_VOICE
+        logger.info(f"TTSService initialized with voice: {self.voice}")
+
+    async def generate_speech(self, text: str) -> bytes:
         try:
-            log.debug(f"TTS synthesis start: '{text[:50]}...'")
-            
-            # OpenAI TTS APIで音声合成
-            response = await self.client.audio.speech.create(
-                model=config.OPENAI_TTS_MODEL,
-                voice=config.OPENAI_TTS_VOICE,
-                input=text,
-                response_format="opus"  # ESP32用にOPUS形式
+            # Use synchronous API call in async context
+            import asyncio
+            response = await asyncio.get_event_loop().run_in_executor(
+                None, 
+                lambda: self.client.audio.speech.create(
+                    model="tts-1",
+                    voice=self.voice,
+                    input=text,
+                    response_format="opus"  # Opus format for ESP32 compatibility
+                )
             )
             
-            # 音声データを取得
+            # Get audio content
             audio_data = response.content
+            logger.debug(f"TTS generated audio for text: {text[:50]}... ({len(audio_data)} bytes)")
+            return audio_data
             
-            if audio_data:
-                log.info(f"TTS success: {len(audio_data)} bytes")
-                return audio_data
-            else:
-                log.warning("TTS returned empty audio data")
-                return None
-                
         except Exception as e:
-            log.error(f"TTS synthesis failed: {e}")
-            return None
-    
-    async def synthesize_streaming(self, text: str):
-        """ストリーミング音声合成（将来用）"""
-        # 現在のOpenAI APIはストリーミングをサポートしていないため
-        # 通常の合成を使用
-        return await self.synthesize(text)
+            logger.error(f"TTS generation failed: {e}")
+            return b""

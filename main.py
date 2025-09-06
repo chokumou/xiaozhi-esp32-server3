@@ -1,107 +1,79 @@
-#!/usr/bin/env python3
-"""
-xiaozhi-esp32-server3
-シンプルで安定したAI音声対話サーバー
-"""
-
 import asyncio
-import os
-import sys
-import signal
-from pathlib import Path
-
 import websockets
-from websockets.server import serve
+import signal
+import sys
+from functools import partial
 
-from config import config, Config
-from utils.logger import log
-from websocket_handler import WebSocketHandler
+from config import Config
+from utils.logger import setup_logger
+from utils.auth import AuthManager, AuthError
+from websocket_handler import ConnectionHandler
 
-class XiaozhiServer:
-    """Xiaozhi AI音声対話サーバー"""
-    
-    def __init__(self):
-        self.websocket_handler = WebSocketHandler()
-        self.server = None
-    
-    async def start(self):
-        """サーバー開始"""
-        try:
-            # 設定検証
-            Config.validate()
-            log.info("Configuration validated successfully")
+logger = setup_logger()
+auth_manager = AuthManager()
+
+async def authenticate_websocket(websocket, path):
+    try:
+        # Extract headers (case insensitive)
+        headers = {k.lower(): v for k, v in websocket.request_headers.items()}
+        
+        # Get device ID and client ID from headers
+        device_id = headers.get("device-id")
+        client_id = headers.get("client-id")
+        protocol_version = headers.get("protocol-version", "1")
+        
+        # Optional JWT authentication
+        auth_header = headers.get("authorization")
+        if auth_header and auth_header.startswith("Bearer "):
+            try:
+                token = auth_header.split(" ")[1]
+                authenticated_device_id = auth_manager.decode_token(token)
+                logger.info(f"Device {authenticated_device_id} authenticated via JWT.")
+                if device_id and device_id != authenticated_device_id:
+                    logger.warning(f"Device ID mismatch: header={device_id}, token={authenticated_device_id}")
+                device_id = authenticated_device_id
+            except AuthError as e:
+                logger.warning(f"JWT authentication failed: {e}")
+                # Continue without authentication for development
+                
+        if not device_id:
+            device_id = client_id or f"device_{websocket.remote_address[0]}"
             
-            # ログディレクトリ作成
-            Path("logs").mkdir(exist_ok=True)
-            
-            # WebSocketサーバー起動
-            log.info(f"Starting xiaozhi-server3 on {config.HOST}:{config.PORT}")
-            
-            self.server = await serve(
-                self.websocket_handler.handle_connection,
-                config.HOST,
-                config.PORT,
-                ping_interval=30,
-                ping_timeout=10,
-                close_timeout=10
-            )
-            
-            log.info(f"xiaozhi-server3 is running on ws://{config.HOST}:{config.PORT}")
-            log.info("Press Ctrl+C to stop the server")
-            
-            # サーバー実行継続
-            await self.server.wait_closed()
-            
-        except Exception as e:
-            log.error(f"Server startup failed: {e}")
-            sys.exit(1)
-    
-    async def stop(self):
-        """サーバー停止"""
-        if self.server:
-            log.info("Stopping xiaozhi-server3...")
-            self.server.close()
-            await self.server.wait_closed()
-            log.info("Server stopped")
+        logger.info(f"Device {device_id} connected (protocol v{protocol_version})")
+
+        handler = ConnectionHandler(websocket, headers)
+        await handler.run()
+
+    except Exception as e:
+        logger.error(f"Unhandled error during WebSocket connection for {websocket.remote_address}: {e}")
+        await websocket.close(code=1011, reason="Internal server error.")
 
 async def main():
-    """メイン関数"""
-    server = XiaozhiServer()
-    
-    # シグナルハンドラー設定
-    def signal_handler():
-        log.info("Shutdown signal received")
-        asyncio.create_task(server.stop())
-    
-    # Unix系OSでのシグナル処理
+    Config.validate() # Validate environment variables
+    logger.info("Configuration validated successfully.")
+
+    stop_event = asyncio.Event()
     if sys.platform != "win32":
-        loop = asyncio.get_running_loop()
-        for sig in [signal.SIGINT, signal.SIGTERM]:
-            loop.add_signal_handler(sig, signal_handler)
-    
-    try:
-        await server.start()
-    except KeyboardInterrupt:
-        log.info("Keyboard interrupt received")
-        await server.stop()
-    except Exception as e:
-        log.error(f"Unexpected error: {e}")
-        await server.stop()
-        sys.exit(1)
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            asyncio.get_event_loop().add_signal_handler(sig, stop_event.set)
+
+    # Create WebSocket server with subprotocol support for ESP32 compatibility
+    start_server = websockets.serve(
+        authenticate_websocket,
+        Config.HOST,
+        Config.PORT,
+        subprotocols=["v1", "xiaozhi-v1"]  # ESP32 expects subprotocol support
+    )
+
+    logger.info(f"WebSocket server starting on ws://{Config.HOST}:{Config.PORT}")
+    async with start_server:
+        await stop_event.wait() # Keep server running until stop event is set
+    logger.info("WebSocket server stopped.")
 
 if __name__ == "__main__":
-    # Windowsでイベントループポリシーを設定
-    if sys.platform == "win32":
-        asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
-    
-    # uvloopを使用（Unix系OSのみ）
     try:
-        if sys.platform != "win32":
-            import uvloop
-            uvloop.install()
-            log.info("Using uvloop for better performance")
-    except ImportError:
-        log.info("uvloop not available, using default event loop")
-    
-    # サーバー実行
-    asyncio.run(main())
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        logger.info("Server interrupted by user (Ctrl+C). Shutting down.")
+    except Exception as e:
+        logger.critical(f"Fatal server error: {e}")

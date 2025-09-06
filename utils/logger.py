@@ -1,6 +1,6 @@
 import sys
 from loguru import logger
-from config import config
+from config import Config
 
 def setup_logger():
     """ログ設定をセットアップ"""
@@ -10,7 +10,7 @@ def setup_logger():
     # コンソール出力設定
     logger.add(
         sys.stdout,
-        level=config.LOG_LEVEL,
+        level=Config.LOG_LEVEL,
         format="<green>{time:YYMMDD HH:mm:ss}</green> | <level>{level:8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
         colorize=True
     )

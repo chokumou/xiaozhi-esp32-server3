@@ -1,40 +1,51 @@
-import io
-import asyncio
-from typing import Optional
-from openai import AsyncOpenAI
-from config import config
-from utils.logger import log
+import openai
+from config import Config
+from utils.logger import setup_logger
 
-class ASRProvider:
-    """OpenAI Whisper音声認識プロバイダー"""
-    
+logger = setup_logger()
+
+class ASRService:
     def __init__(self):
-        self.client = AsyncOpenAI(api_key=config.OPENAI_API_KEY)
-    
-    async def transcribe(self, audio_data: bytes, format: str = "wav") -> Optional[str]:
-        """音声データを文字に変換"""
+        self.client = openai.OpenAI(api_key=Config.OPENAI_API_KEY)
+        self.model = Config.OPENAI_WHISPER_MODEL
+        logger.info(f"ASRService initialized with model: {self.model}")
+
+    async def transcribe(self, audio_input) -> str:
         try:
-            log.debug(f"ASR transcription start, audio size: {len(audio_data)} bytes")
-            
-            # 音声データをファイルオブジェクトに変換
-            audio_file = io.BytesIO(audio_data)
-            audio_file.name = f"audio.{format}"
-            
-            # OpenAI Whisper APIで音声認識
-            response = await self.client.audio.transcriptions.create(
-                model=config.OPENAI_ASR_MODEL,
+            # Handle both bytes and file-like objects
+            if isinstance(audio_input, bytes):
+                import io
+                audio_file = io.BytesIO(audio_input)
+                audio_file.name = "audio.opus"  # Assume Opus format from ESP32
+            else:
+                audio_file = audio_input
+                
+            # Skip very small audio data (likely silence or noise)
+            if hasattr(audio_file, 'getvalue'):
+                data_size = len(audio_file.getvalue())
+            else:
+                audio_file.seek(0, 2)  # Seek to end
+                data_size = audio_file.tell()
+                audio_file.seek(0)  # Seek back to beginning
+                
+            if data_size < 1000:  # Less than 1KB, likely too short
+                logger.debug(f"Skipping small audio data: {data_size} bytes")
+                return ""
+
+            response = self.client.audio.transcriptions.create(
+                model=self.model,
                 file=audio_file,
-                language="ja"  # 日本語指定
+                response_format="text",
+                language="ja"  # Japanese
             )
             
-            text = response.text.strip()
-            if text:
-                log.info(f"ASR success: '{text}'")
-                return text
+            result = response.strip() if response else ""
+            if result:
+                logger.info(f"ASR success: '{result}'")
             else:
-                log.warning("ASR returned empty text")
-                return None
-                
+                logger.debug("ASR returned empty text")
+            return result
+            
         except Exception as e:
-            log.error(f"ASR transcription failed: {e}")
-            return None
+            logger.error(f"ASR transcription failed: {e}")
+            return ""
