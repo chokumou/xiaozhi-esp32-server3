@@ -94,7 +94,7 @@ class AudioHandlerServer2:
                     logger.info(f"【無音継続】{silence_duration:.0f}ms / {self.silence_threshold_ms}ms (有音後)")
                     
                     if silence_duration >= self.silence_threshold_ms and len(self.asr_audio) > 5 and not self.is_processing:
-                        logger.info(f"※ここを送ってver2_SILENCE_DETECT※ 【無音検知完了】{silence_duration:.0f}ms無音 - 音声処理開始 (有音→無音)")
+                        logger.info(f"🟠XIAOZHI_SILENCE_DETECT🟠 ※ここを送ってver2_SILENCE_DETECT※ 【無音検知完了】{silence_duration:.0f}ms無音 - 音声処理開始 (有音→無音)")
                         await self._process_voice_stop()
                 else:
                     # 有音検知前の無音は無視

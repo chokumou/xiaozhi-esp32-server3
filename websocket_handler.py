@@ -393,12 +393,12 @@ class ConnectionHandler:
                 # Server2準拠: シンプル音声送信
                 try:
                     await self.websocket.send_bytes(audio_bytes)
-                    logger.info(f"※ここを送ってver2_AUDIO※ 🎵 [AUDIO_SENT] ===== Sent audio response to {self.device_id} ({len(audio_bytes)} bytes) =====")
+                    logger.info(f"🔵XIAOZHI_AUDIO_SENT🔵 ※ここを送ってver2_AUDIO※ 🎵 [AUDIO_SENT] ===== Sent audio response to {self.device_id} ({len(audio_bytes)} bytes) =====")
 
                     # Send TTS stop message (server2 style)
                     tts_stop_msg = {"type": "tts", "state": "stop", "session_id": self.session_id}
                     await self.websocket.send_str(json.dumps(tts_stop_msg))
-                    logger.info(f"※ここを送ってver2_TTS_STOP※ 📢 [TTS] Sent TTS stop message")
+                    logger.info(f"🟡XIAOZHI_TTS_STOP🟡 ※ここを送ってver2_TTS_STOP※ 📢 [TTS] Sent TTS stop message")
 
                 except Exception as send_error:
                     logger.error(f"❌ [WEBSOCKET] Audio send failed to {self.device_id}: {send_error}")
@@ -416,7 +416,7 @@ class ConnectionHandler:
     async def run(self):
         """Main connection loop"""
         try:
-            logger.info(f"🚀 [WEBSOCKET_LOOP] Starting message loop for {self.device_id}")
+            logger.info(f"🟢XIAOZHI_LOOP_START🟢 🚀 [WEBSOCKET_LOOP] Starting message loop for {self.device_id}")
             msg_count = 0
             async for msg in self.websocket:
                 msg_count += 1
@@ -437,7 +437,7 @@ class ConnectionHandler:
                 else:
                     logger.warning(f"⚠️ [WEBSOCKET_LOOP] Unknown message type: {msg.type} for {self.device_id}")
             
-            logger.warning(f"💀 [WEBSOCKET_LOOP] Loop ended naturally for {self.device_id} after {msg_count} messages, websocket.closed={self.websocket.closed}")
+            logger.warning(f"🔴XIAOZHI_LOOP_END🔴 💀 [WEBSOCKET_LOOP] Loop ended naturally for {self.device_id} after {msg_count} messages, websocket.closed={self.websocket.closed}")
         except Exception as e:
             logger.error(f"❌ [WEBSOCKET] Unhandled error in connection handler for {self.device_id}: {e}")
         finally:
