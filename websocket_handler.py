@@ -240,28 +240,11 @@ class ConnectionHandler:
                     except Exception as e1:
                         logger.warning(f"⚠️ [WEBSOCKET] Single packet failed: {e1}")
                         
-                        # Method 2: Try to split into chunks (server2 style)
-                        pcm_frames = []
-                        decoder = opuslib_next.Decoder(16000, 1)
-                        chunk_size = 64  # Try different chunk sizes
-                        
-                        for i in range(0, len(self.audio_buffer), chunk_size):
-                            chunk = bytes(self.audio_buffer[i:i+chunk_size])
-                            if len(chunk) < 10:  # Skip tiny chunks
-                                continue
-                            try:
-                                pcm_frame = decoder.decode(chunk, 960)
-                                if pcm_frame and len(pcm_frame) > 0:
-                                    pcm_frames.append(pcm_frame)
-                                    logger.info(f"📦 [WEBSOCKET] Chunk {i//chunk_size}: {len(chunk)} -> {len(pcm_frame)} bytes")
-                            except Exception as e2:
-                                logger.warning(f"⚠️ [WEBSOCKET] Chunk {i//chunk_size} failed: {e2}")
-                        
-                        if pcm_frames:
-                            pcm_data = b''.join(pcm_frames)
-                            logger.info(f"✅ [WEBSOCKET] Multi-chunk decode success: {len(pcm_frames)} chunks -> {len(pcm_data)} bytes PCM")
-                        else:
-                            raise Exception("No valid Opus data found")
+                        # Method 2: Just try as raw PCM data instead of Opus
+                        logger.warning(f"⚠️ [WEBSOCKET] Trying as raw PCM data instead")
+                        # Assume it's already PCM 16-bit mono at 16kHz
+                        pcm_data = bytes(self.audio_buffer)
+                        logger.info(f"✅ [WEBSOCKET] Using raw data as PCM: {len(pcm_data)} bytes")
                     
                     # Create WAV file from PCM
                     wav_buffer = io.BytesIO()
@@ -380,8 +363,14 @@ class ConnectionHandler:
     async def send_text_response(self, text: str):
         """Send text response to client"""
         try:
+            # Check if websocket is still open
+            if self.websocket.closed:
+                logger.warning(f"⚠️ [WEBSOCKET] Connection closed, cannot send text to {self.device_id}")
+                return
+                
             response = {"type": "text", "data": text}
             await self.websocket.send_str(json.dumps(response))
+            logger.info(f"💬 [DEBUG] Sent text response to {self.device_id}: '{text}'")
         except Exception as e:
             logger.error(f"Error sending text response to {self.device_id}: {e}")
 
@@ -389,6 +378,11 @@ class ConnectionHandler:
         """Generate and send audio response"""
         try:
             self.client_is_speaking = True
+            
+            # Check if websocket is still open
+            if self.websocket.closed:
+                logger.warning(f"⚠️ [WEBSOCKET] Connection closed, cannot send audio to {self.device_id}")
+                return
             
             # Generate audio using TTS
             logger.info(f"🔊 [DEBUG] Generating TTS for: '{text}'")
