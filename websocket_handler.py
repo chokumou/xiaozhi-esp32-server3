@@ -37,6 +37,12 @@ class ConnectionHandler:
         self.audio_format = "opus"  # Default format
         self.features = {}
         
+        # Audio buffer for accumulating small chunks
+        self.audio_buffer = bytearray()
+        self.last_audio_time = 0
+        import time
+        self.audio_accumulation_timeout = 2.0  # 2 seconds
+        
         # Welcome message compatible with ESP32
         self.welcome_msg = {
             "type": "hello",
@@ -149,23 +155,40 @@ class ConnectionHandler:
             logger.debug(f"Client listen mode: {mode}")
 
     async def process_audio_binary(self, audio_data: bytes):
-        """Process binary audio data"""
+        """Process binary audio data with accumulation for small chunks"""
         try:
-            logger.info(f"🎵 [DEBUG] Starting ASR processing: {len(audio_data)} bytes, format: {self.audio_format}")
-            # Create file-like object for OpenAI Whisper API
-            audio_file = io.BytesIO(audio_data)
-            audio_file.name = "audio.opus" if self.audio_format == "opus" else "audio.wav"
+            import time
+            current_time = time.time()
             
-            # Convert audio to text using ASR
-            logger.info(f"🔄 [DEBUG] Calling OpenAI Whisper API...")
-            transcribed_text = await self.asr_service.transcribe(audio_file)
-            logger.info(f"🎯 [DEBUG] ASR result: '{transcribed_text}' (length: {len(transcribed_text) if transcribed_text else 0})")
+            # Add to buffer
+            self.audio_buffer.extend(audio_data)
+            self.last_audio_time = current_time
             
-            if transcribed_text and transcribed_text.strip():
-                logger.info(f"✅ [DEBUG] Processing transcription: {transcribed_text}")
-                await self.process_text(transcribed_text)
+            logger.info(f"🎵 [DEBUG] Audio chunk added: {len(audio_data)} bytes, buffer total: {len(self.audio_buffer)} bytes")
+            
+            # Process if buffer is large enough OR timeout reached
+            if len(self.audio_buffer) >= 3000 or (current_time - self.last_audio_time >= self.audio_accumulation_timeout and len(self.audio_buffer) > 500):
+                logger.info(f"📦 [DEBUG] Processing accumulated audio: {len(self.audio_buffer)} bytes")
+                
+                # Create file-like object for OpenAI Whisper API
+                audio_file = io.BytesIO(bytes(self.audio_buffer))
+                audio_file.name = "audio.opus" if self.audio_format == "opus" else "audio.wav"
+                
+                # Convert audio to text using ASR
+                logger.info(f"🔄 [DEBUG] Calling OpenAI Whisper API...")
+                transcribed_text = await self.asr_service.transcribe(audio_file)
+                logger.info(f"🎯 [DEBUG] ASR result: '{transcribed_text}' (length: {len(transcribed_text) if transcribed_text else 0})")
+                
+                if transcribed_text and transcribed_text.strip():
+                    logger.info(f"✅ [DEBUG] Processing transcription: {transcribed_text}")
+                    await self.process_text(transcribed_text)
+                else:
+                    logger.warning(f"❌ [DEBUG] No valid ASR result for {self.device_id}")
+                
+                # Clear buffer after processing
+                self.audio_buffer.clear()
             else:
-                logger.warning(f"❌ [DEBUG] No valid ASR result for {self.device_id}")
+                logger.info(f"⏳ [DEBUG] Waiting for more audio data ({len(self.audio_buffer)}/3000 bytes)")
                 
         except Exception as e:
             logger.error(f"Error processing audio from {self.device_id}: {e}")
