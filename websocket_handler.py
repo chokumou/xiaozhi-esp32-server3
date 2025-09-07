@@ -445,29 +445,24 @@ class ConnectionHandler:
             logger.info(f"🔍 [DEBUG] WebSocket loop ended for {self.device_id}, entering cleanup")
             
     async def _websocket_adapter(self):
-        """Server2準拠: WebSocketアダプター"""
+        """Server2準拠: WebSocketアダプター - 継続的メッセージ受信"""
         while not self.websocket.closed and not self.stop_event.is_set():
             try:
                 msg = await self.websocket.receive()
-                if msg.type in (web.WSMsgType.CLOSE, web.WSMsgType.ERROR):
-                    break
+                if msg.type == web.WSMsgType.CLOSE:
+                    logger.warning(f"🟣XIAOZHI_ESP32_CLOSE🟣 WebSocket CLOSE message received for {self.device_id}")
+                    raise ConnectionClosedError("ESP32 sent CLOSE message")
+                elif msg.type == web.WSMsgType.ERROR:
+                    logger.error(f"🔥XIAOZHI_ERROR🔥 WebSocket ERROR for {self.device_id}: {self.websocket.exception()}")
+                    raise ConnectionClosedError(f"WebSocket ERROR: {self.websocket.exception()}")
                 elif msg.type == web.WSMsgType.BINARY:
                     yield bytes(msg.data)
                 elif msg.type == web.WSMsgType.TEXT:
                     yield msg.data
-                # ignore other types
+                # continue loop for other message types
+            except ConnectionClosedError:
+                # Re-raise connection errors
+                raise
             except Exception as e:
-                logger.error(f"WebSocket adapter error: {e}")
-                break
-            # Wait for any ongoing TTS processing to complete before stopping
-            if self.client_is_speaking:
-                logger.info(f"⏳ [CONNECTION] Waiting for TTS to complete before stopping...")
-                # Wait a bit for TTS to finish
-                for i in range(20):  # Wait up to 10 seconds (0.5s * 20)
-                    if not self.client_is_speaking:
-                        break
-                    await asyncio.sleep(0.5)
-                logger.info(f"⏳ [CONNECTION] TTS wait completed, client_is_speaking: {self.client_is_speaking}")
-            
-            self.stop_event.set()
-            logger.info(f"Connection handler stopped for {self.device_id}")
+                logger.error(f"🔥XIAOZHI_ERROR🔥 WebSocket adapter error for {self.device_id}: {e}")
+                raise ConnectionClosedError(f"Adapter error: {e}")
