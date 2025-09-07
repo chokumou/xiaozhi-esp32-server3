@@ -432,6 +432,19 @@ class ConnectionHandler:
             except Exception as status_error:
                 logger.warning(f"⚠️ [TTS] Failed to send TTS start: {status_error}")
             
+            # Send sentence_start message with AI text (server2 critical addition)
+            try:
+                sentence_msg = {
+                    "type": "tts",
+                    "state": "sentence_start", 
+                    "text": text,
+                    "session_id": self.session_id
+                }
+                await self.websocket.send_str(json.dumps(sentence_msg))
+                logger.info(f"📱 [TTS_DISPLAY] Sent AI text to display: '{text}'")
+            except Exception as sentence_error:
+                logger.warning(f"⚠️ [TTS] Failed to send sentence_start: {sentence_error}")
+            
             # Check if stop event was set during processing
             if self.stop_event.is_set():
                 logger.warning(f"⚠️ [TTS] Stop event detected during processing, aborting TTS for {self.device_id}")

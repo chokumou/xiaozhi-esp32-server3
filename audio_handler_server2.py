@@ -71,9 +71,9 @@ class AudioHandlerServer2:
     async def _process_voice_stop(self):
         """Process accumulated audio when voice stops (server2 style)"""
         try:
-            # Check minimum requirement (server2 railway config)
+            # Check minimum requirement (調整: 長い発話を確実に処理)
             estimated_pcm_bytes = len(self.asr_audio) * 1920  # Each Opus frame ~1920 PCM bytes
-            min_pcm_bytes = 24000  # server2 railway config: asr_min_pcm_bytes: 24000
+            min_pcm_bytes = 15000  # 調整: 24000から15000に下げて長い発話も処理
             
             logger.info(f"[AUDIO_TRACE] Voice stop: {len(self.asr_audio)} frames, ~{estimated_pcm_bytes} PCM bytes")
             
@@ -183,8 +183,8 @@ class AudioHandlerServer2:
                         pcm_int16 = np.frombuffer(pcm_data, dtype=np.int16)
                         if pcm_int16.size > 0:
                             energy = np.mean(np.abs(pcm_int16))
-                            # Energy threshold (server2 style: ~220)
-                            voice_detected = energy >= 100  # Conservative threshold
+                            # Energy threshold (調整: より敏感に)
+                            voice_detected = energy >= 80  # より敏感な閾値で小声も拾う
                             logger.info(f"[VAD_ENERGY] pkt={len(audio_data)}B, energy={energy:.1f}, voice={voice_detected}")
                             return voice_detected
                 except Exception as e:
