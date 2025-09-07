@@ -3,6 +3,7 @@ import json
 import struct
 import uuid
 import io
+import threading
 from typing import Dict, Any, Optional
 from collections import deque
 from aiohttp import web
@@ -37,7 +38,7 @@ class ConnectionHandler:
 
         self.chat_history = deque(maxlen=10) # Store last 10 messages
         self.client_is_speaking = False
-        self.stop_event = asyncio.Event() # For graceful shutdown
+        self.stop_event = threading.Event() # For graceful shutdown (server2 style)
         self.session_id = str(uuid.uuid4())
         self.audio_format = "opus"  # Default format (ESP32 sends Opus like server2)
         self.features = {}
@@ -380,19 +381,13 @@ class ConnectionHandler:
                 logger.error(f"🔴XIAOZHI_TTS_DISPLAY_ERROR🔴 ⚠️ [TTS] Failed to send sentence_start: {sentence_error}")
                 return
             
-            # Check if stop event was set during processing
-            if self.stop_event.is_set():
-                logger.warning(f"⚠️ [TTS] Stop event detected during processing, aborting TTS for {self.device_id}")
-                return
+            # Server2準拠: stop_eventチェック削除（TTS中断なし）
             
             # Generate TTS audio (server2 style - simple)
             audio_bytes = await self.tts_service.generate_speech(text)
             logger.info(f"🎶 [TTS_RESULT] ===== TTS generated: {len(audio_bytes) if audio_bytes else 0} bytes =====")
             
-            # Final check before sending
-            if self.stop_event.is_set():
-                logger.warning(f"⚠️ [TTS] Stop event detected after TTS generation, aborting send for {self.device_id}")
-                return
+            # Server2準拠: 送信前stop_eventチェック削除（音声送信継続）
             if audio_bytes:
                 # Server2準拠: シンプル音声送信
                 try:
