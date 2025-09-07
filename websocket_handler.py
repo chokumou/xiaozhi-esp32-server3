@@ -405,7 +405,7 @@ class ConnectionHandler:
                 # Send with error handling (server2 style)
                 try:
                     await self.websocket.send_bytes(message)
-                    logger.info(f"🎵 [AUDIO_SENT] ===== Sent audio response to {self.device_id} ({len(audio_bytes)} bytes) =====")
+                    logger.info(f"※ここを送って9/7_AUDIO※ 🎵 [AUDIO_SENT] ===== Sent audio response to {self.device_id} ({len(audio_bytes)} bytes) =====")
                     
                     # Server2準拠: 音声送信後に55ms待機（フロー制御）
                     await asyncio.sleep(0.055)
@@ -415,7 +415,7 @@ class ConnectionHandler:
                     try:
                         tts_stop_msg = {"type": "tts", "state": "stop", "session_id": self.session_id}
                         await self.websocket.send_str(json.dumps(tts_stop_msg))
-                        logger.info(f"📢 [TTS] Sent TTS stop message")
+                        logger.info(f"※ここを送って9/7_TTS_STOP※ 📢 [TTS] Sent TTS stop message")
                     except Exception as completion_error:
                         logger.warning(f"⚠️ [TTS] Failed to send TTS stop: {completion_error}")
                         
@@ -444,7 +444,7 @@ class ConnectionHandler:
                     logger.error(f"❌ [WEBSOCKET] ERROR received for {self.device_id}: {self.websocket.exception()}")
                     break
                 elif msg.type == web.WSMsgType.CLOSE:
-                    logger.warning(f"⚠️ [WEBSOCKET] CLOSE message received for {self.device_id} - breaking loop")
+                    logger.warning(f"※ここを送って9/7_CLOSE※ ⚠️ [WEBSOCKET] CLOSE message received for {self.device_id} - breaking loop")
                     break
         except Exception as e:
             logger.error(f"❌ [WEBSOCKET] Unhandled error in connection handler for {self.device_id}: {e}")
