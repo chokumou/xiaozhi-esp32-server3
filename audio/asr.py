@@ -19,8 +19,10 @@ class ASRService:
                 
                 # Try to convert Opus to WAV
                 try:
+                    logger.info(f"🔄 [OPUS] Attempting to convert {len(audio_input)} bytes of Opus data")
                     # Load Opus data
                     audio_segment = AudioSegment.from_file(io.BytesIO(audio_input), format="opus")
+                    logger.info(f"✅ [OPUS] Loaded audio segment: {len(audio_segment)}ms, {audio_segment.frame_rate}Hz")
                     
                     # Convert to WAV
                     wav_buffer = io.BytesIO()
@@ -29,11 +31,13 @@ class ASRService:
                     
                     audio_file = wav_buffer
                     audio_file.name = "audio.wav"
-                    logger.info(f"Successfully converted Opus to WAV: {len(audio_input)} -> {len(wav_buffer.getvalue())} bytes")
+                    logger.info(f"🎉 [OPUS] Successfully converted Opus to WAV: {len(audio_input)} -> {len(wav_buffer.getvalue())} bytes")
                     
                 except Exception as convert_error:
-                    logger.error(f"Opus conversion failed: {convert_error}, trying raw data as WAV")
+                    logger.error(f"❌ [OPUS] Conversion failed: {convert_error}")
+                    logger.error(f"❌ [OPUS] Error type: {type(convert_error).__name__}")
                     # Fallback: try raw data as WAV
+                    logger.info(f"⚠️ [OPUS] Fallback: using raw data as WAV")
                     audio_file = io.BytesIO(audio_input)
                     audio_file.name = "audio.wav"
             else:
