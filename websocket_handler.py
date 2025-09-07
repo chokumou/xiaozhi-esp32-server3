@@ -34,7 +34,7 @@ class ConnectionHandler:
         self.client_is_speaking = False
         self.stop_event = asyncio.Event() # For graceful shutdown
         self.session_id = str(uuid.uuid4())
-        self.audio_format = "pcm"  # Default format (ESP32 sends PCM, not Opus)
+        self.audio_format = "opus"  # Default format (ESP32 sends Opus like server2)
         self.features = {}
         
         # VAD (Voice Activity Detection) and audio buffering
@@ -374,8 +374,8 @@ class ConnectionHandler:
                 logger.info(f"🤖 [LLM_RESULT] ===== LLM response for {self.device_id}: '{llm_response}' =====")
                 self.chat_history.append({"role": "assistant", "content": llm_response})
                 
-                # Send text response first
-                await self.send_text_response(llm_response)
+                # Send STT message to display user input (server2 style)
+                await self.send_stt_message(text)
                 
                 # Generate and send audio response
                 await self.send_audio_response(llm_response)
@@ -385,19 +385,20 @@ class ConnectionHandler:
         except Exception as e:
             logger.error(f"Error processing text from {self.device_id}: {e}")
 
-    async def send_text_response(self, text: str):
-        """Send text response to client"""
+    async def send_stt_message(self, text: str):
+        """Send STT message to display user input (server2 style)"""
         try:
             # Check if websocket is still open
             if self.websocket.closed:
-                logger.warning(f"⚠️ [WEBSOCKET] Connection closed, cannot send text to {self.device_id}")
+                logger.warning(f"⚠️ [WEBSOCKET] Connection closed, cannot send STT to {self.device_id}")
                 return
                 
-            response = {"type": "text", "data": text}
-            await self.websocket.send_str(json.dumps(response))
-            logger.info(f"💬 [DEBUG] Sent text response to {self.device_id}: '{text}'")
+            # Send STT message (server2 style)
+            stt_message = {"type": "stt", "text": text, "session_id": self.session_id}
+            await self.websocket.send_str(json.dumps(stt_message))
+            logger.info(f"📱 [STT] Sent user text to display: '{text}'")
         except Exception as e:
-            logger.error(f"Error sending text response to {self.device_id}: {e}")
+            logger.error(f"Error sending STT message to {self.device_id}: {e}")
 
     async def send_audio_response(self, text: str):
         """Generate and send audio response"""
@@ -417,18 +418,17 @@ class ConnectionHandler:
             # Generate audio using TTS
             logger.info(f"🔊 [TTS_START] ===== Generating TTS for: '{text}' =====")
             
-            # Send processing status to keep connection alive during TTS generation
+            # Send TTS start message (server2 style)
             try:
-                processing_msg = {
+                tts_start_msg = {
                     "type": "tts", 
                     "state": "start", 
-                    "session_id": self.session_id,
-                    "text": text
+                    "session_id": self.session_id
                 }
-                await self.websocket.send_str(json.dumps(processing_msg))
-                logger.info(f"📢 [TTS] Sent processing status to keep connection alive")
+                await self.websocket.send_str(json.dumps(tts_start_msg))
+                logger.info(f"📢 [TTS] Sent TTS start message")
             except Exception as status_error:
-                logger.warning(f"⚠️ [TTS] Failed to send processing status: {status_error}")
+                logger.warning(f"⚠️ [TTS] Failed to send TTS start: {status_error}")
             
             # Check if stop event was set during processing
             if self.stop_event.is_set():
@@ -466,13 +466,13 @@ class ConnectionHandler:
                     await self.websocket.send_bytes(message)
                     logger.info(f"🎵 [AUDIO_SENT] ===== Sent audio response to {self.device_id} ({len(audio_bytes)} bytes) =====")
                     
-                    # Send completion status (server2 style)
+                    # Send TTS stop message (server2 style)
                     try:
-                        completion_msg = {"type": "tts", "state": "stop", "session_id": self.session_id}
-                        await self.websocket.send_str(json.dumps(completion_msg))
-                        logger.info(f"📢 [TTS] Sent completion status")
+                        tts_stop_msg = {"type": "tts", "state": "stop", "session_id": self.session_id}
+                        await self.websocket.send_str(json.dumps(tts_stop_msg))
+                        logger.info(f"📢 [TTS] Sent TTS stop message")
                     except Exception as completion_error:
-                        logger.warning(f"⚠️ [TTS] Failed to send completion status: {completion_error}")
+                        logger.warning(f"⚠️ [TTS] Failed to send TTS stop: {completion_error}")
                         
                 except Exception as send_error:
                     logger.error(f"❌ [WEBSOCKET] Audio send failed to {self.device_id}: {send_error}")
