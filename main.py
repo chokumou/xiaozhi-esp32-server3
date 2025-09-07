@@ -1,9 +1,7 @@
 import asyncio
-import websockets
 import signal
 import sys
-from functools import partial
-from aiohttp import web, WSMsgType
+from aiohttp import web
 
 from config import Config
 from utils.logger import setup_logger
@@ -73,30 +71,47 @@ async def main():
     app.router.add_post('/xiaozhi/ota/', ota_endpoint)
     app.router.add_get('/xiaozhi/ota/', ota_endpoint)
     
-    # Start HTTP server
+    # Start HTTP server on the same port as WebSocket
     runner = web.AppRunner(app)
     await runner.setup()
-    site = web.TCPSite(runner, Config.HOST, 8080)  # Use port 8080 for HTTP
+    site = web.TCPSite(runner, Config.HOST, Config.PORT)  # Use same port as WebSocket
     await site.start()
-    logger.info(f"HTTP OTA server starting on http://{Config.HOST}:8080")
+    logger.info(f"HTTP OTA server starting on http://{Config.HOST}:{Config.PORT}")
 
     stop_event = asyncio.Event()
     if sys.platform != "win32":
         for sig in (signal.SIGINT, signal.SIGTERM):
             asyncio.get_event_loop().add_signal_handler(sig, stop_event.set)
 
-    # Create WebSocket server with subprotocol support for ESP32 compatibility
-    start_server = websockets.serve(
-        authenticate_websocket,
-        Config.HOST,
-        Config.PORT,
-        subprotocols=["v1", "xiaozhi-v1"]  # ESP32 expects subprotocol support
-    )
-
-    logger.info(f"WebSocket server starting on ws://{Config.HOST}:{Config.PORT}")
-    async with start_server:
-        await stop_event.wait() # Keep server running until stop event is set
-    logger.info("Servers stopped.")
+    # Add WebSocket handler to aiohttp
+    async def websocket_handler(request):
+        ws = web.WebSocketResponse(protocols=["v1", "xiaozhi-v1"])
+        await ws.prepare(request)
+        
+        # Get device info from headers
+        headers = {k.lower(): v for k, v in request.headers.items()}
+        device_id = headers.get("device-id")
+        client_id = headers.get("client-id") 
+        protocol_version = headers.get("protocol-version", "1")
+        
+        if not device_id:
+            device_id = client_id or f"device_{request.remote}"
+            
+        logger.info(f"Device {device_id} connected via WebSocket (protocol v{protocol_version})")
+        
+        # Create connection handler
+        handler = ConnectionHandler(ws, device_id, client_id, int(protocol_version))
+        await handler.run()
+        return ws
+    
+    app.router.add_get('/xiaozhi/v1/', websocket_handler)
+    
+    logger.info(f"Unified server starting on {Config.HOST}:{Config.PORT}")
+    logger.info(f"OTA endpoint: http://{Config.HOST}:{Config.PORT}/xiaozhi/ota/")
+    logger.info(f"WebSocket endpoint: ws://{Config.HOST}:{Config.PORT}/xiaozhi/v1/")
+    
+    await stop_event.wait()
+    logger.info("Server stopped.")
 
 if __name__ == "__main__":
     try:
