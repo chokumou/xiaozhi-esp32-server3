@@ -64,7 +64,7 @@ class AudioHandlerServer2:
             if is_voice:
                 # 音声検出
                 if not self.client_have_voice:
-                    logger.info("【音声開始検出】音声蓄積開始")
+                    logger.info("【音声開始検出】音声蓄積開始 - 無音検知タイマー開始")
                 self.client_have_voice = True
                 self.last_voice_activity_time = current_time
                 self.voice_frame_count += 1
@@ -73,14 +73,17 @@ class AudioHandlerServer2:
                 # 無音検出
                 self.silence_frame_count += 1
                 
-                # server2準拠: 音声あり → 無音 + 1秒経過で処理開始
+                # server2準拠: 音声開始後のみ無音検知実行
                 if self.client_have_voice:
                     silence_duration = current_time - self.last_voice_activity_time
-                    logger.info(f"【無音継続】{silence_duration:.0f}ms / {self.silence_threshold_ms}ms")
+                    logger.info(f"【無音継続】{silence_duration:.0f}ms / {self.silence_threshold_ms}ms (有音後)")
                     
                     if silence_duration >= self.silence_threshold_ms and len(self.asr_audio) > 5 and not self.is_processing:
-                        logger.info(f"【無音検知完了】{silence_duration:.0f}ms無音 - 音声処理開始")
+                        logger.info(f"【無音検知完了】{silence_duration:.0f}ms無音 - 音声処理開始 (有音→無音)")
                         await self._process_voice_stop()
+                else:
+                    # 有音検知前の無音は無視
+                    logger.debug(f"[SILENCE_IGNORE] 有音検知前の無音フレーム: {self.silence_frame_count}")
 
         except Exception as e:
             logger.error(f"Error handling audio frame: {e}")
