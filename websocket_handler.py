@@ -388,10 +388,19 @@ class ConnectionHandler:
                 except Exception as e:
                     logger.warning(f"⚠️ [KEEPALIVE] Failed: {e}")
             
-            # Start keepalive task and TTS generation in parallel
+            # Start keepalive and TTS generation in parallel
             keepalive_task = asyncio.create_task(send_keepalive())
-            audio_bytes = await self.tts_service.generate_speech(text)
-            keepalive_task.cancel()  # Stop keepalive after TTS completion
+            try:
+                # TTS generation with timeout to prevent Railway edge timeout
+                audio_bytes = await asyncio.wait_for(
+                    self.tts_service.generate_speech(text), 
+                    timeout=8.0  # 8 second timeout
+                )
+            except asyncio.TimeoutError:
+                logger.error(f"❌ [TTS] Generation timeout after 8 seconds for {self.device_id}")
+                audio_bytes = None
+            finally:
+                keepalive_task.cancel()  # Stop keepalive after TTS completion
             logger.info(f"🎶 [TTS_RESULT] ===== TTS generated: {len(audio_bytes) if audio_bytes else 0} bytes =====")
             
             # Final check before sending

@@ -52,6 +52,9 @@ class AudioHandlerServer2:
             is_voice = await self._detect_voice_with_rms(audio_data)
             current_time = time.time() * 1000
             
+            # デバッグ: RMS VAD動作確認
+            logger.info(f"🔍 [VAD_DEBUG] RMS検知結果: voice={is_voice}, audio_size={len(audio_data)}B")
+            
             # Store audio frame regardless (server2 style)
             self.asr_audio.append(audio_data)
             self.asr_audio = self.asr_audio[-100:]  # Keep more frames
@@ -86,6 +89,11 @@ class AudioHandlerServer2:
     async def _process_voice_stop(self):
         """Process accumulated audio when voice stops (server2 style)"""
         try:
+            # 重複処理防止の追加チェック
+            if self.is_processing:
+                logger.warning(f"⚠️ [PROCESSING] Already processing audio, skipping duplicate request")
+                return
+                
             # Check minimum requirement (調整: 長い発話を確実に処理)
             estimated_pcm_bytes = len(self.asr_audio) * 1920  # Each Opus frame ~1920 PCM bytes
             min_pcm_bytes = 15000  # 調整: 24000から15000に下げて長い発話も処理
