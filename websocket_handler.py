@@ -390,9 +390,9 @@ class ConnectionHandler:
     async def send_stt_message(self, text: str):
         """Send STT message to display user input (server2 style)"""
         try:
-            # Check if websocket is still open
-            if self.websocket.closed:
-                logger.warning(f"⚠️ [WEBSOCKET] Connection closed, cannot send STT to {self.device_id}")
+            # Enhanced connection check
+            if self.websocket.closed or getattr(self.websocket, '_writer', None) is None:
+                logger.warning(f"⚠️ [WEBSOCKET] Connection closed/invalid, cannot send STT to {self.device_id}")
                 return
                 
             # Send STT message (server2 style)
@@ -408,8 +408,9 @@ class ConnectionHandler:
             self.client_is_speaking = True
             
             # Check if websocket is still open (server2 style)
-            if self.websocket.closed:
-                logger.warning(f"⚠️ [WEBSOCKET] Connection closed, cannot send audio to {self.device_id}")
+            # Enhanced connection validation
+            if self.websocket.closed or getattr(self.websocket, '_writer', None) is None:
+                logger.warning(f"⚠️ [WEBSOCKET] Connection closed/invalid, cannot send audio to {self.device_id}")
                 return
             
             # Additional check: ensure websocket is still connected
