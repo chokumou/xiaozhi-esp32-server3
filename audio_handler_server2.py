@@ -29,6 +29,7 @@ class AudioHandlerServer2:
         self.voice_frame_count = 0  # 連続音声フレーム数
         self.silence_frame_count = 0  # 連続無音フレーム数
         self.is_processing = False  # 重複処理防止フラグ
+        self.tts_in_progress = False  # TTS中は音声検知一時停止
         
         # Initialize Opus decoder
         try:
@@ -46,6 +47,11 @@ class AudioHandlerServer2:
             dtx_threshold = 3
             if len(audio_data) <= dtx_threshold:
                 logger.info(f"[AUDIO_TRACE] DROP_DTX pkt={len(audio_data)}")
+                return
+
+            # Skip voice detection during TTS playback
+            if self.tts_in_progress:
+                logger.debug(f"[TTS_SKIP] Skipping voice detection during TTS playback")
                 return
 
             # RMSベース音声検知 (server2準拠)
