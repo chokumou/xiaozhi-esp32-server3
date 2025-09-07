@@ -124,9 +124,9 @@ class ConnectionHandler:
                 # Protocol v1: raw audio data
                 audio_data = message
 
-        logger.info(f"🚀 [DEBUG] Calling server2-style audio handler with {len(audio_data)} bytes")
-        await self.audio_handler.handle_audio_frame(audio_data)
-        logger.info(f"✅ [DEBUG] server2-style audio processing completed")
+            logger.info(f"🚀 [DEBUG] Calling server2-style audio handler with {len(audio_data)} bytes")
+            await self.audio_handler.handle_audio_frame(audio_data)
+            logger.info(f"✅ [DEBUG] server2-style audio processing completed")
             
         except Exception as e:
             logger.error(f"❌ [ERROR] Error handling binary message from {self.device_id}: {e}")
