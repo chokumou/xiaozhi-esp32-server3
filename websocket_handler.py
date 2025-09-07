@@ -222,19 +222,46 @@ class ConnectionHandler:
             logger.info(f"🔍 [ASR] Audio format: {self.audio_format}, buffer size: {len(self.audio_buffer)}")
             
             if self.audio_format == "opus":
-                # Convert Opus to WAV before sending to ASR
+                # Convert Opus to WAV using server2 method
                 try:
                     import wave
-                    import opuslib
+                    import opuslib_next
                     
-                    logger.info(f"🔄 [WEBSOCKET] Converting Opus buffer to WAV")
+                    logger.info(f"🔄 [WEBSOCKET] Converting Opus buffer to WAV (server2 method)")
                     
                     # For debugging: save original data
                     logger.info(f"🔍 [DEBUG] First 20 bytes: {bytes(self.audio_buffer[:20]).hex()}")
                     
-                    # Try to decode as single packet first
-                    decoder = opuslib.Decoder(16000, 1)  # 16kHz, mono
-                    pcm_data = decoder.decode(bytes(self.audio_buffer), 960)  # 60ms frame
+                    # Method 1: Try as single packet
+                    try:
+                        decoder = opuslib_next.Decoder(16000, 1)  # 16kHz, mono
+                        pcm_data = decoder.decode(bytes(self.audio_buffer), 960)  # 60ms frame
+                        logger.info(f"✅ [WEBSOCKET] Single packet decode success: {len(pcm_data)} bytes PCM")
+                    except Exception as e1:
+                        logger.warning(f"⚠️ [WEBSOCKET] Single packet failed: {e1}")
+                        
+                        # Method 2: Try to split into chunks (server2 style)
+                        pcm_frames = []
+                        decoder = opuslib_next.Decoder(16000, 1)
+                        chunk_size = 64  # Try different chunk sizes
+                        
+                        for i in range(0, len(self.audio_buffer), chunk_size):
+                            chunk = bytes(self.audio_buffer[i:i+chunk_size])
+                            if len(chunk) < 10:  # Skip tiny chunks
+                                continue
+                            try:
+                                pcm_frame = decoder.decode(chunk, 960)
+                                if pcm_frame and len(pcm_frame) > 0:
+                                    pcm_frames.append(pcm_frame)
+                                    logger.info(f"📦 [WEBSOCKET] Chunk {i//chunk_size}: {len(chunk)} -> {len(pcm_frame)} bytes")
+                            except Exception as e2:
+                                logger.warning(f"⚠️ [WEBSOCKET] Chunk {i//chunk_size} failed: {e2}")
+                        
+                        if pcm_frames:
+                            pcm_data = b''.join(pcm_frames)
+                            logger.info(f"✅ [WEBSOCKET] Multi-chunk decode success: {len(pcm_frames)} chunks -> {len(pcm_data)} bytes PCM")
+                        else:
+                            raise Exception("No valid Opus data found")
                     
                     # Create WAV file from PCM
                     wav_buffer = io.BytesIO()
@@ -251,10 +278,17 @@ class ConnectionHandler:
                     
                 except Exception as e:
                     logger.error(f"❌ [WEBSOCKET] Opus conversion failed: {e}")
-                    # Try to save as raw opus file for OpenAI
-                    audio_file = io.BytesIO(bytes(self.audio_buffer))
-                    audio_file.name = "audio.opus"
-                    logger.info(f"⚠️ [WEBSOCKET] Fallback: sending raw Opus data to OpenAI")
+                    # Fallback: Create empty WAV (better than Opus for OpenAI)
+                    wav_buffer = io.BytesIO()
+                    with wave.open(wav_buffer, 'wb') as wav_file:
+                        wav_file.setnchannels(1)
+                        wav_file.setsampwidth(2) 
+                        wav_file.setframerate(16000)
+                        wav_file.writeframes(b'\x00' * 1600)  # 100ms of silence
+                    wav_buffer.seek(0)
+                    audio_file = wav_buffer
+                    audio_file.name = "audio.wav"
+                    logger.info(f"⚠️ [WEBSOCKET] Fallback: sending silent WAV")
             else:
                 # Create file-like object for non-Opus data
                 audio_file = io.BytesIO(bytes(self.audio_buffer))
