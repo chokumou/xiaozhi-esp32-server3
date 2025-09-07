@@ -294,8 +294,30 @@ class ConnectionHandler:
                     llm_messages.insert(0, {"role": "system", "content": f"ユーザーの記憶: {retrieved_memory}"})
                     logger.info(f"Retrieved memory for LLM: {retrieved_memory[:50]}...")
 
-            # Generate LLM response
-            llm_response = await self.llm_service.chat_completion(llm_messages)
+            # Generate LLM response with keepalive during processing
+            async def llm_keepalive():
+                try:
+                    for i in range(5):  # 最大2.5秒間keepalive
+                        await asyncio.sleep(0.5)
+                        if not self.websocket.closed:
+                            await self.websocket.ping()
+                            logger.info(f"📡 [LLM_KEEPALIVE] Ping during LLM processing {i+1}/5")
+                        else:
+                            break
+                except Exception as e:
+                    logger.warning(f"⚠️ [LLM_KEEPALIVE] Failed: {e}")
+            
+            # Start keepalive during LLM processing
+            llm_keepalive_task = asyncio.create_task(llm_keepalive())
+            try:
+                llm_response = await self.llm_service.chat_completion(llm_messages)
+            finally:
+                llm_keepalive_task.cancel()
+                try:
+                    await llm_keepalive_task
+                except asyncio.CancelledError:
+                    pass
+            
             if llm_response and llm_response.strip():
                 logger.info(f"🤖 [LLM_RESULT] ===== LLM response for {self.device_id}: '{llm_response}' =====")
                 self.chat_history.append({"role": "assistant", "content": llm_response})
