@@ -69,7 +69,7 @@ class ConnectionHandler:
             logger.info(f"📨 [DEBUG] Received TEXT message: {message[:100]}... from {self.device_id}")
             await self.handle_text_message(message)
         elif isinstance(message, bytes):
-            logger.info(f"🎤 [DEBUG] Received BINARY audio data: {len(message)} bytes from {self.device_id}")
+            # logger.info(f"🎤 [DEBUG] Received BINARY audio data: {len(message)} bytes from {self.device_id}")  # レート制限対策で削除
             await self.handle_binary_message(message)
 
     async def handle_text_message(self, message: str):
@@ -99,7 +99,7 @@ class ConnectionHandler:
     async def handle_binary_message(self, message: bytes):
         """Handle binary audio data based on protocol version"""
         try:
-            logger.info(f"🔧 [DEBUG] Processing binary message: {len(message)} bytes, protocol v{self.protocol_version}")
+            # logger.info(f"🔧 [DEBUG] Processing binary message: {len(message)} bytes, protocol v{self.protocol_version}")  # レート制限対策で削除
             if len(message) <= 12:  # Skip very small packets (DTX/keepalive)
                 logger.info(f"⏭️ [DEBUG] Skipping small packet: {len(message)} bytes")
                 return
@@ -121,7 +121,7 @@ class ConnectionHandler:
                 # Protocol v1: raw audio data
                 audio_data = message
 
-            logger.info(f"🚀 [DEBUG] Calling server2-style audio handler with {len(audio_data)} bytes")
+                # logger.info(f"🚀 [DEBUG] Calling server2-style audio handler with {len(audio_data)} bytes")  # レート制限対策で削除
             await self.audio_handler.handle_audio_frame(audio_data)
             logger.info(f"✅ [DEBUG] server2-style audio processing completed")
             

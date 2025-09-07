@@ -63,13 +63,13 @@ class AudioHandlerServer2:
                 # TTS中でも通常の音声処理を継続
             
             # デバッグ: RMS VAD動作確認
-            logger.info(f"🔍 [VAD_DEBUG] RMS検知結果: voice={is_voice}, audio_size={len(audio_data)}B")
+            # logger.info(f"🔍 [VAD_DEBUG] RMS検知結果: voice={is_voice}, audio_size={len(audio_data)}B")  # レート制限対策で削除
             
             # Store audio frame regardless (server2 style)
             self.asr_audio.append(audio_data)
             self.asr_audio = self.asr_audio[-100:]  # Keep more frames
             
-            logger.info(f"[AUDIO_TRACE] Frame: {len(audio_data)}B, RMS_voice={is_voice}, frames={len(self.asr_audio)}")
+            # logger.info(f"[AUDIO_TRACE] Frame: {len(audio_data)}B, RMS_voice={is_voice}, frames={len(self.asr_audio)}")  # レート制限対策で削除
             
             if is_voice:
                 # 音声検出時にTTS停止フラグもリセット（次のサイクル開始）
