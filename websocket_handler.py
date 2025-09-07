@@ -216,7 +216,7 @@ class ConnectionHandler:
     async def process_accumulated_audio(self):
         """Process accumulated voice audio data"""
         try:
-            logger.info(f"📦 [ASR] Processing accumulated audio: {len(self.audio_buffer)} bytes")
+            logger.info(f"🎯 [AUDIO_START] ===== Processing accumulated audio: {len(self.audio_buffer)} bytes =====")
             
             # Convert Opus to WAV using server2 method
             logger.info(f"🔍 [ASR] Audio format: {self.audio_format}, buffer size: {len(self.audio_buffer)}")
@@ -230,7 +230,7 @@ class ConnectionHandler:
                     logger.info(f"🔄 [WEBSOCKET] Converting Opus buffer to WAV (server2 method)")
                     
                     # For debugging: save original data
-                    logger.info(f"🔍 [DEBUG] First 20 bytes: {bytes(self.audio_buffer[:20]).hex()}")
+                    logger.info(f"🔍 [OPUS_DEBUG] ===== First 20 bytes: {bytes(self.audio_buffer[:20]).hex()} =====")
                     
                     # Method 1: Try as single packet
                     try:
@@ -278,9 +278,9 @@ class ConnectionHandler:
                 audio_file.name = "audio.wav"
             
             # Convert audio to text using ASR
-            logger.info(f"🔄 [ASR] Calling OpenAI Whisper API...")
+            logger.info(f"🎤 [ASR_START] ===== Calling OpenAI Whisper API =====")
             transcribed_text = await self.asr_service.transcribe(audio_file)
-            logger.info(f"🎯 [ASR] Result: '{transcribed_text}' (length: {len(transcribed_text) if transcribed_text else 0})")
+            logger.info(f"📝 [ASR_RESULT] ===== ASR Result: '{transcribed_text}' (length: {len(transcribed_text) if transcribed_text else 0}) =====")
             
             if transcribed_text and transcribed_text.strip():
                 logger.info(f"✅ [ASR] Processing transcription: {transcribed_text}")
@@ -289,7 +289,7 @@ class ConnectionHandler:
                 logger.warning(f"❌ [ASR] No valid result for {self.device_id}")
                 
         except Exception as e:
-            logger.error(f"Error processing accumulated audio from {self.device_id}: {e}")
+            logger.error(f"❌ [AUDIO_ERROR] ===== Error processing accumulated audio from {self.device_id}: {e} =====")
 
     async def timeout_checker(self):
         """Background task to check for audio buffer timeout"""
@@ -317,7 +317,7 @@ class ConnectionHandler:
     async def process_text(self, text: str):
         """Process text input through LLM and generate response"""
         try:
-            logger.info(f"💬 [DEBUG] Processing text input: '{text}'")
+            logger.info(f"🧠 [LLM_START] ===== Processing text input: '{text}' =====")
             self.chat_history.append({"role": "user", "content": text})
 
             # Check for memory-related keywords
@@ -346,7 +346,7 @@ class ConnectionHandler:
             # Generate LLM response
             llm_response = await self.llm_service.chat_completion(llm_messages)
             if llm_response and llm_response.strip():
-                logger.info(f"LLM response for {self.device_id}: {llm_response}")
+                logger.info(f"🤖 [LLM_RESULT] ===== LLM response for {self.device_id}: '{llm_response}' =====")
                 self.chat_history.append({"role": "assistant", "content": llm_response})
                 
                 # Send text response first
@@ -385,9 +385,9 @@ class ConnectionHandler:
                 return
             
             # Generate audio using TTS
-            logger.info(f"🔊 [DEBUG] Generating TTS for: '{text}'")
+            logger.info(f"🔊 [TTS_START] ===== Generating TTS for: '{text}' =====")
             audio_bytes = await self.tts_service.generate_speech(text)
-            logger.info(f"🎶 [DEBUG] TTS generated: {len(audio_bytes) if audio_bytes else 0} bytes")
+            logger.info(f"🎶 [TTS_RESULT] ===== TTS generated: {len(audio_bytes) if audio_bytes else 0} bytes =====")
             if audio_bytes:
                 # Send binary audio data based on protocol version
                 if self.protocol_version == 2:
@@ -403,7 +403,7 @@ class ConnectionHandler:
                     message = audio_bytes
                     
                 await self.websocket.send_bytes(message)
-                logger.info(f"Sent audio response to {self.device_id} ({len(audio_bytes)} bytes)")
+                logger.info(f"🎵 [AUDIO_SENT] ===== Sent audio response to {self.device_id} ({len(audio_bytes)} bytes) =====")
             else:
                 logger.warning(f"Failed to generate audio for {self.device_id}")
                 
