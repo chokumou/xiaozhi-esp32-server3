@@ -325,12 +325,33 @@ class ConnectionHandler:
                 logger.warning(f"⚠️ [WEBSOCKET] Connection closed/invalid, cannot send STT to {self.device_id}")
                 return
                 
-            # Send STT message (server2 style)
-            stt_message = {"type": "stt", "text": text, "session_id": self.session_id}
+            # Send STT message (server2 style) - テキストから句読点・絵文字除去
+            cleaned_text = self._clean_text_for_display(text)
+            stt_message = {"type": "stt", "text": cleaned_text, "session_id": self.session_id}
             await self.websocket.send_str(json.dumps(stt_message))
             logger.info(f"🟢XIAOZHI_STT_SENT🟢 📱 [STT] Sent user text to display: '{text}'")
         except Exception as e:
             logger.error(f"🔴XIAOZHI_STT_ERROR🔴 Error sending STT message to {self.device_id}: {e}")
+    
+    def _clean_text_for_display(self, text: str) -> str:
+        """Server2準拠: テキストから句読点・絵文字を除去"""
+        if not text:
+            return text
+        
+        # 基本的な句読点・記号除去
+        punctuation_chars = "，。！？、；：（）【】「」『』〈〉《》,.!?;:()[]<>{}"
+        cleaned = text
+        
+        # 先頭・末尾の句読点・空白除去
+        start = 0
+        while start < len(cleaned) and (cleaned[start].isspace() or cleaned[start] in punctuation_chars):
+            start += 1
+            
+        end = len(cleaned) - 1
+        while end >= start and (cleaned[end].isspace() or cleaned[end] in punctuation_chars):
+            end -= 1
+            
+        return cleaned[start:end + 1] if start <= end else text
 
     async def send_audio_response(self, text: str):
         """Generate and send audio response"""
