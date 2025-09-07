@@ -66,24 +66,7 @@ async def main():
     Config.validate() # Validate environment variables
     logger.info("Configuration validated successfully.")
 
-    # Create HTTP server with OTA endpoint
-    app = web.Application()
-    app.router.add_post('/xiaozhi/ota/', ota_endpoint)
-    app.router.add_get('/xiaozhi/ota/', ota_endpoint)
-    
-    # Start HTTP server on the same port as WebSocket
-    runner = web.AppRunner(app)
-    await runner.setup()
-    site = web.TCPSite(runner, Config.HOST, Config.PORT)  # Use same port as WebSocket
-    await site.start()
-    logger.info(f"HTTP OTA server starting on http://{Config.HOST}:{Config.PORT}")
-
-    stop_event = asyncio.Event()
-    if sys.platform != "win32":
-        for sig in (signal.SIGINT, signal.SIGTERM):
-            asyncio.get_event_loop().add_signal_handler(sig, stop_event.set)
-
-    # Add WebSocket handler to aiohttp
+    # Add WebSocket handler function
     async def websocket_handler(request):
         ws = web.WebSocketResponse(protocols=["v1", "xiaozhi-v1"])
         await ws.prepare(request)
@@ -103,8 +86,23 @@ async def main():
         handler = ConnectionHandler(ws, device_id, client_id, int(protocol_version))
         await handler.run()
         return ws
-    
+
+    # Create HTTP server with all endpoints BEFORE starting
+    app = web.Application()
+    app.router.add_post('/xiaozhi/ota/', ota_endpoint)
+    app.router.add_get('/xiaozhi/ota/', ota_endpoint)
     app.router.add_get('/xiaozhi/v1/', websocket_handler)
+    
+    stop_event = asyncio.Event()
+    if sys.platform != "win32":
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            asyncio.get_event_loop().add_signal_handler(sig, stop_event.set)
+
+    # Start unified server
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, Config.HOST, Config.PORT)
+    await site.start()
     
     logger.info(f"Unified server starting on {Config.HOST}:{Config.PORT}")
     logger.info(f"OTA endpoint: http://{Config.HOST}:{Config.PORT}/xiaozhi/ota/")
