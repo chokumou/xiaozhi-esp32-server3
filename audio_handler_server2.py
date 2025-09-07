@@ -49,14 +49,18 @@ class AudioHandlerServer2:
                 logger.info(f"[AUDIO_TRACE] DROP_DTX pkt={len(audio_data)}")
                 return
 
-            # Skip voice detection during TTS playback
-            if self.tts_in_progress:
-                logger.debug(f"[TTS_SKIP] Skipping voice detection during TTS playback")
-                return
-
             # RMSベース音声検知 (server2準拠)
             is_voice = await self._detect_voice_with_rms(audio_data)
             current_time = time.time() * 1000
+
+            # Server2準拠: TTS中の音声処理継続
+            if self.tts_in_progress:
+                logger.debug(f"[TTS_ACTIVE] TTS中でも音声処理継続 (server2準拠)")
+                # TTS中に有意な音声（>100 bytes）が検出されたらバージイン
+                if len(audio_data) > 100 and is_voice:
+                    logger.info(f"🚨 [BARGE_IN] TTS中に割り込み音声検出: {len(audio_data)}B")
+                    # TODO: handleAbortMessage equivalent
+                # TTS中でも通常の音声処理を継続
             
             # デバッグ: RMS VAD動作確認
             logger.info(f"🔍 [VAD_DEBUG] RMS検知結果: voice={is_voice}, audio_size={len(audio_data)}B")
