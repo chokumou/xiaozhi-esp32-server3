@@ -404,9 +404,14 @@ class ConnectionHandler:
         try:
             self.client_is_speaking = True
             
-            # Check if websocket is still open
+            # Check if websocket is still open (server2 style)
             if self.websocket.closed:
                 logger.warning(f"⚠️ [WEBSOCKET] Connection closed, cannot send audio to {self.device_id}")
+                return
+            
+            # Additional check: ensure websocket is still connected
+            if not hasattr(self, 'websocket') or not self.websocket:
+                logger.error(f"❌ [WEBSOCKET] WebSocket not connected: websocket={getattr(self, 'websocket', None)}")
                 return
             
             # Generate audio using TTS
@@ -427,8 +432,17 @@ class ConnectionHandler:
                     # Protocol v1: raw audio data
                     message = audio_bytes
                     
-                await self.websocket.send_bytes(message)
-                logger.info(f"🎵 [AUDIO_SENT] ===== Sent audio response to {self.device_id} ({len(audio_bytes)} bytes) =====")
+                # Final check before sending (server2 style)
+                if self.websocket.closed:
+                    logger.warning(f"⚠️ [WEBSOCKET] Connection closed during send to {self.device_id}")
+                    return
+                
+                # Send with error handling (server2 style)
+                try:
+                    await self.websocket.send_bytes(message)
+                    logger.info(f"🎵 [AUDIO_SENT] ===== Sent audio response to {self.device_id} ({len(audio_bytes)} bytes) =====")
+                except Exception as send_error:
+                    logger.error(f"❌ [WEBSOCKET] Audio send failed to {self.device_id}: {send_error}")
             else:
                 logger.warning(f"Failed to generate audio for {self.device_id}")
                 
