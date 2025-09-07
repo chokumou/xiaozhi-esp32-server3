@@ -114,6 +114,7 @@ class ConnectionHandler:
                     return
                 msg_type, reserved, payload_size = struct.unpack('>BBH', message[:4])
                 audio_data = message[4:4+payload_size]
+                logger.info(f"📋 [PROTO] v3: type={msg_type}, payload_size={payload_size}, extracted_audio={len(audio_data)} bytes")
             else:
                 # Protocol v1: raw audio data
                 audio_data = message
