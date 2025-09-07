@@ -399,18 +399,8 @@ class ConnectionHandler:
                 logger.warning(f"⚠️ [TTS] Stop event detected after TTS generation, aborting send for {self.device_id}")
                 return
             if audio_bytes:
-                # Send binary audio data based on protocol version
-                if self.protocol_version == 2:
-                    # Protocol v2: version(2) + type(2) + reserved(2) + timestamp(4) + payload_size(4) + payload
-                    header = struct.pack('>HHHII', 2, 1, 0, 0, len(audio_bytes))
-                    message = header + audio_bytes
-                elif self.protocol_version == 3:
-                    # Protocol v3: type(1) + reserved(1) + payload_size(2) + payload
-                    header = struct.pack('>BBH', 1, 0, len(audio_bytes))
-                    message = header + audio_bytes
-                else:
-                    # Protocol v1: raw audio data
-                    message = audio_bytes
+                # Server2準拠: 直接音声バイト送信（ヘッダーなし）
+                message = audio_bytes
                     
                 # Final check before sending (server2 style)
                 if self.websocket.closed:
