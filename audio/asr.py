@@ -16,7 +16,7 @@ class ASRService:
             if isinstance(audio_input, bytes):
                 import io
                 audio_file = io.BytesIO(audio_input)
-                audio_file.name = "audio.opus"  # Assume Opus format from ESP32
+                audio_file.name = "audio.ogg"  # Opus in OGG container for OpenAI Whisper
             else:
                 audio_file = audio_input
                 
