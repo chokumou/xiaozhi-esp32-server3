@@ -308,15 +308,19 @@ class ConnectionHandler:
                     logger.warning(f"⚠️ [LLM_KEEPALIVE] Failed: {e}")
             
             # Start keepalive during LLM processing
+            logger.info(f"🚀 [DEBUG] Starting LLM keepalive task")
             llm_keepalive_task = asyncio.create_task(llm_keepalive())
             try:
+                logger.info(f"⏳ [DEBUG] LLM processing starting...")
                 llm_response = await self.llm_service.chat_completion(llm_messages)
+                logger.info(f"✅ [DEBUG] LLM processing completed")
             finally:
+                logger.info(f"🛑 [DEBUG] Cancelling LLM keepalive task")
                 llm_keepalive_task.cancel()
                 try:
                     await llm_keepalive_task
                 except asyncio.CancelledError:
-                    pass
+                    logger.info(f"🏁 [DEBUG] LLM keepalive task cancelled successfully")
             
             if llm_response and llm_response.strip():
                 logger.info(f"🤖 [LLM_RESULT] ===== LLM response for {self.device_id}: '{llm_response}' =====")
