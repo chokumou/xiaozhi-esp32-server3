@@ -75,8 +75,8 @@ async def main():
 
     # Add WebSocket handler function
     async def websocket_handler(request):
-        # Railway対策: より短いheartbeatでタイムアウト防止
-        ws = web.WebSocketResponse(protocols=["v1", "xiaozhi-v1"], heartbeat=3)
+        # Server2準拠: heartbeat=5でRailway対応
+        ws = web.WebSocketResponse(protocols=["v1", "xiaozhi-v1"], heartbeat=5)
         await ws.prepare(request)
         
         # Get device info from headers
