@@ -6,3 +6,4 @@ httpx
 loguru
 PyJWT
 aiohttp
+pydub

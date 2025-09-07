@@ -15,10 +15,27 @@ class ASRService:
             # Handle both bytes and file-like objects
             if isinstance(audio_input, bytes):
                 import io
-                # For now, skip direct conversion and use a workaround
-                # Save as binary file and let OpenAI try to decode
-                audio_file = io.BytesIO(audio_input)
-                audio_file.name = "audio.wav"  # Try as WAV (most compatible)
+                from pydub import AudioSegment
+                
+                # Try to convert Opus to WAV
+                try:
+                    # Load Opus data
+                    audio_segment = AudioSegment.from_file(io.BytesIO(audio_input), format="opus")
+                    
+                    # Convert to WAV
+                    wav_buffer = io.BytesIO()
+                    audio_segment.export(wav_buffer, format="wav")
+                    wav_buffer.seek(0)
+                    
+                    audio_file = wav_buffer
+                    audio_file.name = "audio.wav"
+                    logger.info(f"Successfully converted Opus to WAV: {len(audio_input)} -> {len(wav_buffer.getvalue())} bytes")
+                    
+                except Exception as convert_error:
+                    logger.error(f"Opus conversion failed: {convert_error}, trying raw data as WAV")
+                    # Fallback: try raw data as WAV
+                    audio_file = io.BytesIO(audio_input)
+                    audio_file.name = "audio.wav"
             else:
                 audio_file = audio_input
                 
