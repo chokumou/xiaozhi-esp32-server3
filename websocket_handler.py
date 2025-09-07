@@ -1,11 +1,11 @@
 import asyncio
 import json
-import websockets
 import struct
 import uuid
 import io
 from typing import Dict, Any, Optional
 from collections import deque
+from aiohttp import web
 
 from config import Config
 from utils.logger import setup_logger
@@ -18,7 +18,7 @@ from ai.memory import MemoryService
 logger = setup_logger()
 
 class ConnectionHandler:
-    def __init__(self, websocket: websockets.WebSocketServerProtocol, headers: Dict[str, str]):
+    def __init__(self, websocket: web.WebSocketResponse, headers: Dict[str, str]):
         self.websocket = websocket
         self.headers = headers
         self.device_id = headers.get("device-id") or "unknown"
@@ -128,7 +128,7 @@ class ConnectionHandler:
             logger.info(f"Client features: {features}")
             
         # Send welcome response
-        await self.websocket.send(json.dumps(self.welcome_msg))
+        await self.websocket.send_str(json.dumps(self.welcome_msg))
         logger.info(f"Sent welcome message to {self.device_id}")
 
     async def handle_listen_message(self, msg_json: Dict[str, Any]):
@@ -211,7 +211,7 @@ class ConnectionHandler:
         """Send text response to client"""
         try:
             response = {"type": "text", "data": text}
-            await self.websocket.send(json.dumps(response))
+            await self.websocket.send_str(json.dumps(response))
         except Exception as e:
             logger.error(f"Error sending text response to {self.device_id}: {e}")
 
@@ -236,7 +236,7 @@ class ConnectionHandler:
                     # Protocol v1: raw audio data
                     message = audio_bytes
                     
-                await self.websocket.send(message)
+                await self.websocket.send_bytes(message)
                 logger.info(f"Sent audio response to {self.device_id} ({len(audio_bytes)} bytes)")
             else:
                 logger.warning(f"Failed to generate audio for {self.device_id}")
@@ -249,12 +249,17 @@ class ConnectionHandler:
     async def run(self):
         """Main connection loop"""
         try:
-            async for message in self.websocket:
-                await self.handle_message(message)
-        except websockets.exceptions.ConnectionClosedOK:
-            logger.info(f"Connection closed gracefully for {self.device_id}")
-        except websockets.exceptions.ConnectionClosedError as e:
-            logger.error(f"Connection closed with error for {self.device_id}: {e}")
+            async for msg in self.websocket:
+                if msg.type == web.WSMsgType.TEXT:
+                    await self.handle_message(msg.data)
+                elif msg.type == web.WSMsgType.BINARY:
+                    await self.handle_message(msg.data)
+                elif msg.type == web.WSMsgType.ERROR:
+                    logger.error(f"WebSocket error for {self.device_id}: {self.websocket.exception()}")
+                    break
+                elif msg.type == web.WSMsgType.CLOSE:
+                    logger.info(f"WebSocket closed for {self.device_id}")
+                    break
         except Exception as e:
             logger.error(f"Unhandled error in connection handler for {self.device_id}: {e}")
         finally:

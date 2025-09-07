@@ -89,8 +89,8 @@ async def main():
             
         logger.info(f"Device {device_id} connected via WebSocket (protocol v{protocol_version})")
         
-        # Create connection handler
-        handler = ConnectionHandler(ws, device_id, client_id, int(protocol_version))
+        # Create connection handler (websocket, headers)
+        handler = ConnectionHandler(ws, headers)
         await handler.run()
         return ws
 
