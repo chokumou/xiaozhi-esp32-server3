@@ -21,11 +21,13 @@ class AudioHandlerServer2:
         self.client_voice_stop = False
         self.last_activity_time = time.time() * 1000
         
-        # 1秒無音検知システム (ドキュメント準拠)
-        self.silence_frames = 0  # 無音フレームカウンター
-        self.silence_threshold = 8  # 8フレーム = 約1秒（120ms × 8 = 960ms）
-        self.silence_size_threshold = 5  # 5バイト以下を無音フレームと判定
-        self.has_started_voice = False  # 音声開始フラグ
+        # RMSベース音声検知システム (server2準拠)
+        self.client_have_voice = False
+        self.last_voice_activity_time = time.time() * 1000  # milliseconds
+        self.silence_threshold_ms = 1000  # 1秒無音で処理開始 (server2準拠)
+        self.rms_threshold = 200  # RMS閾値 (server2準拠)
+        self.voice_frame_count = 0  # 連続音声フレーム数
+        self.silence_frame_count = 0  # 連続無音フレーム数
         
         # Initialize Opus decoder
         try:
@@ -37,7 +39,7 @@ class AudioHandlerServer2:
             self.opus_decoder = None
 
     async def handle_audio_frame(self, audio_data: bytes):
-        """Handle single audio frame with 1-second silence detection (ドキュメント準拠)"""
+        """Handle single audio frame with RMS-based silence detection (server2準拠)"""
         try:
             # Drop tiny DTX packets (server2 style)
             dtx_threshold = 3
@@ -45,29 +47,36 @@ class AudioHandlerServer2:
                 logger.info(f"[AUDIO_TRACE] DROP_DTX pkt={len(audio_data)}")
                 return
 
-            # 1秒無音検知システム (ドキュメント準拠)
-            if len(audio_data) <= self.silence_size_threshold:
-                # 無音フレーム検出
-                self.silence_frames += 1
-                logger.info(f"【無音フレーム検出】サイズ={len(audio_data)}bytes, 無音フレーム数={self.silence_frames}/{self.silence_threshold}")
-                
-                # 無音閾値に達したら音声処理開始 (but only if we have voice data)
-                if self.silence_frames >= self.silence_threshold and self.has_started_voice and len(self.asr_audio) > 0:
-                    logger.info(f"【無音検知完了】約1秒の無音を検知 - 音声処理開始")
-                    await self._process_voice_stop()
-                    
-                return  # 無音フレームは蓄積しない
+            # RMSベース音声検知 (server2準拠)
+            is_voice = await self._detect_voice_with_rms(audio_data)
+            current_time = time.time() * 1000
+            
+            # Store audio frame regardless (server2 style)
+            self.asr_audio.append(audio_data)
+            self.asr_audio = self.asr_audio[-100:]  # Keep more frames
+            
+            logger.info(f"[AUDIO_TRACE] Frame: {len(audio_data)}B, RMS_voice={is_voice}, frames={len(self.asr_audio)}")
+            
+            if is_voice:
+                # 音声検出
+                if not self.client_have_voice:
+                    logger.info("【音声開始検出】音声蓄積開始")
+                self.client_have_voice = True
+                self.last_voice_activity_time = current_time
+                self.voice_frame_count += 1
+                self.silence_frame_count = 0
             else:
-                # 音声フレーム検出
-                self.silence_frames = 0  # 無音カウンターをリセット
-                self.has_started_voice = True  # 音声開始を記録
-                logger.info(f"【音声フレーム検出】サイズ={len(audio_data)}bytes - 無音カウンターリセット")
+                # 無音検出
+                self.silence_frame_count += 1
                 
-                # Store audio frame for processing
-                self.asr_audio.append(audio_data)
-                self.asr_audio = self.asr_audio[-100:]  # Keep more frames for longer sentences
-                
-                logger.info(f"【WebSocket音声蓄積】フラグメント数: {len(self.asr_audio)}, 無音フレーム数: {self.silence_frames}")
+                # server2準拠: 音声あり → 無音 + 1秒経過で処理開始
+                if self.client_have_voice:
+                    silence_duration = current_time - self.last_voice_activity_time
+                    logger.info(f"【無音継続】{silence_duration:.0f}ms / {self.silence_threshold_ms}ms")
+                    
+                    if silence_duration >= self.silence_threshold_ms and len(self.asr_audio) > 5:
+                        logger.info(f"【無音検知完了】{silence_duration:.0f}ms無音 - 音声処理開始")
+                        await self._process_voice_stop()
 
         except Exception as e:
             logger.error(f"Error handling audio frame: {e}")
@@ -170,6 +179,41 @@ class AudioHandlerServer2:
         except Exception as e:
             logger.error(f"Error processing with ASR: {e}")
 
+    async def _detect_voice_with_rms(self, audio_data: bytes) -> bool:
+        """RMSベース音声検知 (server2 WebRTC VAD準拠)"""
+        try:
+            if not self.opus_decoder:
+                # Fallback: サイズベース判定
+                return len(audio_data) > 30
+                
+            # Opus → PCM変換
+            pcm_data = self.opus_decoder.decode(audio_data, 960)  # 60ms frame
+            if not pcm_data or len(pcm_data) < 4:
+                return False
+                
+            # RMS計算 (server2準拠)
+            import audioop
+            try:
+                rms_value = audioop.rms(pcm_data, 2)  # 16-bit samples
+                is_voice = rms_value >= self.rms_threshold
+                logger.info(f"[RMS_VAD] rms={rms_value} threshold={self.rms_threshold} voice={is_voice}")
+                return is_voice
+            except Exception as e:
+                logger.debug(f"RMS calculation failed: {e}")
+                # Fallback: numpy-based energy calculation
+                import numpy as np
+                pcm_int16 = np.frombuffer(pcm_data, dtype=np.int16)
+                if pcm_int16.size > 0:
+                    energy = np.mean(np.abs(pcm_int16))
+                    is_voice = energy >= 100  # Conservative threshold
+                    logger.info(f"[ENERGY_VAD] energy={energy:.1f} voice={is_voice}")
+                    return is_voice
+                return False
+                
+        except Exception as e:
+            logger.debug(f"Voice detection error: {e}")
+            return len(audio_data) > 20  # Safe fallback
+
     def _detect_voice_activity(self, audio_data: bytes) -> bool:
         """Detect voice activity using energy analysis (server2 style)"""
         try:
@@ -204,10 +248,11 @@ class AudioHandlerServer2:
             return len(audio_data) > 20  # Safe fallback
 
     def _reset_audio_state(self):
-        """Reset audio state (server2 style with silence detection reset)"""
+        """Reset audio state (server2 style with RMS VAD reset)"""
         self.asr_audio.clear()
         self.client_have_voice = False
         self.client_voice_stop = False
-        self.silence_frames = 0  # 無音カウンターリセット
-        self.has_started_voice = False  # 音声開始フラグリセット
-        logger.info("[AUDIO_TRACE] Audio state reset (無音検知システムもリセット)")
+        self.voice_frame_count = 0
+        self.silence_frame_count = 0
+        self.last_voice_activity_time = time.time() * 1000
+        logger.info("[AUDIO_TRACE] Audio state reset (RMS VADリセット)")
