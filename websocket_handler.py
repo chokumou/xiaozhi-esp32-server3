@@ -42,6 +42,7 @@ class ConnectionHandler:
         self.session_id = str(uuid.uuid4())
         self.audio_format = "opus"  # Default format (ESP32 sends Opus like server2)
         self.features = {}
+        self.close_after_chat = False  # Server2準拠: チャット後の接続制御
         
         # Audio buffering (server2 style)
         self.asr_audio = []  # List of Opus frames (server2 style)
@@ -419,6 +420,14 @@ class ConnectionHandler:
                     tts_stop_msg = {"type": "tts", "state": "stop", "session_id": self.session_id}
                     await self.websocket.send_str(json.dumps(tts_stop_msg))
                     logger.info(f"🟡XIAOZHI_TTS_STOP🟡 ※ここを送ってver2_TTS_STOP※ 📢 [TTS] Sent TTS stop message")
+                    
+                    # Server2準拠: TTS完了後の接続制御
+                    if self.close_after_chat:
+                        logger.info(f"🔴XIAOZHI_CLOSE_AFTER_CHAT🔴 Closing connection after chat completion for {self.device_id}")
+                        await self.websocket.close()
+                        return
+                    else:
+                        logger.info(f"🔵XIAOZHI_CONTINUE_CONNECTION🔵 Maintaining connection after TTS completion for {self.device_id}")
 
                 except Exception as send_error:
                     logger.error(f"❌ [WEBSOCKET] Audio send failed to {self.device_id}: {send_error}")
