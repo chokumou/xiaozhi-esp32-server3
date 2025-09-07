@@ -48,9 +48,6 @@ class ConnectionHandler:
         # Initialize server2-style audio handler
         self.audio_handler = AudioHandlerServer2(self)
         
-        # Start timeout check task
-        self.timeout_task = asyncio.create_task(self.timeout_checker())
-        
         # Welcome message compatible with ESP32
         self.welcome_msg = {
             "type": "hello",
@@ -167,54 +164,6 @@ class ConnectionHandler:
         if mode:
             logger.debug(f"Client listen mode: {mode}")
 
-    async def process_audio_binary(self, audio_data: bytes):
-        """Process binary audio data with VAD (Voice Activity Detection)"""
-        try:
-            import time
-            current_time = time.time()
-            
-            # Simple VAD: check if audio chunk is likely silence (very small size)
-            is_silence = len(audio_data) < 50  # Small chunks are likely silence/noise
-            logger.info(f"🔍 [VAD] Chunk size: {len(audio_data)} bytes, is_silence: {is_silence}")
-            
-            if is_silence:
-                # Silence detected - just count, don't store data
-                self.silence_count += 1
-                logger.info(f"🔇 [VAD] Silence chunk #{self.silence_count} ({len(audio_data)} bytes)")
-                
-                # If we have voice data and 1 second of silence (≈50 chunks), flush buffer
-                if self.has_voice_detected and self.silence_count >= 10:  # Reduced threshold
-                    if len(self.audio_buffer) > 3200:  # Minimum size for 0.1s ASR requirement
-                        logger.info(f"🎯 [VAD] Flushing audio buffer after silence: {len(self.audio_buffer)} bytes (~{len(self.audio_buffer)/32000:.2f}s)")
-                        await self.process_accumulated_audio()
-                    else:
-                        logger.info(f"⚠️ [VAD] Buffer too small for ASR (need 0.1s/3200 bytes), discarding: {len(self.audio_buffer)} bytes")
-                    
-                    # Reset state
-                    self.audio_buffer.clear()
-                    self.has_voice_detected = False
-                    self.silence_count = 0
-                    
-            else:
-                # Voice detected - store the data
-                self.audio_buffer.extend(audio_data)
-                self.has_voice_detected = True
-                self.silence_count = 0  # Reset silence counter
-                self.last_audio_time = current_time
-                
-                logger.info(f"🎤 [VAD] Voice chunk added: {len(audio_data)} bytes, buffer total: {len(self.audio_buffer)} bytes")
-                
-                # Force flush when buffer gets large enough for ASR (0.1+ seconds)
-                # 0.1 seconds = 16000Hz * 2 bytes * 0.1 = 3200 bytes minimum
-                if len(self.audio_buffer) > 6400:  # 0.2 seconds for safety (doubled from 3200)
-                    logger.info(f"🚀 [TEST] Force flushing large buffer: {len(self.audio_buffer)} bytes (~{len(self.audio_buffer)/32000:.2f}s)")
-                    await self.process_accumulated_audio()
-                    self.audio_buffer.clear()
-                    self.has_voice_detected = False
-                    self.silence_count = 0
-                
-        except Exception as e:
-            logger.error(f"Error processing audio from {self.device_id}: {e}")
 
     async def process_accumulated_audio(self):
         """Process accumulated voice audio data"""
@@ -315,31 +264,6 @@ class ConnectionHandler:
         except Exception as e:
             logger.error(f"❌ [AUDIO_ERROR] ===== Error processing accumulated audio from {self.device_id}: {e} =====")
 
-    async def timeout_checker(self):
-        """Background task to check for audio buffer timeout"""
-        try:
-            logger.info(f"🕒 [TIMEOUT] Background timeout checker started for {self.device_id}")
-            while not self.stop_event.is_set():
-                await asyncio.sleep(0.5)  # Check every 500ms
-                
-                if self.has_voice_detected and len(self.audio_buffer) > 1000:
-                    import time
-                    current_time = time.time()
-                    time_since_last_voice = current_time - self.last_audio_time
-                    logger.info(f"🔍 [TIMEOUT] Check: buffer={len(self.audio_buffer)}, time_since={time_since_last_voice:.1f}s")
-                    
-                    if time_since_last_voice > 2.0:  # Reduced to 2 seconds
-                        if len(self.audio_buffer) > 3200:  # Check minimum ASR length
-                            logger.info(f"⏰ [TIMEOUT] Flushing buffer: {time_since_last_voice:.1f}s since last voice, buffer: {len(self.audio_buffer)} bytes (~{len(self.audio_buffer)/32000:.2f}s)")
-                            await self.process_accumulated_audio()
-                        else:
-                            logger.info(f"⏰ [TIMEOUT] Buffer too small for ASR, discarding: {len(self.audio_buffer)} bytes")
-                        self.audio_buffer.clear()
-                        self.has_voice_detected = False
-                        self.silence_count = 0
-                        
-        except Exception as e:
-            logger.error(f"Error in timeout checker for {self.device_id}: {e}")
 
     async def process_text(self, text: str):
         """Process text input through LLM and generate response"""
