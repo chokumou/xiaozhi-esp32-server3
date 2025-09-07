@@ -34,7 +34,7 @@ class ConnectionHandler:
         self.client_is_speaking = False
         self.stop_event = asyncio.Event() # For graceful shutdown
         self.session_id = str(uuid.uuid4())
-        self.audio_format = "opus"  # Default format
+        self.audio_format = "pcm"  # Default format (ESP32 sends PCM, not Opus)
         self.features = {}
         
         # VAD (Voice Activity Detection) and audio buffering
@@ -222,6 +222,7 @@ class ConnectionHandler:
             logger.info(f"🔍 [ASR] Audio format: {self.audio_format}, buffer size: {len(self.audio_buffer)}")
             
             if self.audio_format == "opus":
+                logger.info(f"🔄 [WEBSOCKET] Processing as Opus format")
                 # Convert Opus to WAV using server2 method
                 try:
                     import wave
@@ -273,9 +274,29 @@ class ConnectionHandler:
                     audio_file.name = "audio.wav"
                     logger.info(f"⚠️ [WEBSOCKET] Fallback: sending silent WAV")
             else:
-                # Create file-like object for non-Opus data
-                audio_file = io.BytesIO(bytes(self.audio_buffer))
-                audio_file.name = "audio.wav"
+                # Process as PCM data (ESP32 default)
+                logger.info(f"🔄 [WEBSOCKET] Processing as PCM format")
+                try:
+                    import wave
+                    
+                    # Create WAV file from raw PCM data
+                    wav_buffer = io.BytesIO()
+                    with wave.open(wav_buffer, 'wb') as wav_file:
+                        wav_file.setnchannels(1)  # mono
+                        wav_file.setsampwidth(2)  # 16-bit
+                        wav_file.setframerate(16000)  # 16kHz
+                        wav_file.writeframes(bytes(self.audio_buffer))
+                    
+                    wav_buffer.seek(0)
+                    audio_file = wav_buffer
+                    audio_file.name = "audio.wav"
+                    logger.info(f"✅ [WEBSOCKET] Created WAV from PCM: {len(self.audio_buffer)} bytes")
+                    
+                except Exception as e:
+                    logger.error(f"❌ [WEBSOCKET] PCM to WAV conversion failed: {e}")
+                    # Fallback: raw data
+                    audio_file = io.BytesIO(bytes(self.audio_buffer))
+                    audio_file.name = "audio.wav"
             
             # Convert audio to text using ASR
             logger.info(f"🎤 [ASR_START] ===== Calling OpenAI Whisper API =====")
