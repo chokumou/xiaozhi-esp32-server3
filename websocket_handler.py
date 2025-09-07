@@ -435,7 +435,12 @@ class ConnectionHandler:
     async def run(self):
         """Main connection loop"""
         try:
+            logger.info(f"🚀 [WEBSOCKET_LOOP] Starting message loop for {self.device_id}")
+            msg_count = 0
             async for msg in self.websocket:
+                msg_count += 1
+                logger.info(f"📬 [WEBSOCKET_LOOP] Message {msg_count}: type={msg.type}, closed={self.websocket.closed}")
+                
                 if msg.type == web.WSMsgType.TEXT:
                     await self.handle_message(msg.data)
                 elif msg.type == web.WSMsgType.BINARY:
@@ -446,6 +451,10 @@ class ConnectionHandler:
                 elif msg.type == web.WSMsgType.CLOSE:
                     logger.warning(f"※ここを送ってver2_CLOSE※ ⚠️ [WEBSOCKET] CLOSE message received for {self.device_id} - breaking loop")
                     break
+                else:
+                    logger.warning(f"⚠️ [WEBSOCKET_LOOP] Unknown message type: {msg.type} for {self.device_id}")
+            
+            logger.warning(f"💀 [WEBSOCKET_LOOP] Loop ended naturally for {self.device_id} after {msg_count} messages, websocket.closed={self.websocket.closed}")
         except Exception as e:
             logger.error(f"❌ [WEBSOCKET] Unhandled error in connection handler for {self.device_id}: {e}")
         finally:
