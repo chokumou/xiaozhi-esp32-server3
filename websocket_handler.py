@@ -327,9 +327,9 @@ class ConnectionHandler:
             # Send STT message (server2 style)
             stt_message = {"type": "stt", "text": text, "session_id": self.session_id}
             await self.websocket.send_str(json.dumps(stt_message))
-            logger.info(f"📱 [STT] Sent user text to display: '{text}'")
+            logger.info(f"🟢XIAOZHI_STT_SENT🟢 📱 [STT] Sent user text to display: '{text}'")
         except Exception as e:
-            logger.error(f"Error sending STT message to {self.device_id}: {e}")
+            logger.error(f"🔴XIAOZHI_STT_ERROR🔴 Error sending STT message to {self.device_id}: {e}")
 
     async def send_audio_response(self, text: str):
         """Generate and send audio response"""
@@ -375,9 +375,9 @@ class ConnectionHandler:
                     "session_id": self.session_id
                 }
                 await self.websocket.send_str(json.dumps(sentence_msg))
-                logger.info(f"📱 [TTS_DISPLAY] Sent AI text to display: '{text}'")
+                logger.info(f"🟢XIAOZHI_TTS_DISPLAY_SENT🟢 📱 [TTS_DISPLAY] Sent AI text to display: '{text}'")
             except Exception as sentence_error:
-                logger.warning(f"⚠️ [TTS] Failed to send sentence_start: {sentence_error}")
+                logger.error(f"🔴XIAOZHI_TTS_DISPLAY_ERROR🔴 ⚠️ [TTS] Failed to send sentence_start: {sentence_error}")
                 return
             
             # Check if stop event was set during processing
