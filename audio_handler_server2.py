@@ -80,7 +80,6 @@ class AudioHandlerServer2:
                     
                     if silence_duration >= self.silence_threshold_ms and len(self.asr_audio) > 5 and not self.is_processing:
                         logger.info(f"【無音検知完了】{silence_duration:.0f}ms無音 - 音声処理開始")
-                        self.is_processing = True  # 重複処理防止
                         await self._process_voice_stop()
 
         except Exception as e:
@@ -89,10 +88,9 @@ class AudioHandlerServer2:
     async def _process_voice_stop(self):
         """Process accumulated audio when voice stops (server2 style)"""
         try:
-            # 重複処理防止の追加チェック
-            if self.is_processing:
-                logger.warning(f"⚠️ [PROCESSING] Already processing audio, skipping duplicate request")
-                return
+            # Set processing flag at the start
+            self.is_processing = True
+            logger.info(f"🔄 [PROCESSING] Starting voice processing")
                 
             # Check minimum requirement (調整: 長い発話を確実に処理)
             estimated_pcm_bytes = len(self.asr_audio) * 1920  # Each Opus frame ~1920 PCM bytes
