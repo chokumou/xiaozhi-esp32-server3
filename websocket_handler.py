@@ -202,6 +202,14 @@ class ConnectionHandler:
                 
                 logger.info(f"🎤 [VAD] Voice chunk added: {len(audio_data)} bytes, buffer total: {len(self.audio_buffer)} bytes")
                 
+                # Force flush when buffer gets large (for testing)
+                if len(self.audio_buffer) > 5000:  # 5KB threshold for testing
+                    logger.info(f"🚀 [TEST] Force flushing large buffer: {len(self.audio_buffer)} bytes")
+                    await self.process_accumulated_audio()
+                    self.audio_buffer.clear()
+                    self.has_voice_detected = False
+                    self.silence_count = 0
+                
         except Exception as e:
             logger.error(f"Error processing audio from {self.device_id}: {e}")
 
