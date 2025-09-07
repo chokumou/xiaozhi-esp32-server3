@@ -326,15 +326,15 @@ class ConnectionHandler:
                     time_since_last_voice = current_time - self.last_audio_time
                     logger.info(f"🔍 [TIMEOUT] Check: buffer={len(self.audio_buffer)}, time_since={time_since_last_voice:.1f}s")
                     
-                               if time_since_last_voice > 2.0:  # Reduced to 2 seconds
-                                   if len(self.audio_buffer) > 3200:  # Check minimum ASR length
-                                       logger.info(f"⏰ [TIMEOUT] Flushing buffer: {time_since_last_voice:.1f}s since last voice, buffer: {len(self.audio_buffer)} bytes (~{len(self.audio_buffer)/32000:.2f}s)")
-                                       await self.process_accumulated_audio()
-                                   else:
-                                       logger.info(f"⏰ [TIMEOUT] Buffer too small for ASR, discarding: {len(self.audio_buffer)} bytes")
-                                   self.audio_buffer.clear()
-                                   self.has_voice_detected = False
-                                   self.silence_count = 0
+                    if time_since_last_voice > 2.0:  # Reduced to 2 seconds
+                        if len(self.audio_buffer) > 3200:  # Check minimum ASR length
+                            logger.info(f"⏰ [TIMEOUT] Flushing buffer: {time_since_last_voice:.1f}s since last voice, buffer: {len(self.audio_buffer)} bytes (~{len(self.audio_buffer)/32000:.2f}s)")
+                            await self.process_accumulated_audio()
+                        else:
+                            logger.info(f"⏰ [TIMEOUT] Buffer too small for ASR, discarding: {len(self.audio_buffer)} bytes")
+                        self.audio_buffer.clear()
+                        self.has_voice_detected = False
+                        self.silence_count = 0
                         
         except Exception as e:
             logger.error(f"Error in timeout checker for {self.device_id}: {e}")
