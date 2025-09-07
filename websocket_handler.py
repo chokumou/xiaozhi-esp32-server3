@@ -119,10 +119,14 @@ class ConnectionHandler:
                 # Protocol v1: raw audio data
                 audio_data = message
 
+            logger.info(f"🚀 [DEBUG] Calling process_audio_binary with {len(audio_data)} bytes")
             await self.process_audio_binary(audio_data)
+            logger.info(f"✅ [DEBUG] process_audio_binary completed successfully")
             
         except Exception as e:
-            logger.error(f"Error handling binary message from {self.device_id}: {e}")
+            logger.error(f"❌ [ERROR] Error handling binary message from {self.device_id}: {e}")
+            import traceback
+            logger.error(f"❌ [ERROR] Traceback: {traceback.format_exc()}")
 
     async def handle_hello_message(self, msg_json: Dict[str, Any]):
         """Handle ESP32 hello message"""
