@@ -7,7 +7,7 @@ logger = setup_logger()
 class ASRService:
     def __init__(self):
         self.client = openai.OpenAI(api_key=Config.OPENAI_API_KEY)
-        self.model = Config.OPENAI_WHISPER_MODEL
+        self.model = Config.OPENAI_ASR_MODEL
         logger.info(f"ASRService initialized with model: {self.model}")
 
     async def transcribe(self, audio_input) -> str:
