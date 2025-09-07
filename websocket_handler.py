@@ -297,15 +297,18 @@ class ConnectionHandler:
             # Generate LLM response with keepalive during processing
             async def llm_keepalive():
                 try:
-                    for i in range(5):  # 最大2.5秒間keepalive
-                        await asyncio.sleep(0.5)
+                    # 即座にpingを開始（待機なし）
+                    for i in range(10):  # 最大2秒間keepalive
                         if not self.websocket.closed:
                             await self.websocket.ping()
-                            logger.info(f"📡 [LLM_KEEPALIVE] Ping during LLM processing {i+1}/5")
+                            logger.info(f"📡 [LLM_KEEPALIVE] Ping during LLM processing {i+1}/10")
                         else:
+                            logger.warning(f"⚠️ [LLM_KEEPALIVE] WebSocket closed during keepalive {i+1}")
                             break
+                        await asyncio.sleep(0.2)  # 0.2秒間隔で高頻度ping
                 except Exception as e:
                     logger.warning(f"⚠️ [LLM_KEEPALIVE] Failed: {e}")
+                logger.info(f"🏁 [DEBUG] LLM keepalive loop finished")
             
             # Start keepalive during LLM processing
             logger.info(f"🚀 [DEBUG] Starting LLM keepalive task")
