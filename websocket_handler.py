@@ -471,6 +471,10 @@ class ConnectionHandler:
                     await self.websocket.send_bytes(message)
                     logger.info(f"🎵 [AUDIO_SENT] ===== Sent audio response to {self.device_id} ({len(audio_bytes)} bytes) =====")
                     
+                    # Server2準拠: 音声送信後に55ms待機（フロー制御）
+                    await asyncio.sleep(0.055)
+                    logger.info(f"⏳ [FLOW_CONTROL] Applied 55ms delay after audio send (server2 style)")
+                    
                     # Send TTS stop message (server2 style)
                     try:
                         tts_stop_msg = {"type": "tts", "state": "stop", "session_id": self.session_id}
