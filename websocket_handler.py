@@ -220,8 +220,15 @@ class ConnectionHandler:
             
             # Create file-like object for OpenAI Whisper API
             audio_file = io.BytesIO(bytes(self.audio_buffer))
-            # OpenAI Whisper doesn't support .opus, but supports .ogg (which can contain Opus)
-            audio_file.name = "audio.ogg" if self.audio_format == "opus" else "audio.wav"
+            # Debug: Check actual audio format
+            logger.info(f"🔍 [ASR] Audio format: {self.audio_format}, buffer size: {len(self.audio_buffer)}")
+            
+            # Use appropriate file extension based on detected format
+            if self.audio_format == "opus":
+                # For Opus, we need to either convert or use a different approach
+                audio_file.name = "audio.ogg"  # Try OGG container
+            else:
+                audio_file.name = "audio.wav"  # Default to WAV
             
             # Convert audio to text using ASR
             logger.info(f"🔄 [ASR] Calling OpenAI Whisper API...")

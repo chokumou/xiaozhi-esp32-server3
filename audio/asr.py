@@ -15,8 +15,10 @@ class ASRService:
             # Handle both bytes and file-like objects
             if isinstance(audio_input, bytes):
                 import io
+                # For now, skip direct conversion and use a workaround
+                # Save as binary file and let OpenAI try to decode
                 audio_file = io.BytesIO(audio_input)
-                audio_file.name = "audio.ogg"  # Opus in OGG container for OpenAI Whisper
+                audio_file.name = "audio.wav"  # Try as WAV (most compatible)
             else:
                 audio_file = audio_input
                 
