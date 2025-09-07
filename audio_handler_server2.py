@@ -21,6 +21,12 @@ class AudioHandlerServer2:
         self.client_voice_stop = False
         self.last_activity_time = time.time() * 1000
         
+        # 1秒無音検知システム (ドキュメント準拠)
+        self.silence_frames = 0  # 無音フレームカウンター
+        self.silence_threshold = 8  # 8フレーム = 約1秒（120ms × 8 = 960ms）
+        self.silence_size_threshold = 5  # 5バイト以下を無音フレームと判定
+        self.has_started_voice = False  # 音声開始フラグ
+        
         # Initialize Opus decoder
         try:
             import opuslib_next
@@ -31,7 +37,7 @@ class AudioHandlerServer2:
             self.opus_decoder = None
 
     async def handle_audio_frame(self, audio_data: bytes):
-        """Handle single audio frame (server2 style)"""
+        """Handle single audio frame with 1-second silence detection (ドキュメント準拠)"""
         try:
             # Drop tiny DTX packets (server2 style)
             dtx_threshold = 3
@@ -39,31 +45,29 @@ class AudioHandlerServer2:
                 logger.info(f"[AUDIO_TRACE] DROP_DTX pkt={len(audio_data)}")
                 return
 
-            # Improved VAD (server2 style with energy detection)
-            have_voice = self._detect_voice_activity(audio_data)
-            
-            # Update activity time
-            self.last_activity_time = time.time() * 1000
-            
-            # Store audio frame (server2 style)
-            self.asr_audio.append(audio_data)
-            self.asr_audio = self.asr_audio[-50:]  # Keep more frames for better quality
-            
-            logger.info(f"[AUDIO_TRACE] Frame: {len(audio_data)}B, voice={have_voice}, total_frames={len(self.asr_audio)}")
-            
-            # Voice state management (server2 style)
-            if have_voice:
-                if not self.client_have_voice:
-                    logger.info("[AUDIO_TRACE] Voice detected - starting accumulation")
-                self.client_have_voice = True
+            # 1秒無音検知システム (ドキュメント準拠)
+            if len(audio_data) <= self.silence_size_threshold:
+                # 無音フレーム検出
+                self.silence_frames += 1
+                logger.info(f"【無音フレーム検出】サイズ={len(audio_data)}bytes, 無音フレーム数={self.silence_frames}/{self.silence_threshold}")
+                
+                # 無音閾値に達したら音声処理開始 (but only if we have voice data)
+                if self.silence_frames >= self.silence_threshold and self.has_started_voice and len(self.asr_audio) > 0:
+                    logger.info(f"【無音検知完了】約1秒の無音を検知 - 音声処理開始")
+                    await self._process_voice_stop()
+                    
+                return  # 無音フレームは蓄積しない
             else:
-                if self.client_have_voice:
-                    logger.info("[AUDIO_TRACE] Voice ended - trigger processing")
-                    self.client_voice_stop = True
-
-            # Process accumulated audio when voice stops (server2 style)
-            if self.client_voice_stop and len(self.asr_audio) > 0:
-                await self._process_voice_stop()
+                # 音声フレーム検出
+                self.silence_frames = 0  # 無音カウンターをリセット
+                self.has_started_voice = True  # 音声開始を記録
+                logger.info(f"【音声フレーム検出】サイズ={len(audio_data)}bytes - 無音カウンターリセット")
+                
+                # Store audio frame for processing
+                self.asr_audio.append(audio_data)
+                self.asr_audio = self.asr_audio[-100:]  # Keep more frames for longer sentences
+                
+                logger.info(f"【WebSocket音声蓄積】フラグメント数: {len(self.asr_audio)}, 無音フレーム数: {self.silence_frames}")
 
         except Exception as e:
             logger.error(f"Error handling audio frame: {e}")
@@ -200,8 +204,10 @@ class AudioHandlerServer2:
             return len(audio_data) > 20  # Safe fallback
 
     def _reset_audio_state(self):
-        """Reset audio state (server2 style)"""
+        """Reset audio state (server2 style with silence detection reset)"""
         self.asr_audio.clear()
         self.client_have_voice = False
         self.client_voice_stop = False
-        logger.info("[AUDIO_TRACE] Audio state reset")
+        self.silence_frames = 0  # 無音カウンターリセット
+        self.has_started_voice = False  # 音声開始フラグリセット
+        logger.info("[AUDIO_TRACE] Audio state reset (無音検知システムもリセット)")
