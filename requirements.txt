@@ -7,3 +7,4 @@ loguru
 PyJWT
 aiohttp
 opuslib-next
+numpy

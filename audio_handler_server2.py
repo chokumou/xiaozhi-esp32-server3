@@ -39,8 +39,8 @@ class AudioHandlerServer2:
                 logger.info(f"[AUDIO_TRACE] DROP_DTX pkt={len(audio_data)}")
                 return
 
-            # Simple VAD based on packet size (server2 approximation)
-            have_voice = len(audio_data) > 50  # Larger packets indicate voice
+            # Improved VAD (server2 style with energy detection)
+            have_voice = self._detect_voice_activity(audio_data)
             
             # Update activity time
             self.last_activity_time = time.time() * 1000
@@ -71,9 +71,9 @@ class AudioHandlerServer2:
     async def _process_voice_stop(self):
         """Process accumulated audio when voice stops (server2 style)"""
         try:
-            # Check minimum requirement (server2 style)
+            # Check minimum requirement (server2 railway config)
             estimated_pcm_bytes = len(self.asr_audio) * 1920  # Each Opus frame ~1920 PCM bytes
-            min_pcm_bytes = 12000  # server2 default
+            min_pcm_bytes = 24000  # server2 railway config: asr_min_pcm_bytes: 24000
             
             logger.info(f"[AUDIO_TRACE] Voice stop: {len(self.asr_audio)} frames, ~{estimated_pcm_bytes} PCM bytes")
             
@@ -165,6 +165,39 @@ class AudioHandlerServer2:
 
         except Exception as e:
             logger.error(f"Error processing with ASR: {e}")
+
+    def _detect_voice_activity(self, audio_data: bytes) -> bool:
+        """Detect voice activity using energy analysis (server2 style)"""
+        try:
+            # Size-based initial filter (server2 style)
+            if len(audio_data) <= 10:  # Very small packets are likely DTX/silence
+                return False
+            
+            # Decode to PCM for energy analysis (if possible)
+            if self.opus_decoder and len(audio_data) > 10:
+                try:
+                    pcm_data = self.opus_decoder.decode(audio_data, 960)  # 60ms frame
+                    if pcm_data and len(pcm_data) > 0:
+                        # Calculate energy (RMS-like)
+                        import numpy as np
+                        pcm_int16 = np.frombuffer(pcm_data, dtype=np.int16)
+                        if pcm_int16.size > 0:
+                            energy = np.mean(np.abs(pcm_int16))
+                            # Energy threshold (server2 style: ~220)
+                            voice_detected = energy >= 100  # Conservative threshold
+                            logger.info(f"[VAD_ENERGY] pkt={len(audio_data)}B, energy={energy:.1f}, voice={voice_detected}")
+                            return voice_detected
+                except Exception as e:
+                    logger.debug(f"[VAD] Opus decode failed for energy analysis: {e}")
+            
+            # Fallback: size-based detection (server2 backup method)
+            voice_detected = len(audio_data) > 30  # Reasonable threshold for voice packets
+            logger.info(f"[VAD_SIZE] pkt={len(audio_data)}B, voice={voice_detected}")
+            return voice_detected
+            
+        except Exception as e:
+            logger.error(f"VAD detection error: {e}")
+            return len(audio_data) > 20  # Safe fallback
 
     def _reset_audio_state(self):
         """Reset audio state (server2 style)"""
