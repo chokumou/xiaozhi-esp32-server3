@@ -397,9 +397,13 @@ class ConnectionHandler:
                     logger.warning(f"⚠️ [KEEPALIVE] Failed: {e}")
                 logger.info(f"🏁 [DEBUG] Aggressive keepalive task finished")
             
-            # Start aggressive keepalive and TTS generation in parallel
-            logger.info(f"🚀 [DEBUG] Starting keepalive task and TTS generation")
+            # Start aggressive keepalive BEFORE TTS generation
+            logger.info(f"🚀 [DEBUG] Starting keepalive task BEFORE TTS generation")
             keepalive_task = asyncio.create_task(aggressive_keepalive())
+            
+            # Wait a moment for keepalive to establish
+            await asyncio.sleep(0.1)
+            
             try:
                 logger.info(f"⏳ [DEBUG] TTS generation starting...")
                 # TTS generation with shorter timeout
@@ -417,6 +421,10 @@ class ConnectionHandler:
             finally:
                 logger.info(f"🛑 [DEBUG] Cancelling keepalive task")
                 keepalive_task.cancel()  # Stop keepalive after TTS completion
+                try:
+                    await keepalive_task
+                except asyncio.CancelledError:
+                    pass
             logger.info(f"🎶 [TTS_RESULT] ===== TTS generated: {len(audio_bytes) if audio_bytes else 0} bytes =====")
             
             # Final check before sending
@@ -427,10 +435,14 @@ class ConnectionHandler:
                 # Server2準拠: 直接音声バイト送信（ヘッダーなし）
                 message = audio_bytes
                     
-                # Final check before sending (server2 style)
+                # Final check before sending (server2 style with detailed status)
                 if self.websocket.closed:
                     logger.warning(f"⚠️ [WEBSOCKET] Connection closed during send to {self.device_id}")
                     return
+                if getattr(self.websocket, '_writer', None) is None:
+                    logger.warning(f"⚠️ [WEBSOCKET] Writer is None during send to {self.device_id}")
+                    return
+                logger.info(f"✅ [DEBUG] WebSocket connection verified - proceeding with audio send")
                 
                 # Send with error handling (server2 style)
                 try:
