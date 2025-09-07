@@ -430,8 +430,18 @@ class ConnectionHandler:
             except Exception as status_error:
                 logger.warning(f"⚠️ [TTS] Failed to send processing status: {status_error}")
             
+            # Check if stop event was set during processing
+            if self.stop_event.is_set():
+                logger.warning(f"⚠️ [TTS] Stop event detected during processing, aborting TTS for {self.device_id}")
+                return
+                
             audio_bytes = await self.tts_service.generate_speech(text)
             logger.info(f"🎶 [TTS_RESULT] ===== TTS generated: {len(audio_bytes) if audio_bytes else 0} bytes =====")
+            
+            # Final check before sending
+            if self.stop_event.is_set():
+                logger.warning(f"⚠️ [TTS] Stop event detected after TTS generation, aborting send for {self.device_id}")
+                return
             if audio_bytes:
                 # Send binary audio data based on protocol version
                 if self.protocol_version == 2:
@@ -491,5 +501,15 @@ class ConnectionHandler:
         except Exception as e:
             logger.error(f"Unhandled error in connection handler for {self.device_id}: {e}")
         finally:
+            # Wait for any ongoing TTS processing to complete before stopping
+            if self.client_is_speaking:
+                logger.info(f"⏳ [CONNECTION] Waiting for TTS to complete before stopping...")
+                # Wait a bit for TTS to finish
+                for i in range(20):  # Wait up to 10 seconds (0.5s * 20)
+                    if not self.client_is_speaking:
+                        break
+                    await asyncio.sleep(0.5)
+                logger.info(f"⏳ [CONNECTION] TTS wait completed, client_is_speaking: {self.client_is_speaking}")
+            
             self.stop_event.set()
             logger.info(f"Connection handler stopped for {self.device_id}")
