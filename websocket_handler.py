@@ -379,30 +379,43 @@ class ConnectionHandler:
             
             # 接続維持のために頻繁にkeepalive送信
             async def aggressive_keepalive():
+                logger.info(f"🔄 [DEBUG] Aggressive keepalive task started")
                 try:
                     # TTS生成中は0.5秒間隔でping送信（Railway timeout対策）
                     for i in range(10):  # 最大5秒間keepalive
+                        logger.info(f"⏰ [DEBUG] Keepalive loop {i+1}/10 - sleeping 0.5s")
                         await asyncio.sleep(0.5)
                         if not self.websocket.closed:
                             await self.websocket.ping()
                             logger.info(f"📡 [KEEPALIVE] Aggressive ping {i+1}/10")
                         else:
+                            logger.warning(f"⚠️ [DEBUG] WebSocket closed during keepalive {i+1}")
                             break
+                except asyncio.CancelledError:
+                    logger.info(f"🛑 [DEBUG] Keepalive task cancelled")
                 except Exception as e:
                     logger.warning(f"⚠️ [KEEPALIVE] Failed: {e}")
+                logger.info(f"🏁 [DEBUG] Aggressive keepalive task finished")
             
             # Start aggressive keepalive and TTS generation in parallel
+            logger.info(f"🚀 [DEBUG] Starting keepalive task and TTS generation")
             keepalive_task = asyncio.create_task(aggressive_keepalive())
             try:
+                logger.info(f"⏳ [DEBUG] TTS generation starting...")
                 # TTS generation with shorter timeout
                 audio_bytes = await asyncio.wait_for(
                     self.tts_service.generate_speech(text), 
                     timeout=4.0  # 4 second timeout (shorter)
                 )
+                logger.info(f"✅ [DEBUG] TTS generation completed")
             except asyncio.TimeoutError:
                 logger.error(f"❌ [TTS] Generation timeout after 4 seconds for {self.device_id}")
                 audio_bytes = None
+            except Exception as e:
+                logger.error(f"❌ [TTS] Generation error: {e}")
+                audio_bytes = None
             finally:
+                logger.info(f"🛑 [DEBUG] Cancelling keepalive task")
                 keepalive_task.cancel()  # Stop keepalive after TTS completion
             logger.info(f"🎶 [TTS_RESULT] ===== TTS generated: {len(audio_bytes) if audio_bytes else 0} bytes =====")
             
