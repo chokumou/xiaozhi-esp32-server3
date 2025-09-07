@@ -428,9 +428,9 @@ class ConnectionHandler:
             logger.error(f"Error sending audio response to {self.device_id}: {e}")
         finally:
             self.client_is_speaking = False
-            # TTS完了後は音声検知再開
-            if hasattr(self, 'audio_handler'):
-                self.audio_handler.tts_in_progress = False
+            # TTS完了後は音声検知を停止状態のまま（次の有音で自動再開）
+            # if hasattr(self, 'audio_handler'):
+            #     self.audio_handler.tts_in_progress = False  # 削除：即座に再開しない
 
     async def run(self):
         """Main connection loop"""

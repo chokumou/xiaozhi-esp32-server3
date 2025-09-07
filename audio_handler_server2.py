@@ -68,6 +68,11 @@ class AudioHandlerServer2:
             logger.info(f"[AUDIO_TRACE] Frame: {len(audio_data)}B, RMS_voice={is_voice}, frames={len(self.asr_audio)}")
             
             if is_voice:
+                # 音声検出時にTTS停止フラグもリセット（次のサイクル開始）
+                if self.tts_in_progress:
+                    logger.info("【TTS後音声検知】次のサイクル開始 - 音声検知再開")
+                    self.tts_in_progress = False
+                
                 # 音声検出
                 if not self.client_have_voice:
                     logger.info("【音声開始検出】音声蓄積開始 - 無音検知タイマー開始")
