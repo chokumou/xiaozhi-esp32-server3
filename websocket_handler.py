@@ -46,6 +46,9 @@ class ConnectionHandler:
         self.silence_threshold = 1.0  # 1 second of silence to flush
         self.min_audio_chunks_for_processing = 3  # Minimum voice chunks to process
         
+        # Start timeout check task
+        self.timeout_task = asyncio.create_task(self.timeout_checker())
+        
         # Welcome message compatible with ESP32
         self.welcome_msg = {
             "type": "hello",
@@ -199,16 +202,6 @@ class ConnectionHandler:
                 
                 logger.info(f"🎤 [VAD] Voice chunk added: {len(audio_data)} bytes, buffer total: {len(self.audio_buffer)} bytes")
                 
-            # Also check for timeout-based flush (3 seconds without new voice data)
-            if self.has_voice_detected and len(self.audio_buffer) > 1000:
-                time_since_last_voice = current_time - self.last_audio_time
-                if time_since_last_voice > 3.0:  # 3 seconds timeout
-                    logger.info(f"⏰ [VAD] Timeout flush: {time_since_last_voice:.1f}s since last voice, buffer: {len(self.audio_buffer)} bytes")
-                    await self.process_accumulated_audio()
-                    self.audio_buffer.clear()
-                    self.has_voice_detected = False
-                    self.silence_count = 0
-                
         except Exception as e:
             logger.error(f"Error processing audio from {self.device_id}: {e}")
 
@@ -234,6 +227,27 @@ class ConnectionHandler:
                 
         except Exception as e:
             logger.error(f"Error processing accumulated audio from {self.device_id}: {e}")
+
+    async def timeout_checker(self):
+        """Background task to check for audio buffer timeout"""
+        try:
+            while not self.stop_event.is_set():
+                await asyncio.sleep(0.5)  # Check every 500ms
+                
+                if self.has_voice_detected and len(self.audio_buffer) > 1000:
+                    import time
+                    current_time = time.time()
+                    time_since_last_voice = current_time - self.last_audio_time
+                    
+                    if time_since_last_voice > 3.0:  # 3 seconds timeout
+                        logger.info(f"⏰ [TIMEOUT] Flushing buffer: {time_since_last_voice:.1f}s since last voice, buffer: {len(self.audio_buffer)} bytes")
+                        await self.process_accumulated_audio()
+                        self.audio_buffer.clear()
+                        self.has_voice_detected = False
+                        self.silence_count = 0
+                        
+        except Exception as e:
+            logger.error(f"Error in timeout checker for {self.device_id}: {e}")
 
     async def process_text(self, text: str):
         """Process text input through LLM and generate response"""
