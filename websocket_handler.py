@@ -218,17 +218,43 @@ class ConnectionHandler:
         try:
             logger.info(f"📦 [ASR] Processing accumulated audio: {len(self.audio_buffer)} bytes")
             
-            # Create file-like object for OpenAI Whisper API
-            audio_file = io.BytesIO(bytes(self.audio_buffer))
-            # Debug: Check actual audio format
+            # Convert Opus to WAV using server2 method
             logger.info(f"🔍 [ASR] Audio format: {self.audio_format}, buffer size: {len(self.audio_buffer)}")
             
-            # Use appropriate file extension based on detected format
             if self.audio_format == "opus":
-                # For Opus, we need to either convert or use a different approach
-                audio_file.name = "audio.ogg"  # Try OGG container
+                # Convert Opus to WAV before sending to ASR
+                try:
+                    import wave
+                    import opuslib
+                    
+                    logger.info(f"🔄 [WEBSOCKET] Converting Opus buffer to WAV")
+                    
+                    # Decode Opus to PCM
+                    decoder = opuslib.Decoder(16000, 1)  # 16kHz, mono
+                    pcm_data = decoder.decode(bytes(self.audio_buffer), 960)  # 60ms frame
+                    
+                    # Create WAV file from PCM
+                    wav_buffer = io.BytesIO()
+                    with wave.open(wav_buffer, 'wb') as wav_file:
+                        wav_file.setnchannels(1)  # mono
+                        wav_file.setsampwidth(2)  # 16-bit
+                        wav_file.setframerate(16000)  # 16kHz
+                        wav_file.writeframes(pcm_data)
+                    
+                    wav_buffer.seek(0)
+                    audio_file = wav_buffer
+                    audio_file.name = "audio.wav"
+                    logger.info(f"🎉 [WEBSOCKET] Converted Opus to WAV: {len(self.audio_buffer)} -> {len(pcm_data)} bytes PCM")
+                    
+                except Exception as e:
+                    logger.error(f"❌ [WEBSOCKET] Opus conversion failed: {e}")
+                    # Fallback: raw data
+                    audio_file = io.BytesIO(bytes(self.audio_buffer))
+                    audio_file.name = "audio.wav"
             else:
-                audio_file.name = "audio.wav"  # Default to WAV
+                # Create file-like object for non-Opus data
+                audio_file = io.BytesIO(bytes(self.audio_buffer))
+                audio_file.name = "audio.wav"
             
             # Convert audio to text using ASR
             logger.info(f"🔄 [ASR] Calling OpenAI Whisper API...")

@@ -15,39 +15,13 @@ class ASRService:
             # Handle both bytes and file-like objects
             if isinstance(audio_input, bytes):
                 import io
-                import wave
-                import opuslib
-                
-                # Convert Opus to PCM using opuslib (server2 method)
-                try:
-                    logger.info(f"🔄 [OPUS] Converting {len(audio_input)} bytes of Opus to PCM")
-                    
-                    # Decode Opus to PCM
-                    decoder = opuslib.Decoder(16000, 1)  # 16kHz, mono
-                    pcm_data = decoder.decode(audio_input, 960)  # 60ms frame
-                    
-                    # Create WAV file from PCM
-                    wav_buffer = io.BytesIO()
-                    with wave.open(wav_buffer, 'wb') as wav_file:
-                        wav_file.setnchannels(1)  # mono
-                        wav_file.setsampwidth(2)  # 16-bit
-                        wav_file.setframerate(16000)  # 16kHz
-                        wav_file.writeframes(pcm_data)
-                    
-                    wav_buffer.seek(0)
-                    audio_file = wav_buffer
-                    audio_file.name = "audio.wav"
-                    logger.info(f"🎉 [OPUS] Successfully converted Opus to WAV: {len(audio_input)} -> {len(pcm_data)} bytes PCM")
-                    
-                except Exception as convert_error:
-                    logger.error(f"❌ [OPUS] Conversion failed: {convert_error}")
-                    logger.error(f"❌ [OPUS] Error type: {type(convert_error).__name__}")
-                    # Fallback: try raw data as WAV
-                    logger.info(f"⚠️ [OPUS] Fallback: using raw data as WAV")
-                    audio_file = io.BytesIO(audio_input)
-                    audio_file.name = "audio.wav"
+                # Assume bytes are already converted WAV data
+                audio_file = io.BytesIO(audio_input)
+                audio_file.name = "audio.wav"
+                logger.info(f"📁 [ASR] Processing {len(audio_input)} bytes as WAV file")
             else:
                 audio_file = audio_input
+                logger.info(f"📁 [ASR] Processing file-like object: {getattr(audio_file, 'name', 'unknown')}")
                 
             # Skip very small audio data (likely silence or noise)
             if hasattr(audio_file, 'getvalue'):
