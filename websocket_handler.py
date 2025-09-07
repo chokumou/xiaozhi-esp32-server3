@@ -294,36 +294,8 @@ class ConnectionHandler:
                     llm_messages.insert(0, {"role": "system", "content": f"ユーザーの記憶: {retrieved_memory}"})
                     logger.info(f"Retrieved memory for LLM: {retrieved_memory[:50]}...")
 
-            # Generate LLM response with keepalive during processing
-            async def llm_keepalive():
-                try:
-                    # 即座にpingを開始（待機なし）
-                    for i in range(10):  # 最大2秒間keepalive
-                        if not self.websocket.closed:
-                            await self.websocket.ping()
-                            logger.info(f"📡 [LLM_KEEPALIVE] Ping during LLM processing {i+1}/10")
-                        else:
-                            logger.warning(f"⚠️ [LLM_KEEPALIVE] WebSocket closed during keepalive {i+1}")
-                            break
-                        await asyncio.sleep(0.2)  # 0.2秒間隔で高頻度ping
-                except Exception as e:
-                    logger.warning(f"⚠️ [LLM_KEEPALIVE] Failed: {e}")
-                logger.info(f"🏁 [DEBUG] LLM keepalive loop finished")
-            
-            # Start keepalive during LLM processing
-            logger.info(f"🚀 [DEBUG] Starting LLM keepalive task")
-            llm_keepalive_task = asyncio.create_task(llm_keepalive())
-            try:
-                logger.info(f"⏳ [DEBUG] LLM processing starting...")
-                llm_response = await self.llm_service.chat_completion(llm_messages)
-                logger.info(f"✅ [DEBUG] LLM processing completed")
-            finally:
-                logger.info(f"🛑 [DEBUG] Cancelling LLM keepalive task")
-                llm_keepalive_task.cancel()
-                try:
-                    await llm_keepalive_task
-                except asyncio.CancelledError:
-                    logger.info(f"🏁 [DEBUG] LLM keepalive task cancelled successfully")
+            # Generate LLM response (server2 style - no extra keepalive)
+            llm_response = await self.llm_service.chat_completion(llm_messages)
             
             if llm_response and llm_response.strip():
                 logger.info(f"🤖 [LLM_RESULT] ===== LLM response for {self.device_id}: '{llm_response}' =====")
