@@ -178,7 +178,7 @@ class ConnectionHandler:
                 logger.info(f"🔇 [VAD] Silence chunk #{self.silence_count} ({len(audio_data)} bytes)")
                 
                 # If we have voice data and 1 second of silence (≈50 chunks), flush buffer
-                if self.has_voice_detected and self.silence_count >= 50:
+                if self.has_voice_detected and self.silence_count >= 10:  # Reduced threshold
                     if len(self.audio_buffer) > 1000:  # Minimum size for processing
                         logger.info(f"🎯 [VAD] Flushing audio buffer after silence: {len(self.audio_buffer)} bytes")
                         await self.process_accumulated_audio()
@@ -198,6 +198,16 @@ class ConnectionHandler:
                 self.last_audio_time = current_time
                 
                 logger.info(f"🎤 [VAD] Voice chunk added: {len(audio_data)} bytes, buffer total: {len(self.audio_buffer)} bytes")
+                
+            # Also check for timeout-based flush (3 seconds without new voice data)
+            if self.has_voice_detected and len(self.audio_buffer) > 1000:
+                time_since_last_voice = current_time - self.last_audio_time
+                if time_since_last_voice > 3.0:  # 3 seconds timeout
+                    logger.info(f"⏰ [VAD] Timeout flush: {time_since_last_voice:.1f}s since last voice, buffer: {len(self.audio_buffer)} bytes")
+                    await self.process_accumulated_audio()
+                    self.audio_buffer.clear()
+                    self.has_voice_detected = False
+                    self.silence_count = 0
                 
         except Exception as e:
             logger.error(f"Error processing audio from {self.device_id}: {e}")
