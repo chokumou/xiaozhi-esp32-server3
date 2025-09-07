@@ -4,6 +4,7 @@ import struct
 import uuid
 import io
 import threading
+import time
 from typing import Dict, Any, Optional
 from collections import deque
 from aiohttp import web
@@ -444,10 +445,11 @@ class ConnectionHandler:
             #     self.audio_handler.tts_in_progress = False  # 削除：即座に再開しない
 
     async def run(self):
-        """Main connection loop - Server2 style"""
+        """Main connection loop - Server2 style with audio sync"""
         try:
             logger.info(f"🟢XIAOZHI_LOOP_START🟢 🚀 [WEBSOCKET_LOOP] Starting message loop for {self.device_id}")
             msg_count = 0
+            connection_ended = False
             
             # Server2準拠: シンプルなWebSocketループ
             try:
@@ -464,14 +466,26 @@ class ConnectionHandler:
                         await self.handle_message(msg.data)
                     elif msg.type == web.WSMsgType.CLOSE:
                         logger.warning(f"🟣XIAOZHI_ESP32_CLOSE🟣 ※ここを送ってver2_CLOSE※ ⚠️ [WEBSOCKET] CLOSE message received for {self.device_id}")
+                        connection_ended = True
                         break
                     elif msg.type == web.WSMsgType.ERROR:
                         logger.error(f"🔥XIAOZHI_ERROR🔥 ❌ [WEBSOCKET] ERROR received for {self.device_id}: {self.websocket.exception()}")
+                        connection_ended = True
                         break
                     
             except Exception as loop_error:
                 logger.error(f"🔥XIAOZHI_ERROR🔥 ❌ [WEBSOCKET] Loop error for {self.device_id}: {loop_error}")
+                connection_ended = True
                 
+            # 音声送信待機: WebSocketが正常で音声送信待ちの場合は継続
+            if not connection_ended and not self.websocket.closed:
+                logger.info(f"🎵 [WEBSOCKET_LOOP] Waiting for pending audio transmissions for {self.device_id}")
+                # 最大3秒まで音声送信完了を待機
+                wait_start = time.time()
+                while not self.websocket.closed and (time.time() - wait_start) < 3.0:
+                    await asyncio.sleep(0.1)
+                    # 実際の音声送信完了チェックはここで実装可能
+                    
             logger.info(f"🔵XIAOZHI_LOOP_COMPLETE🔵 ✅ [WEBSOCKET_LOOP] Loop completed for {self.device_id} after {msg_count} messages")
         except Exception as e:
             logger.error(f"❌ [WEBSOCKET] Unhandled error in connection handler for {self.device_id}: {e}")
