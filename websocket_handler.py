@@ -123,7 +123,7 @@ class ConnectionHandler:
 
                 # logger.info(f"🚀 [DEBUG] Calling server2-style audio handler with {len(audio_data)} bytes")  # レート制限対策で削除
             await self.audio_handler.handle_audio_frame(audio_data)
-            logger.info(f"✅ [DEBUG] server2-style audio processing completed")
+            # logger.info(f"✅ [DEBUG] server2-style audio processing completed")  # レート制限対策で削除
             
         except Exception as e:
             logger.error(f"❌ [ERROR] Error handling binary message from {self.device_id}: {e}")
@@ -439,7 +439,9 @@ class ConnectionHandler:
             msg_count = 0
             async for msg in self.websocket:
                 msg_count += 1
-                logger.info(f"📬 [WEBSOCKET_LOOP] Message {msg_count}: type={msg.type}, closed={self.websocket.closed}")
+                # ログ間引き: 10メッセージごと、または非BINARY型のみログ出力
+                if msg_count % 10 == 0 or msg.type != web.WSMsgType.BINARY:
+                    logger.info(f"📬 [WEBSOCKET_LOOP] Message {msg_count}: type={msg.type}, closed={self.websocket.closed}")
                 
                 if msg.type == web.WSMsgType.TEXT:
                     await self.handle_message(msg.data)
