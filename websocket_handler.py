@@ -429,10 +429,10 @@ class ConnectionHandler:
                 elif msg.type == web.WSMsgType.BINARY:
                     await self.handle_message(msg.data)
                 elif msg.type == web.WSMsgType.ERROR:
-                    logger.error(f"❌ [WEBSOCKET] ERROR received for {self.device_id}: {self.websocket.exception()}")
+                    logger.error(f"🔥XIAOZHI_ERROR🔥 ❌ [WEBSOCKET] ERROR received for {self.device_id}: {self.websocket.exception()}")
                     break
                 elif msg.type == web.WSMsgType.CLOSE:
-                    logger.warning(f"※ここを送ってver2_CLOSE※ ⚠️ [WEBSOCKET] CLOSE message received for {self.device_id} - breaking loop")
+                    logger.warning(f"🟣XIAOZHI_ESP32_CLOSE🟣 ※ここを送ってver2_CLOSE※ ⚠️ [WEBSOCKET] CLOSE message received for {self.device_id} - ESP32が接続切断要求")
                     break
                 else:
                     logger.warning(f"⚠️ [WEBSOCKET_LOOP] Unknown message type: {msg.type} for {self.device_id}")
