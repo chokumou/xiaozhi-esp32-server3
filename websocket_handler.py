@@ -202,8 +202,8 @@ class ConnectionHandler:
                 
                 logger.info(f"🎤 [VAD] Voice chunk added: {len(audio_data)} bytes, buffer total: {len(self.audio_buffer)} bytes")
                 
-                # Force flush when buffer gets large (for testing)
-                if len(self.audio_buffer) > 5000:  # 5KB threshold for testing
+                # Force flush when buffer gets large (for testing)  
+                if len(self.audio_buffer) > 3000:  # 3KB threshold for testing
                     logger.info(f"🚀 [TEST] Force flushing large buffer: {len(self.audio_buffer)} bytes")
                     await self.process_accumulated_audio()
                     self.audio_buffer.clear()
@@ -239,6 +239,7 @@ class ConnectionHandler:
     async def timeout_checker(self):
         """Background task to check for audio buffer timeout"""
         try:
+            logger.info(f"🕒 [TIMEOUT] Background timeout checker started for {self.device_id}")
             while not self.stop_event.is_set():
                 await asyncio.sleep(0.5)  # Check every 500ms
                 
@@ -246,8 +247,9 @@ class ConnectionHandler:
                     import time
                     current_time = time.time()
                     time_since_last_voice = current_time - self.last_audio_time
+                    logger.info(f"🔍 [TIMEOUT] Check: buffer={len(self.audio_buffer)}, time_since={time_since_last_voice:.1f}s")
                     
-                    if time_since_last_voice > 3.0:  # 3 seconds timeout
+                    if time_since_last_voice > 2.0:  # Reduced to 2 seconds
                         logger.info(f"⏰ [TIMEOUT] Flushing buffer: {time_since_last_voice:.1f}s since last voice, buffer: {len(self.audio_buffer)} bytes")
                         await self.process_accumulated_audio()
                         self.audio_buffer.clear()
