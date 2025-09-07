@@ -58,7 +58,7 @@ class AudioHandlerServer2:
                 logger.debug(f"[TTS_ACTIVE] TTS中でも音声処理継続 (server2準拠)")
                 # TTS中に有意な音声（>100 bytes）が検出されたらバージイン
                 if len(audio_data) > 100 and is_voice:
-                    logger.info(f"※ここを送って9/7_BARGE_IN※ 🚨 [BARGE_IN] TTS中に割り込み音声検出: {len(audio_data)}B")
+                    logger.info(f"※ここを送ってver2_BARGE_IN※ 🚨 [BARGE_IN] TTS中に割り込み音声検出: {len(audio_data)}B")
                     # TODO: handleAbortMessage equivalent
                 # TTS中でも通常の音声処理を継続
             
@@ -94,7 +94,7 @@ class AudioHandlerServer2:
                     logger.info(f"【無音継続】{silence_duration:.0f}ms / {self.silence_threshold_ms}ms (有音後)")
                     
                     if silence_duration >= self.silence_threshold_ms and len(self.asr_audio) > 5 and not self.is_processing:
-                        logger.info(f"※ここを送って9/7_SILENCE_DETECT※ 【無音検知完了】{silence_duration:.0f}ms無音 - 音声処理開始 (有音→無音)")
+                        logger.info(f"※ここを送ってver2_SILENCE_DETECT※ 【無音検知完了】{silence_duration:.0f}ms無音 - 音声処理開始 (有音→無音)")
                         await self._process_voice_stop()
                 else:
                     # 有音検知前の無音は無視
