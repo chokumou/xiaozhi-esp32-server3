@@ -75,7 +75,8 @@ async def main():
 
     # Add WebSocket handler function
     async def websocket_handler(request):
-        ws = web.WebSocketResponse(protocols=["v1", "xiaozhi-v1"])
+        # Add heartbeat to keep Railway edge alive (same as server2)
+        ws = web.WebSocketResponse(protocols=["v1", "xiaozhi-v1"], heartbeat=5)
         await ws.prepare(request)
         
         # Get device info from headers

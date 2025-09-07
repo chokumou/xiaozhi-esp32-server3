@@ -416,6 +416,20 @@ class ConnectionHandler:
             
             # Generate audio using TTS
             logger.info(f"🔊 [TTS_START] ===== Generating TTS for: '{text}' =====")
+            
+            # Send processing status to keep connection alive during TTS generation
+            try:
+                processing_msg = {
+                    "type": "tts", 
+                    "state": "start", 
+                    "session_id": self.session_id,
+                    "text": text
+                }
+                await self.websocket.send_str(json.dumps(processing_msg))
+                logger.info(f"📢 [TTS] Sent processing status to keep connection alive")
+            except Exception as status_error:
+                logger.warning(f"⚠️ [TTS] Failed to send processing status: {status_error}")
+            
             audio_bytes = await self.tts_service.generate_speech(text)
             logger.info(f"🎶 [TTS_RESULT] ===== TTS generated: {len(audio_bytes) if audio_bytes else 0} bytes =====")
             if audio_bytes:
@@ -441,6 +455,15 @@ class ConnectionHandler:
                 try:
                     await self.websocket.send_bytes(message)
                     logger.info(f"🎵 [AUDIO_SENT] ===== Sent audio response to {self.device_id} ({len(audio_bytes)} bytes) =====")
+                    
+                    # Send completion status (server2 style)
+                    try:
+                        completion_msg = {"type": "tts", "state": "stop", "session_id": self.session_id}
+                        await self.websocket.send_str(json.dumps(completion_msg))
+                        logger.info(f"📢 [TTS] Sent completion status")
+                    except Exception as completion_error:
+                        logger.warning(f"⚠️ [TTS] Failed to send completion status: {completion_error}")
+                        
                 except Exception as send_error:
                     logger.error(f"❌ [WEBSOCKET] Audio send failed to {self.device_id}: {send_error}")
             else:
