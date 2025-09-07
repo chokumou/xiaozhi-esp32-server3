@@ -37,11 +37,14 @@ class ConnectionHandler:
         self.audio_format = "opus"  # Default format
         self.features = {}
         
-        # Audio buffer for accumulating small chunks
+        # VAD (Voice Activity Detection) and audio buffering
         self.audio_buffer = bytearray()
+        self.silence_count = 0
+        self.has_voice_detected = False
         self.last_audio_time = 0
         import time
-        self.audio_accumulation_timeout = 2.0  # 2 seconds
+        self.silence_threshold = 1.0  # 1 second of silence to flush
+        self.min_audio_chunks_for_processing = 3  # Minimum voice chunks to process
         
         # Welcome message compatible with ESP32
         self.welcome_msg = {
@@ -155,43 +158,66 @@ class ConnectionHandler:
             logger.debug(f"Client listen mode: {mode}")
 
     async def process_audio_binary(self, audio_data: bytes):
-        """Process binary audio data with accumulation for small chunks"""
+        """Process binary audio data with VAD (Voice Activity Detection)"""
         try:
             import time
             current_time = time.time()
             
-            # Add to buffer
-            self.audio_buffer.extend(audio_data)
-            self.last_audio_time = current_time
+            # Simple VAD: check if audio chunk is likely silence (very small size)
+            is_silence = len(audio_data) < 200  # Small chunks are likely silence/noise
             
-            logger.info(f"🎵 [DEBUG] Audio chunk added: {len(audio_data)} bytes, buffer total: {len(self.audio_buffer)} bytes")
-            
-            # Process if buffer is large enough OR timeout reached
-            if len(self.audio_buffer) >= 3000 or (current_time - self.last_audio_time >= self.audio_accumulation_timeout and len(self.audio_buffer) > 500):
-                logger.info(f"📦 [DEBUG] Processing accumulated audio: {len(self.audio_buffer)} bytes")
+            if is_silence:
+                # Silence detected - just count, don't store data
+                self.silence_count += 1
+                logger.info(f"🔇 [VAD] Silence chunk #{self.silence_count} ({len(audio_data)} bytes)")
                 
-                # Create file-like object for OpenAI Whisper API
-                audio_file = io.BytesIO(bytes(self.audio_buffer))
-                audio_file.name = "audio.opus" if self.audio_format == "opus" else "audio.wav"
-                
-                # Convert audio to text using ASR
-                logger.info(f"🔄 [DEBUG] Calling OpenAI Whisper API...")
-                transcribed_text = await self.asr_service.transcribe(audio_file)
-                logger.info(f"🎯 [DEBUG] ASR result: '{transcribed_text}' (length: {len(transcribed_text) if transcribed_text else 0})")
-                
-                if transcribed_text and transcribed_text.strip():
-                    logger.info(f"✅ [DEBUG] Processing transcription: {transcribed_text}")
-                    await self.process_text(transcribed_text)
-                else:
-                    logger.warning(f"❌ [DEBUG] No valid ASR result for {self.device_id}")
-                
-                # Clear buffer after processing
-                self.audio_buffer.clear()
+                # If we have voice data and 1 second of silence (≈50 chunks), flush buffer
+                if self.has_voice_detected and self.silence_count >= 50:
+                    if len(self.audio_buffer) > 1000:  # Minimum size for processing
+                        logger.info(f"🎯 [VAD] Flushing audio buffer after silence: {len(self.audio_buffer)} bytes")
+                        await self.process_accumulated_audio()
+                    else:
+                        logger.info(f"⚠️ [VAD] Buffer too small, discarding: {len(self.audio_buffer)} bytes")
+                    
+                    # Reset state
+                    self.audio_buffer.clear()
+                    self.has_voice_detected = False
+                    self.silence_count = 0
+                    
             else:
-                logger.info(f"⏳ [DEBUG] Waiting for more audio data ({len(self.audio_buffer)}/3000 bytes)")
+                # Voice detected - store the data
+                self.audio_buffer.extend(audio_data)
+                self.has_voice_detected = True
+                self.silence_count = 0  # Reset silence counter
+                self.last_audio_time = current_time
+                
+                logger.info(f"🎤 [VAD] Voice chunk added: {len(audio_data)} bytes, buffer total: {len(self.audio_buffer)} bytes")
                 
         except Exception as e:
             logger.error(f"Error processing audio from {self.device_id}: {e}")
+
+    async def process_accumulated_audio(self):
+        """Process accumulated voice audio data"""
+        try:
+            logger.info(f"📦 [ASR] Processing accumulated audio: {len(self.audio_buffer)} bytes")
+            
+            # Create file-like object for OpenAI Whisper API
+            audio_file = io.BytesIO(bytes(self.audio_buffer))
+            audio_file.name = "audio.opus" if self.audio_format == "opus" else "audio.wav"
+            
+            # Convert audio to text using ASR
+            logger.info(f"🔄 [ASR] Calling OpenAI Whisper API...")
+            transcribed_text = await self.asr_service.transcribe(audio_file)
+            logger.info(f"🎯 [ASR] Result: '{transcribed_text}' (length: {len(transcribed_text) if transcribed_text else 0})")
+            
+            if transcribed_text and transcribed_text.strip():
+                logger.info(f"✅ [ASR] Processing transcription: {transcribed_text}")
+                await self.process_text(transcribed_text)
+            else:
+                logger.warning(f"❌ [ASR] No valid result for {self.device_id}")
+                
+        except Exception as e:
+            logger.error(f"Error processing accumulated audio from {self.device_id}: {e}")
 
     async def process_text(self, text: str):
         """Process text input through LLM and generate response"""
