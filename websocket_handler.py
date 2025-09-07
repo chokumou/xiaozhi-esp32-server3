@@ -164,7 +164,8 @@ class ConnectionHandler:
             current_time = time.time()
             
             # Simple VAD: check if audio chunk is likely silence (very small size)
-            is_silence = len(audio_data) < 200  # Small chunks are likely silence/noise
+            is_silence = len(audio_data) < 50  # Small chunks are likely silence/noise
+            logger.info(f"🔍 [VAD] Chunk size: {len(audio_data)} bytes, is_silence: {is_silence}")
             
             if is_silence:
                 # Silence detected - just count, don't store data
