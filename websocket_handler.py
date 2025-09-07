@@ -449,18 +449,26 @@ class ConnectionHandler:
             logger.info(f"🟢XIAOZHI_LOOP_START🟢 🚀 [WEBSOCKET_LOOP] Starting message loop for {self.device_id}")
             msg_count = 0
             
-            # Server2準拠: WebSocketアダプタースタイル
+            # Server2準拠: シンプルなWebSocketループ
             try:
-                async for message in self._websocket_adapter():
+                async for msg in self.websocket:
                     msg_count += 1
                     # ログ間引き: 10メッセージごとのみ出力
                     if msg_count % 10 == 0:
-                        logger.info(f"📬 [WEBSOCKET_LOOP] Message {msg_count}: closed={self.websocket.closed}")
+                        logger.info(f"📬 [WEBSOCKET_LOOP] Message {msg_count}: type={msg.type}, closed={self.websocket.closed}")
                     
-                    await self.handle_message(message)
+                    # Server2準拠: メッセージタイプ別処理
+                    if msg.type == web.WSMsgType.TEXT:
+                        await self.handle_message(msg.data)
+                    elif msg.type == web.WSMsgType.BINARY:
+                        await self.handle_message(msg.data)
+                    elif msg.type == web.WSMsgType.CLOSE:
+                        logger.warning(f"🟣XIAOZHI_ESP32_CLOSE🟣 ※ここを送ってver2_CLOSE※ ⚠️ [WEBSOCKET] CLOSE message received for {self.device_id}")
+                        break
+                    elif msg.type == web.WSMsgType.ERROR:
+                        logger.error(f"🔥XIAOZHI_ERROR🔥 ❌ [WEBSOCKET] ERROR received for {self.device_id}: {self.websocket.exception()}")
+                        break
                     
-            except ConnectionClosedError:
-                logger.warning(f"🟣XIAOZHI_ESP32_CLOSE🟣 ※ここを送ってver2_CLOSE※ ⚠️ [WEBSOCKET] Client disconnected for {self.device_id}")
             except Exception as loop_error:
                 logger.error(f"🔥XIAOZHI_ERROR🔥 ❌ [WEBSOCKET] Loop error for {self.device_id}: {loop_error}")
                 
@@ -470,38 +478,3 @@ class ConnectionHandler:
         finally:
             logger.info(f"🔍 [DEBUG] WebSocket loop ended for {self.device_id}, entering cleanup")
             
-    async def _websocket_adapter(self):
-        """Server2準拠: WebSocketアダプター - 継続的メッセージ受信"""
-        logger.info(f"🚀 [WEBSOCKET_ADAPTER] Starting adapter for {self.device_id}")
-        try:
-            while not self.websocket.closed and not self.stop_event.is_set():
-                try:
-                    logger.debug(f"🔄 [WEBSOCKET_ADAPTER] Waiting for message, closed={self.websocket.closed}")
-                    msg = await self.websocket.receive()
-                    logger.debug(f"📨 [WEBSOCKET_ADAPTER] Received message type={msg.type}")
-                    
-                    if msg.type == web.WSMsgType.CLOSE:
-                        logger.warning(f"🟣XIAOZHI_ESP32_CLOSE🟣 WebSocket CLOSE message received for {self.device_id}")
-                        raise ConnectionClosedError("ESP32 sent CLOSE message")
-                    elif msg.type == web.WSMsgType.ERROR:
-                        logger.error(f"🔥XIAOZHI_ERROR🔥 WebSocket ERROR for {self.device_id}: {self.websocket.exception()}")
-                        raise ConnectionClosedError(f"WebSocket ERROR: {self.websocket.exception()}")
-                    elif msg.type == web.WSMsgType.BINARY:
-                        yield bytes(msg.data)
-                    elif msg.type == web.WSMsgType.TEXT:
-                        yield msg.data
-                    # continue loop for other message types
-                except ConnectionClosedError:
-                    # Re-raise connection errors
-                    raise
-                except Exception as e:
-                    logger.error(f"🔥XIAOZHI_ERROR🔥 WebSocket adapter error for {self.device_id}: {e}")
-                    raise ConnectionClosedError(f"Adapter error: {e}")
-        except ConnectionClosedError as e:
-            logger.warning(f"🟡 [WEBSOCKET_ADAPTER] Connection closed: {e}")
-            raise
-        except Exception as e:
-            logger.error(f"❌ [WEBSOCKET_ADAPTER] Unexpected error: {e}")
-            raise
-        finally:
-            logger.info(f"🏁 [WEBSOCKET_ADAPTER] Adapter ended for {self.device_id}")
