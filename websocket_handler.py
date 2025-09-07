@@ -7,6 +7,10 @@ from typing import Dict, Any, Optional
 from collections import deque
 from aiohttp import web
 
+class ConnectionClosedError(Exception):
+    """WebSocket connection closed exception"""
+    pass
+
 from config import Config
 from utils.logger import setup_logger
 from utils.auth import AuthManager, AuthError
@@ -414,34 +418,47 @@ class ConnectionHandler:
             #     self.audio_handler.tts_in_progress = False  # 削除：即座に再開しない
 
     async def run(self):
-        """Main connection loop"""
+        """Main connection loop - Server2 style"""
         try:
             logger.info(f"🟢XIAOZHI_LOOP_START🟢 🚀 [WEBSOCKET_LOOP] Starting message loop for {self.device_id}")
             msg_count = 0
-            async for msg in self.websocket:
-                msg_count += 1
-                # ログ間引き: 10メッセージごと、または非BINARY型のみログ出力
-                if msg_count % 10 == 0 or msg.type != web.WSMsgType.BINARY:
-                    logger.info(f"📬 [WEBSOCKET_LOOP] Message {msg_count}: type={msg.type}, closed={self.websocket.closed}")
-                
-                if msg.type == web.WSMsgType.TEXT:
-                    await self.handle_message(msg.data)
-                elif msg.type == web.WSMsgType.BINARY:
-                    await self.handle_message(msg.data)
-                elif msg.type == web.WSMsgType.ERROR:
-                    logger.error(f"🔥XIAOZHI_ERROR🔥 ❌ [WEBSOCKET] ERROR received for {self.device_id}: {self.websocket.exception()}")
-                    break
-                elif msg.type == web.WSMsgType.CLOSE:
-                    logger.warning(f"🟣XIAOZHI_ESP32_CLOSE🟣 ※ここを送ってver2_CLOSE※ ⚠️ [WEBSOCKET] CLOSE message received for {self.device_id} - ESP32が接続切断要求")
-                    break
-                else:
-                    logger.warning(f"⚠️ [WEBSOCKET_LOOP] Unknown message type: {msg.type} for {self.device_id}")
             
-            logger.warning(f"🔴XIAOZHI_LOOP_END🔴 💀 [WEBSOCKET_LOOP] Loop ended naturally for {self.device_id} after {msg_count} messages, websocket.closed={self.websocket.closed}")
+            # Server2準拠: WebSocketアダプタースタイル
+            try:
+                async for message in self._websocket_adapter():
+                    msg_count += 1
+                    # ログ間引き: 10メッセージごとのみ出力
+                    if msg_count % 10 == 0:
+                        logger.info(f"📬 [WEBSOCKET_LOOP] Message {msg_count}: closed={self.websocket.closed}")
+                    
+                    await self.handle_message(message)
+                    
+            except ConnectionClosedError:
+                logger.warning(f"🟣XIAOZHI_ESP32_CLOSE🟣 ※ここを送ってver2_CLOSE※ ⚠️ [WEBSOCKET] Client disconnected for {self.device_id}")
+            except Exception as loop_error:
+                logger.error(f"🔥XIAOZHI_ERROR🔥 ❌ [WEBSOCKET] Loop error for {self.device_id}: {loop_error}")
+                
+            logger.info(f"🔵XIAOZHI_LOOP_COMPLETE🔵 ✅ [WEBSOCKET_LOOP] Loop completed for {self.device_id} after {msg_count} messages")
         except Exception as e:
             logger.error(f"❌ [WEBSOCKET] Unhandled error in connection handler for {self.device_id}: {e}")
         finally:
             logger.info(f"🔍 [DEBUG] WebSocket loop ended for {self.device_id}, entering cleanup")
+            
+    async def _websocket_adapter(self):
+        """Server2準拠: WebSocketアダプター"""
+        while not self.websocket.closed and not self.stop_event.is_set():
+            try:
+                msg = await self.websocket.receive()
+                if msg.type in (web.WSMsgType.CLOSE, web.WSMsgType.ERROR):
+                    break
+                elif msg.type == web.WSMsgType.BINARY:
+                    yield bytes(msg.data)
+                elif msg.type == web.WSMsgType.TEXT:
+                    yield msg.data
+                # ignore other types
+            except Exception as e:
+                logger.error(f"WebSocket adapter error: {e}")
+                break
             # Wait for any ongoing TTS processing to complete before stopping
             if self.client_is_speaking:
                 logger.info(f"⏳ [CONNECTION] Waiting for TTS to complete before stopping...")
