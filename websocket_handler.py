@@ -481,14 +481,15 @@ class ConnectionHandler:
                 elif msg.type == web.WSMsgType.BINARY:
                     await self.handle_message(msg.data)
                 elif msg.type == web.WSMsgType.ERROR:
-                    logger.error(f"WebSocket error for {self.device_id}: {self.websocket.exception()}")
+                    logger.error(f"❌ [WEBSOCKET] ERROR received for {self.device_id}: {self.websocket.exception()}")
                     break
                 elif msg.type == web.WSMsgType.CLOSE:
-                    logger.info(f"WebSocket closed for {self.device_id}")
+                    logger.warning(f"⚠️ [WEBSOCKET] CLOSE message received for {self.device_id} - breaking loop")
                     break
         except Exception as e:
-            logger.error(f"Unhandled error in connection handler for {self.device_id}: {e}")
+            logger.error(f"❌ [WEBSOCKET] Unhandled error in connection handler for {self.device_id}: {e}")
         finally:
+            logger.info(f"🔍 [DEBUG] WebSocket loop ended for {self.device_id}, entering cleanup")
             # Wait for any ongoing TTS processing to complete before stopping
             if self.client_is_speaking:
                 logger.info(f"⏳ [CONNECTION] Waiting for TTS to complete before stopping...")
