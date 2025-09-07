@@ -182,11 +182,11 @@ class ConnectionHandler:
                 
                 # If we have voice data and 1 second of silence (≈50 chunks), flush buffer
                 if self.has_voice_detected and self.silence_count >= 10:  # Reduced threshold
-                    if len(self.audio_buffer) > 1000:  # Minimum size for processing
-                        logger.info(f"🎯 [VAD] Flushing audio buffer after silence: {len(self.audio_buffer)} bytes")
+                    if len(self.audio_buffer) > 3200:  # Minimum size for 0.1s ASR requirement
+                        logger.info(f"🎯 [VAD] Flushing audio buffer after silence: {len(self.audio_buffer)} bytes (~{len(self.audio_buffer)/32000:.2f}s)")
                         await self.process_accumulated_audio()
                     else:
-                        logger.info(f"⚠️ [VAD] Buffer too small, discarding: {len(self.audio_buffer)} bytes")
+                        logger.info(f"⚠️ [VAD] Buffer too small for ASR (need 0.1s/3200 bytes), discarding: {len(self.audio_buffer)} bytes")
                     
                     # Reset state
                     self.audio_buffer.clear()
@@ -202,9 +202,10 @@ class ConnectionHandler:
                 
                 logger.info(f"🎤 [VAD] Voice chunk added: {len(audio_data)} bytes, buffer total: {len(self.audio_buffer)} bytes")
                 
-                # Force flush when buffer gets large (for testing)  
-                if len(self.audio_buffer) > 3000:  # 3KB threshold for testing
-                    logger.info(f"🚀 [TEST] Force flushing large buffer: {len(self.audio_buffer)} bytes")
+                # Force flush when buffer gets large enough for ASR (0.1+ seconds)
+                # 0.1 seconds = 16000Hz * 2 bytes * 0.1 = 3200 bytes minimum
+                if len(self.audio_buffer) > 6400:  # 0.2 seconds for safety (doubled from 3200)
+                    logger.info(f"🚀 [TEST] Force flushing large buffer: {len(self.audio_buffer)} bytes (~{len(self.audio_buffer)/32000:.2f}s)")
                     await self.process_accumulated_audio()
                     self.audio_buffer.clear()
                     self.has_voice_detected = False
@@ -325,12 +326,15 @@ class ConnectionHandler:
                     time_since_last_voice = current_time - self.last_audio_time
                     logger.info(f"🔍 [TIMEOUT] Check: buffer={len(self.audio_buffer)}, time_since={time_since_last_voice:.1f}s")
                     
-                    if time_since_last_voice > 2.0:  # Reduced to 2 seconds
-                        logger.info(f"⏰ [TIMEOUT] Flushing buffer: {time_since_last_voice:.1f}s since last voice, buffer: {len(self.audio_buffer)} bytes")
-                        await self.process_accumulated_audio()
-                        self.audio_buffer.clear()
-                        self.has_voice_detected = False
-                        self.silence_count = 0
+                               if time_since_last_voice > 2.0:  # Reduced to 2 seconds
+                                   if len(self.audio_buffer) > 3200:  # Check minimum ASR length
+                                       logger.info(f"⏰ [TIMEOUT] Flushing buffer: {time_since_last_voice:.1f}s since last voice, buffer: {len(self.audio_buffer)} bytes (~{len(self.audio_buffer)/32000:.2f}s)")
+                                       await self.process_accumulated_audio()
+                                   else:
+                                       logger.info(f"⏰ [TIMEOUT] Buffer too small for ASR, discarding: {len(self.audio_buffer)} bytes")
+                                   self.audio_buffer.clear()
+                                   self.has_voice_detected = False
+                                   self.silence_count = 0
                         
         except Exception as e:
             logger.error(f"Error in timeout checker for {self.device_id}: {e}")
