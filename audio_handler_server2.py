@@ -28,6 +28,7 @@ class AudioHandlerServer2:
         self.rms_threshold = 200  # RMS閾値 (server2準拠)
         self.voice_frame_count = 0  # 連続音声フレーム数
         self.silence_frame_count = 0  # 連続無音フレーム数
+        self.is_processing = False  # 重複処理防止フラグ
         
         # Initialize Opus decoder
         try:
@@ -74,8 +75,9 @@ class AudioHandlerServer2:
                     silence_duration = current_time - self.last_voice_activity_time
                     logger.info(f"【無音継続】{silence_duration:.0f}ms / {self.silence_threshold_ms}ms")
                     
-                    if silence_duration >= self.silence_threshold_ms and len(self.asr_audio) > 5:
+                    if silence_duration >= self.silence_threshold_ms and len(self.asr_audio) > 5 and not self.is_processing:
                         logger.info(f"【無音検知完了】{silence_duration:.0f}ms無音 - 音声処理開始")
+                        self.is_processing = True  # 重複処理防止
                         await self._process_voice_stop()
 
         except Exception as e:
@@ -255,4 +257,5 @@ class AudioHandlerServer2:
         self.voice_frame_count = 0
         self.silence_frame_count = 0
         self.last_voice_activity_time = time.time() * 1000
-        logger.info("[AUDIO_TRACE] Audio state reset (RMS VADリセット)")
+        self.is_processing = False  # 重複処理防止フラグもリセット
+        logger.info("[AUDIO_TRACE] Audio state reset (RMS VAD+処理フラグリセット)")

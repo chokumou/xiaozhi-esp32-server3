@@ -432,6 +432,7 @@ class ConnectionHandler:
                 logger.info(f"📢 [TTS] Sent TTS start message")
             except Exception as status_error:
                 logger.warning(f"⚠️ [TTS] Failed to send TTS start: {status_error}")
+                return
             
             # Send sentence_start message with AI text (server2 critical addition)
             try:
@@ -445,13 +446,28 @@ class ConnectionHandler:
                 logger.info(f"📱 [TTS_DISPLAY] Sent AI text to display: '{text}'")
             except Exception as sentence_error:
                 logger.warning(f"⚠️ [TTS] Failed to send sentence_start: {sentence_error}")
+                return
             
             # Check if stop event was set during processing
             if self.stop_event.is_set():
                 logger.warning(f"⚠️ [TTS] Stop event detected during processing, aborting TTS for {self.device_id}")
                 return
-                
+            
+            # Send keepalive ping during TTS generation (connection preservation)
+            async def send_keepalive():
+                try:
+                    for i in range(3):  # Send 3 pings during TTS generation
+                        await asyncio.sleep(1)
+                        if not self.websocket.closed:
+                            await self.websocket.ping()
+                            logger.info(f"📡 [KEEPALIVE] Sent ping {i+1}/3")
+                except Exception as e:
+                    logger.warning(f"⚠️ [KEEPALIVE] Failed: {e}")
+            
+            # Start keepalive task and TTS generation in parallel
+            keepalive_task = asyncio.create_task(send_keepalive())
             audio_bytes = await self.tts_service.generate_speech(text)
+            keepalive_task.cancel()  # Stop keepalive after TTS completion
             logger.info(f"🎶 [TTS_RESULT] ===== TTS generated: {len(audio_bytes) if audio_bytes else 0} bytes =====")
             
             # Final check before sending
