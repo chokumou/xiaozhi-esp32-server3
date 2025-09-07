@@ -14,6 +14,7 @@ from audio.asr import ASRService
 from audio.tts import TTSService
 from ai.llm import LLMService
 from ai.memory import MemoryService
+from audio_handler_server2 import AudioHandlerServer2
 
 logger = setup_logger()
 
@@ -37,14 +38,15 @@ class ConnectionHandler:
         self.audio_format = "opus"  # Default format (ESP32 sends Opus like server2)
         self.features = {}
         
-        # VAD (Voice Activity Detection) and audio buffering
-        self.audio_buffer = bytearray()
-        self.silence_count = 0
-        self.has_voice_detected = False
-        self.last_audio_time = 0
+        # Audio buffering (server2 style)
+        self.asr_audio = []  # List of Opus frames (server2 style)
+        self.client_have_voice = False
+        self.client_voice_stop = False
         import time
-        self.silence_threshold = 1.0  # 1 second of silence to flush
-        self.min_audio_chunks_for_processing = 3  # Minimum voice chunks to process
+        self.last_activity_time = time.time() * 1000
+        
+        # Initialize server2-style audio handler
+        self.audio_handler = AudioHandlerServer2(self)
         
         # Start timeout check task
         self.timeout_task = asyncio.create_task(self.timeout_checker())
@@ -122,9 +124,9 @@ class ConnectionHandler:
                 # Protocol v1: raw audio data
                 audio_data = message
 
-            logger.info(f"🚀 [DEBUG] Calling process_audio_binary with {len(audio_data)} bytes")
-            await self.process_audio_binary(audio_data)
-            logger.info(f"✅ [DEBUG] process_audio_binary completed successfully")
+        logger.info(f"🚀 [DEBUG] Calling server2-style audio handler with {len(audio_data)} bytes")
+        await self.audio_handler.handle_audio_frame(audio_data)
+        logger.info(f"✅ [DEBUG] server2-style audio processing completed")
             
         except Exception as e:
             logger.error(f"❌ [ERROR] Error handling binary message from {self.device_id}: {e}")
