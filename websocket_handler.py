@@ -390,35 +390,16 @@ class ConnectionHandler:
                 logger.warning(f"⚠️ [TTS] Stop event detected after TTS generation, aborting send for {self.device_id}")
                 return
             if audio_bytes:
-                # Server2準拠: 直接音声バイト送信（ヘッダーなし）
-                message = audio_bytes
-                    
-                # Final check before sending (server2 style with detailed status)
-                if self.websocket.closed:
-                    logger.warning(f"⚠️ [WEBSOCKET] Connection closed during send to {self.device_id}")
-                    return
-                if getattr(self.websocket, '_writer', None) is None:
-                    logger.warning(f"⚠️ [WEBSOCKET] Writer is None during send to {self.device_id}")
-                    return
-                logger.info(f"✅ [DEBUG] WebSocket connection verified - proceeding with audio send")
-                
-                # Send with error handling (server2 style)
+                # Server2準拠: シンプル音声送信
                 try:
-                    await self.websocket.send_bytes(message)
+                    await self.websocket.send_bytes(audio_bytes)
                     logger.info(f"※ここを送ってver2_AUDIO※ 🎵 [AUDIO_SENT] ===== Sent audio response to {self.device_id} ({len(audio_bytes)} bytes) =====")
-                    
-                    # Server2準拠: 音声送信後に55ms待機（フロー制御）
-                    await asyncio.sleep(0.055)
-                    logger.info(f"⏳ [FLOW_CONTROL] Applied 55ms delay after audio send (server2 style)")
-                    
+
                     # Send TTS stop message (server2 style)
-                    try:
-                        tts_stop_msg = {"type": "tts", "state": "stop", "session_id": self.session_id}
-                        await self.websocket.send_str(json.dumps(tts_stop_msg))
-                        logger.info(f"※ここを送ってver2_TTS_STOP※ 📢 [TTS] Sent TTS stop message")
-                    except Exception as completion_error:
-                        logger.warning(f"⚠️ [TTS] Failed to send TTS stop: {completion_error}")
-                        
+                    tts_stop_msg = {"type": "tts", "state": "stop", "session_id": self.session_id}
+                    await self.websocket.send_str(json.dumps(tts_stop_msg))
+                    logger.info(f"※ここを送ってver2_TTS_STOP※ 📢 [TTS] Sent TTS stop message")
+
                 except Exception as send_error:
                     logger.error(f"❌ [WEBSOCKET] Audio send failed to {self.device_id}: {send_error}")
             else:
