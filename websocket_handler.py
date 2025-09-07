@@ -377,27 +377,30 @@ class ConnectionHandler:
                 logger.warning(f"⚠️ [TTS] Stop event detected during processing, aborting TTS for {self.device_id}")
                 return
             
-            # Send keepalive ping during TTS generation (connection preservation)
-            async def send_keepalive():
+            # 接続維持のために頻繁にkeepalive送信
+            async def aggressive_keepalive():
                 try:
-                    for i in range(3):  # Send 3 pings during TTS generation
-                        await asyncio.sleep(1)
+                    # TTS生成中は0.5秒間隔でping送信（Railway timeout対策）
+                    for i in range(10):  # 最大5秒間keepalive
+                        await asyncio.sleep(0.5)
                         if not self.websocket.closed:
                             await self.websocket.ping()
-                            logger.info(f"📡 [KEEPALIVE] Sent ping {i+1}/3")
+                            logger.info(f"📡 [KEEPALIVE] Aggressive ping {i+1}/10")
+                        else:
+                            break
                 except Exception as e:
                     logger.warning(f"⚠️ [KEEPALIVE] Failed: {e}")
             
-            # Start keepalive and TTS generation in parallel
-            keepalive_task = asyncio.create_task(send_keepalive())
+            # Start aggressive keepalive and TTS generation in parallel
+            keepalive_task = asyncio.create_task(aggressive_keepalive())
             try:
-                # TTS generation with timeout to prevent Railway edge timeout
+                # TTS generation with shorter timeout
                 audio_bytes = await asyncio.wait_for(
                     self.tts_service.generate_speech(text), 
-                    timeout=8.0  # 8 second timeout
+                    timeout=4.0  # 4 second timeout (shorter)
                 )
             except asyncio.TimeoutError:
-                logger.error(f"❌ [TTS] Generation timeout after 8 seconds for {self.device_id}")
+                logger.error(f"❌ [TTS] Generation timeout after 4 seconds for {self.device_id}")
                 audio_bytes = None
             finally:
                 keepalive_task.cancel()  # Stop keepalive after TTS completion
