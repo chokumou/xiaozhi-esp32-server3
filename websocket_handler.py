@@ -55,8 +55,10 @@ class ConnectionHandler:
     async def handle_message(self, message):
         """Handle both text (JSON) and binary (audio) messages"""
         if isinstance(message, str):
+            logger.info(f"📨 [DEBUG] Received TEXT message: {message[:100]}... from {self.device_id}")
             await self.handle_text_message(message)
         elif isinstance(message, bytes):
+            logger.info(f"🎤 [DEBUG] Received BINARY audio data: {len(message)} bytes from {self.device_id}")
             await self.handle_binary_message(message)
 
     async def handle_text_message(self, message: str):
@@ -86,7 +88,9 @@ class ConnectionHandler:
     async def handle_binary_message(self, message: bytes):
         """Handle binary audio data based on protocol version"""
         try:
+            logger.info(f"🔧 [DEBUG] Processing binary message: {len(message)} bytes, protocol v{self.protocol_version}")
             if len(message) <= 12:  # Skip very small packets (DTX/keepalive)
+                logger.info(f"⏭️ [DEBUG] Skipping small packet: {len(message)} bytes")
                 return
                 
             if self.protocol_version == 2:
@@ -147,17 +151,21 @@ class ConnectionHandler:
     async def process_audio_binary(self, audio_data: bytes):
         """Process binary audio data"""
         try:
+            logger.info(f"🎵 [DEBUG] Starting ASR processing: {len(audio_data)} bytes, format: {self.audio_format}")
             # Create file-like object for OpenAI Whisper API
             audio_file = io.BytesIO(audio_data)
             audio_file.name = "audio.opus" if self.audio_format == "opus" else "audio.wav"
             
             # Convert audio to text using ASR
+            logger.info(f"🔄 [DEBUG] Calling OpenAI Whisper API...")
             transcribed_text = await self.asr_service.transcribe(audio_file)
+            logger.info(f"🎯 [DEBUG] ASR result: '{transcribed_text}' (length: {len(transcribed_text) if transcribed_text else 0})")
+            
             if transcribed_text and transcribed_text.strip():
-                logger.info(f"ASR result for {self.device_id}: {transcribed_text}")
+                logger.info(f"✅ [DEBUG] Processing transcription: {transcribed_text}")
                 await self.process_text(transcribed_text)
             else:
-                logger.debug(f"No ASR result for {self.device_id}")
+                logger.warning(f"❌ [DEBUG] No valid ASR result for {self.device_id}")
                 
         except Exception as e:
             logger.error(f"Error processing audio from {self.device_id}: {e}")
@@ -165,6 +173,7 @@ class ConnectionHandler:
     async def process_text(self, text: str):
         """Process text input through LLM and generate response"""
         try:
+            logger.info(f"💬 [DEBUG] Processing text input: '{text}'")
             self.chat_history.append({"role": "user", "content": text})
 
             # Check for memory-related keywords
@@ -221,7 +230,9 @@ class ConnectionHandler:
             self.client_is_speaking = True
             
             # Generate audio using TTS
+            logger.info(f"🔊 [DEBUG] Generating TTS for: '{text}'")
             audio_bytes = await self.tts_service.generate_speech(text)
+            logger.info(f"🎶 [DEBUG] TTS generated: {len(audio_bytes) if audio_bytes else 0} bytes")
             if audio_bytes:
                 # Send binary audio data based on protocol version
                 if self.protocol_version == 2:
