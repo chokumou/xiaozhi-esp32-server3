@@ -413,6 +413,7 @@ class ConnectionHandler:
             if audio_bytes:
                 # Server2準拠: シンプル音声送信
                 try:
+                    logger.info(f"🎵 [AUDIO_SENDING] Starting audio transmission to {self.device_id} ({len(audio_bytes)} bytes)")
                     await self.websocket.send_bytes(audio_bytes)
                     logger.info(f"🔵XIAOZHI_AUDIO_SENT🔵 ※ここを送ってver2_AUDIO※ 🎵 [AUDIO_SENT] ===== Sent audio response to {self.device_id} ({len(audio_bytes)} bytes) =====")
 
@@ -471,23 +472,36 @@ class ConnectionHandler:
             
     async def _websocket_adapter(self):
         """Server2準拠: WebSocketアダプター - 継続的メッセージ受信"""
-        while not self.websocket.closed and not self.stop_event.is_set():
-            try:
-                msg = await self.websocket.receive()
-                if msg.type == web.WSMsgType.CLOSE:
-                    logger.warning(f"🟣XIAOZHI_ESP32_CLOSE🟣 WebSocket CLOSE message received for {self.device_id}")
-                    raise ConnectionClosedError("ESP32 sent CLOSE message")
-                elif msg.type == web.WSMsgType.ERROR:
-                    logger.error(f"🔥XIAOZHI_ERROR🔥 WebSocket ERROR for {self.device_id}: {self.websocket.exception()}")
-                    raise ConnectionClosedError(f"WebSocket ERROR: {self.websocket.exception()}")
-                elif msg.type == web.WSMsgType.BINARY:
-                    yield bytes(msg.data)
-                elif msg.type == web.WSMsgType.TEXT:
-                    yield msg.data
-                # continue loop for other message types
-            except ConnectionClosedError:
-                # Re-raise connection errors
-                raise
-            except Exception as e:
-                logger.error(f"🔥XIAOZHI_ERROR🔥 WebSocket adapter error for {self.device_id}: {e}")
-                raise ConnectionClosedError(f"Adapter error: {e}")
+        logger.info(f"🚀 [WEBSOCKET_ADAPTER] Starting adapter for {self.device_id}")
+        try:
+            while not self.websocket.closed and not self.stop_event.is_set():
+                try:
+                    logger.debug(f"🔄 [WEBSOCKET_ADAPTER] Waiting for message, closed={self.websocket.closed}")
+                    msg = await self.websocket.receive()
+                    logger.debug(f"📨 [WEBSOCKET_ADAPTER] Received message type={msg.type}")
+                    
+                    if msg.type == web.WSMsgType.CLOSE:
+                        logger.warning(f"🟣XIAOZHI_ESP32_CLOSE🟣 WebSocket CLOSE message received for {self.device_id}")
+                        raise ConnectionClosedError("ESP32 sent CLOSE message")
+                    elif msg.type == web.WSMsgType.ERROR:
+                        logger.error(f"🔥XIAOZHI_ERROR🔥 WebSocket ERROR for {self.device_id}: {self.websocket.exception()}")
+                        raise ConnectionClosedError(f"WebSocket ERROR: {self.websocket.exception()}")
+                    elif msg.type == web.WSMsgType.BINARY:
+                        yield bytes(msg.data)
+                    elif msg.type == web.WSMsgType.TEXT:
+                        yield msg.data
+                    # continue loop for other message types
+                except ConnectionClosedError:
+                    # Re-raise connection errors
+                    raise
+                except Exception as e:
+                    logger.error(f"🔥XIAOZHI_ERROR🔥 WebSocket adapter error for {self.device_id}: {e}")
+                    raise ConnectionClosedError(f"Adapter error: {e}")
+        except ConnectionClosedError as e:
+            logger.warning(f"🟡 [WEBSOCKET_ADAPTER] Connection closed: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"❌ [WEBSOCKET_ADAPTER] Unexpected error: {e}")
+            raise
+        finally:
+            logger.info(f"🏁 [WEBSOCKET_ADAPTER] Adapter ended for {self.device_id}")
