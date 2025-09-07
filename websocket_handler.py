@@ -229,7 +229,10 @@ class ConnectionHandler:
                     
                     logger.info(f"🔄 [WEBSOCKET] Converting Opus buffer to WAV")
                     
-                    # Decode Opus to PCM
+                    # For debugging: save original data
+                    logger.info(f"🔍 [DEBUG] First 20 bytes: {bytes(self.audio_buffer[:20]).hex()}")
+                    
+                    # Try to decode as single packet first
                     decoder = opuslib.Decoder(16000, 1)  # 16kHz, mono
                     pcm_data = decoder.decode(bytes(self.audio_buffer), 960)  # 60ms frame
                     
@@ -248,9 +251,10 @@ class ConnectionHandler:
                     
                 except Exception as e:
                     logger.error(f"❌ [WEBSOCKET] Opus conversion failed: {e}")
-                    # Fallback: raw data
+                    # Try to save as raw opus file for OpenAI
                     audio_file = io.BytesIO(bytes(self.audio_buffer))
-                    audio_file.name = "audio.wav"
+                    audio_file.name = "audio.opus"
+                    logger.info(f"⚠️ [WEBSOCKET] Fallback: sending raw Opus data to OpenAI")
             else:
                 # Create file-like object for non-Opus data
                 audio_file = io.BytesIO(bytes(self.audio_buffer))
