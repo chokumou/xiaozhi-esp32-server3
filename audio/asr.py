@@ -15,23 +15,29 @@ class ASRService:
             # Handle both bytes and file-like objects
             if isinstance(audio_input, bytes):
                 import io
-                from pydub import AudioSegment
+                import wave
+                import opuslib
                 
-                # Try to convert Opus to WAV
+                # Convert Opus to PCM using opuslib (server2 method)
                 try:
-                    logger.info(f"🔄 [OPUS] Attempting to convert {len(audio_input)} bytes of Opus data")
-                    # Load Opus data
-                    audio_segment = AudioSegment.from_file(io.BytesIO(audio_input), format="opus")
-                    logger.info(f"✅ [OPUS] Loaded audio segment: {len(audio_segment)}ms, {audio_segment.frame_rate}Hz")
+                    logger.info(f"🔄 [OPUS] Converting {len(audio_input)} bytes of Opus to PCM")
                     
-                    # Convert to WAV
+                    # Decode Opus to PCM
+                    decoder = opuslib.Decoder(16000, 1)  # 16kHz, mono
+                    pcm_data = decoder.decode(audio_input, 960)  # 60ms frame
+                    
+                    # Create WAV file from PCM
                     wav_buffer = io.BytesIO()
-                    audio_segment.export(wav_buffer, format="wav")
-                    wav_buffer.seek(0)
+                    with wave.open(wav_buffer, 'wb') as wav_file:
+                        wav_file.setnchannels(1)  # mono
+                        wav_file.setsampwidth(2)  # 16-bit
+                        wav_file.setframerate(16000)  # 16kHz
+                        wav_file.writeframes(pcm_data)
                     
+                    wav_buffer.seek(0)
                     audio_file = wav_buffer
                     audio_file.name = "audio.wav"
-                    logger.info(f"🎉 [OPUS] Successfully converted Opus to WAV: {len(audio_input)} -> {len(wav_buffer.getvalue())} bytes")
+                    logger.info(f"🎉 [OPUS] Successfully converted Opus to WAV: {len(audio_input)} -> {len(pcm_data)} bytes PCM")
                     
                 except Exception as convert_error:
                     logger.error(f"❌ [OPUS] Conversion failed: {convert_error}")

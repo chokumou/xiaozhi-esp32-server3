@@ -6,4 +6,4 @@ httpx
 loguru
 PyJWT
 aiohttp
-pydub
+opuslib
