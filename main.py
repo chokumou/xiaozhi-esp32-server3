@@ -12,15 +12,22 @@ logger = setup_logger()
 auth_manager = AuthManager()
 
 async def ota_endpoint(request):
-    """OTA version check endpoint"""
+    """OTA version check endpoint - ESP32 compatible response"""
     try:
-        # Return current version info to satisfy ESP32
+        # Return ESP32-compatible response with websocket configuration
         version_info = {
             "version": "1.6.8",
             "update_available": False,
             "download_url": "",
-            "changelog": "No updates available"
+            "changelog": "No updates available",
+            "websocket": {
+                "url": "wss://xiaozhi-esp32-server3-production.up.railway.app/xiaozhi/v1/",
+                "token": "",
+                "version": 3
+            },
+            "protocol": "websocket"
         }
+        logger.info(f"OTA response: {version_info}")
         return web.json_response(version_info)
     except Exception as e:
         logger.error(f"OTA endpoint error: {e}")
