@@ -52,4 +52,3 @@ class ASRService:
         except Exception as e:
             logger.error(f"ASR transcription failed: {e}")
             return ""
-ｓ
