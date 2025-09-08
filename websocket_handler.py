@@ -52,6 +52,10 @@ class ConnectionHandler:
         import time
         self.last_activity_time = time.time() * 1000
         
+        # Server2準拠: タイムアウト監視
+        self.timeout_seconds = 180  # 120 + 60秒のバッファ
+        self.timeout_task = None
+        
         # Initialize server2-style audio handler
         self.audio_handler = AudioHandlerServer2(self)
         
@@ -132,6 +136,9 @@ class ConnectionHandler:
             await self.audio_handler.handle_audio_frame(audio_data)
             # logger.info(f"✅ [DEBUG] server2-style audio processing completed")  # レート制限対策で削除
             
+            # Server2準拠: 活動時間更新
+            self.last_activity_time = time.time() * 1000
+            
         except Exception as e:
             logger.error(f"❌ [ERROR] Error handling binary message from {self.device_id}: {e}")
             import traceback
@@ -157,6 +164,10 @@ class ConnectionHandler:
         # Send welcome response
         await self.websocket.send_str(json.dumps(self.welcome_msg))
         logger.info(f"Sent welcome message to {self.device_id}")
+        
+        # Server2準拠: タイムアウト監視タスク起動
+        self.timeout_task = asyncio.create_task(self._check_timeout())
+        logger.info(f"Started timeout monitoring task for {self.device_id}")
 
     async def handle_listen_message(self, msg_json: Dict[str, Any]):
         """Handle listen state changes"""
@@ -525,5 +536,38 @@ class ConnectionHandler:
         except Exception as e:
             logger.error(f"❌ [WEBSOCKET] Unhandled error in connection handler for {self.device_id}: {e}")
         finally:
+            # Server2準拠: タイムアウト監視タスク終了
+            if self.timeout_task and not self.timeout_task.done():
+                self.timeout_task.cancel()
+                try:
+                    await self.timeout_task
+                except asyncio.CancelledError:
+                    pass
+                    
             logger.info(f"🔍 [DEBUG] WebSocket loop ended for {self.device_id}, entering cleanup")
+            
+    async def _check_timeout(self):
+        """Server2準拠: 接続タイムアウト監視"""
+        try:
+            while not self.stop_event.is_set():
+                # 活動時間初期化チェック
+                if self.last_activity_time > 0.0:
+                    current_time = time.time() * 1000
+                    inactive_time = current_time - self.last_activity_time
+                    
+                    if inactive_time > self.timeout_seconds * 1000:
+                        if not self.stop_event.is_set():
+                            logger.info(f"🕐 [TIMEOUT] ESP32 connection timeout after {inactive_time/1000:.1f}s for {self.device_id}")
+                            self.stop_event.set()
+                            try:
+                                await self.websocket.close()
+                            except Exception as close_error:
+                                logger.error(f"Error closing timeout connection: {close_error}")
+                        break
+                        
+                # 1秒間隔でチェック
+                await asyncio.sleep(1.0)
+                
+        except Exception as e:
+            logger.error(f"Error in timeout check for {self.device_id}: {e}")
             
