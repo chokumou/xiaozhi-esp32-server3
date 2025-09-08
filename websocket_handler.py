@@ -438,17 +438,20 @@ class ConnectionHandler:
                     audios = b''.join(opus_frames_list)
                     total_frames = len(opus_frames_list)
                     
-                    logger.info(f"🎵 [SERVER2_PORT] sendAudio port: audios={len(audios)} bytes from {total_frames} frames")
-                    logger.info(f"🔗 [SERVER2_PORT] WebSocket音声送信開始 bytes={len(audios)}")
+                    # ESP32準拠: BinaryProtocol3ヘッダー追加
+                    import struct
+                    type_field = 1  # 下りオーディオ
+                    payload_size = len(audios)
+                    header = struct.pack('>BH', type_field, payload_size)  # type(1) + size(2) big-endian
+                    v3_data = header + audios
                     
-                    # Server2完全移植: sendAudioHandle.py line 45
-                    # if hasattr(conn, 'websocket') and conn.websocket:
-                    #     await conn.websocket.send(audios)
+                    logger.info(f"🎵 [V3_PROTOCOL] BinaryProtocol3: type={type_field}, size={payload_size}, total={len(v3_data)} bytes")
+                    
                     if hasattr(self, 'websocket') and self.websocket:
-                        await self.websocket.send_bytes(audios)  # FastAPI版: send → send_bytes
-                        logger.info(f"🔗 [SERVER2_PORT] WebSocket音声送信完了 bytes={len(audios)}")
+                        await self.websocket.send_bytes(v3_data)  # v3ヘッダー付き一括送信
+                        logger.info(f"✅ [V3_PROTOCOL] V3 protocol send completed: {len(v3_data)} bytes")
                     else:
-                        logger.error(f"🔗 [SERVER2_PORT] WebSocket未接続: websocket={getattr(self, 'websocket', None)}")
+                        logger.error(f"❌ [V3_PROTOCOL] WebSocket disconnected")
                     
                     logger.info(f"🔵XIAOZHI_AUDIO_SENT🔵 ※ここを送ってver2_AUDIO※ 🎵 [AUDIO_SENT] ===== Sent {total_frames} Opus frames to {self.device_id} ({len(audios)} total bytes) =====")
                     logger.info(f"🔍 [DEBUG_SEND] WebSocket state after audio send: closed={self.websocket.closed}")
