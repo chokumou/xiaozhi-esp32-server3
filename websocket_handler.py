@@ -430,11 +430,15 @@ class ConnectionHandler:
             # TTS処理前の接続状態チェック
             logger.info(f"🔍 [CONNECTION_CHECK] Before TTS generation: closed={self.websocket.closed}")
             
+            # TTS生成中のタイムアウト対策：活動状態更新
+            self.last_activity_time = asyncio.get_event_loop().time()
+            
             # Generate TTS audio (server2 style - individual frames)
             opus_frames_list = await self.tts_service.generate_speech(text)
             logger.info(f"🎶 [TTS_RESULT] ===== TTS generated: {len(opus_frames_list) if opus_frames_list else 0} individual Opus frames =====")
             
-            # TTS処理後の接続状態チェック
+            # TTS処理後の活動状態更新とタイムアウト対策
+            self.last_activity_time = asyncio.get_event_loop().time()
             logger.info(f"🔍 [CONNECTION_CHECK] After TTS generation: closed={self.websocket.closed}")
             
             # Server2完全移植: sendAudioHandle.py line 36-45 直接移植
