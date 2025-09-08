@@ -478,7 +478,11 @@ class ConnectionHandler:
             try:
                 logger.info(f"🔍 [DEBUG_LOOP] Starting async for loop for {self.device_id}, websocket.closed={self.websocket.closed}")
                 last_msg_time = time.time()
+                
+                # 🚨 重要: async for の内部動作を詳細監視
+                logger.info(f"🔍 [LOOP_MONITOR] About to enter async for msg in self.websocket")
                 async for msg in self.websocket:
+                    logger.info(f"🔍 [LOOP_MONITOR] Received message in async for loop")
                     msg_count += 1
                     current_time = time.time()
                     time_since_last = current_time - last_msg_time
@@ -489,6 +493,9 @@ class ConnectionHandler:
                         logger.info(f"🔍 [DEBUG_LOOP] Long gap detected: {time_since_last:.1f}s since last message")
                     
                     logger.info(f"🔍 [DEBUG_LOOP] Message {msg_count}: type={msg.type}({msg.type.value}), closed={self.websocket.closed}, data_len={len(msg.data) if hasattr(msg, 'data') and msg.data else 'None'}, gap={time_since_last:.1f}s")
+                    
+                    # 🚨 処理前のWebSocket状態を記録
+                    logger.info(f"🔍 [LOOP_MONITOR] Before message processing: websocket.closed={self.websocket.closed}")
                     
                     # Server2準拠: メッセージタイプ別処理
                     if msg.type == web.WSMsgType.TEXT:
@@ -510,9 +517,14 @@ class ConnectionHandler:
                     else:
                         logger.warning(f"🔍 [DEBUG_LOOP] Unknown message type: {msg.type}({msg.type.value}), ignoring and continuing")
                     
-                    # ループ継続確認
-                    logger.debug(f"🔍 [DEBUG_LOOP] Loop iteration {msg_count} complete, websocket.closed={self.websocket.closed}")
+                    # 🚨 処理後のWebSocket状態を記録
+                    logger.info(f"🔍 [LOOP_MONITOR] After message processing: websocket.closed={self.websocket.closed}")
                     
+                    # ループ継続確認
+                    logger.debug(f"🔍 [DEBUG_LOOP] Loop iteration {msg_count} complete, about to continue async for")
+                    
+                # 🚨 async for が終了した直後の詳細ログ
+                logger.info(f"🔍 [LOOP_MONITOR] async for loop exited - investigating why")
                 logger.info(f"🔍 [DEBUG_LOOP] async for loop ended naturally for {self.device_id}, final msg_count={msg_count}")
                 logger.info(f"🔍 [DEBUG_LOOP] Time since last message when loop ended: {time.time() - last_msg_time:.1f}s")
                 logger.info(f"🔍 [DEBUG_LOOP] WebSocket state: closed={self.websocket.closed}, close_code={getattr(self.websocket, 'close_code', 'None')}")
