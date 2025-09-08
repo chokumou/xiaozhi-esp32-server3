@@ -423,35 +423,29 @@ class ConnectionHandler:
             
             # Server2準拠: stop_eventチェック削除（TTS中断なし）
             
-            # Generate TTS audio (server2 style - simple)
-            audio_bytes = await self.tts_service.generate_speech(text)
-            logger.info(f"🎶 [TTS_RESULT] ===== TTS generated: {len(audio_bytes) if audio_bytes else 0} bytes =====")
+            # Generate TTS audio (server2 style - individual frames)
+            opus_frames_list = await self.tts_service.generate_speech(text)
+            logger.info(f"🎶 [TTS_RESULT] ===== TTS generated: {len(opus_frames_list) if opus_frames_list else 0} individual Opus frames =====")
             
-            # Server2準拠: 送信前stop_eventチェック削除（音声送信継続）
-            if audio_bytes:
-                # ESP32受信バッファオーバーフロー根本対策: 小さなチャンクで分割送信
+            # Server2準拠: 個別Opusフレーム送信
+            if opus_frames_list:
                 try:
-                    logger.info(f"🎵 [AUDIO_SENDING] Starting chunked transmission to {self.device_id} ({len(audio_bytes)} bytes)")
+                    total_frames = len(opus_frames_list)
+                    total_bytes = sum(len(frame) for frame in opus_frames_list)
                     
-                    # ESP32受信能力に合わせた小さなチャンク (512 bytes)
-                    chunk_size = 512  # 512 bytes per chunk to prevent buffer overflow
-                    total_chunks = (len(audio_bytes) + chunk_size - 1) // chunk_size
+                    logger.info(f"🎵 [AUDIO_SENDING] Starting Server2-style individual frame transmission to {self.device_id}")
+                    logger.info(f"🔗 [FRAME_STRATEGY] Sending {total_frames} individual Opus frames ({total_bytes} total bytes)")
                     
-                    logger.info(f"🔗 [CHUNK_STRATEGY] Sending {len(audio_bytes)} bytes in {total_chunks} chunks of {chunk_size} bytes each")
-                    
-                    for i in range(0, len(audio_bytes), chunk_size):
-                        chunk = audio_bytes[i:i + chunk_size]
-                        chunk_num = i // chunk_size + 1
+                    for frame_num, opus_frame in enumerate(opus_frames_list, 1):
+                        logger.info(f"🔍 [DEBUG_SEND] WebSocket state before frame {frame_num}: closed={self.websocket.closed}")
+                        await self.websocket.send_bytes(opus_frame)
+                        logger.debug(f"🔗 [FRAME] Sent frame {frame_num}/{total_frames}: {len(opus_frame)} bytes")
                         
-                        logger.info(f"🔍 [DEBUG_SEND] WebSocket state before chunk {chunk_num}: closed={self.websocket.closed}")
-                        await self.websocket.send_bytes(chunk)
-                        logger.debug(f"🔗 [CHUNK] Sent chunk {chunk_num}/{total_chunks}: {len(chunk)} bytes")
-                        
-                        # ESP32処理時間確保: チャンク間に待機時間
-                        if chunk_num < total_chunks:  # 最後のチャンク以外
-                            await asyncio.sleep(0.01)  # 10ms wait between chunks
+                        # Server2準拠: フレーム間に小さな待機時間
+                        if frame_num < total_frames:  # 最後のフレーム以外
+                            await asyncio.sleep(0.005)  # 5ms wait between frames (shorter than chunks)
                     
-                    logger.info(f"🔵XIAOZHI_AUDIO_SENT🔵 ※ここを送ってver2_AUDIO※ 🎵 [AUDIO_SENT] ===== Sent chunked audio to {self.device_id} ({len(audio_bytes)} bytes in {total_chunks} chunks) =====")
+                    logger.info(f"🔵XIAOZHI_AUDIO_SENT🔵 ※ここを送ってver2_AUDIO※ 🎵 [AUDIO_SENT] ===== Sent {total_frames} Opus frames to {self.device_id} ({total_bytes} total bytes) =====")
                     logger.info(f"🔍 [DEBUG_SEND] WebSocket state after audio send: closed={self.websocket.closed}")
 
                     # Send TTS stop message (server2 style)

@@ -52,13 +52,13 @@ class TTSService:
             
             logger.debug(f"PCM conversion: {len(raw_data)} bytes")
             
-            # Server2準拠: PCM を60msフレームでOpusエンコード
-            opus_data = await self._pcm_to_opus_frames(raw_data)
+            # Server2準拠: PCM を60msフレームでOpusエンコード（個別フレームリスト）
+            opus_frames_list = await self._pcm_to_opus_frames(raw_data)
             
-            # 実験: Server2準拠で生のOpusデータを送信（ヘッダーなし）
-            logger.debug(f"Raw Opus data generated: {len(opus_data)} bytes")
-            logger.info(f"🔬 [EXPERIMENT] Sending raw Opus data without BinaryProtocol3 header")
-            return opus_data
+            # Server2準拠: 個別フレームのリストを返す
+            logger.debug(f"Individual Opus frames generated: {len(opus_frames_list)} frames")
+            logger.info(f"🔬 [SERVER2_STYLE] Returning individual Opus frames list")
+            return opus_frames_list
             
             # # ESP32プロトコル対応: BinaryProtocol3ヘッダーを追加
             # protocol_data = self._add_binary_protocol3_header(opus_data)
@@ -70,8 +70,8 @@ class TTSService:
             logger.error(f"Audio conversion failed: {e}")
             return b""
     
-    async def _pcm_to_opus_frames(self, raw_data: bytes) -> bytes:
-        """Server2準拠: PCMデータを60msフレームでOpusエンコード"""
+    async def _pcm_to_opus_frames(self, raw_data: bytes) -> list:
+        """Server2準拠: PCMデータを60msフレームでOpusエンコード（個別フレームリスト）"""
         try:
             import numpy as np
             
@@ -82,7 +82,7 @@ class TTSService:
             frame_duration = 60  # 60ms per frame
             frame_size = int(16000 * frame_duration / 1000)  # 960 samples/frame
             
-            opus_frames = bytearray()
+            opus_frames_list = []  # 個別フレームのリスト
             frame_count = 0
             
             # PCMデータを60msフレームごとにエンコード (Server2準拠)
@@ -99,20 +99,20 @@ class TTSService:
                 
                 # フレーム長をチェック (ESP32互換性)
                 if len(opus_frame) > 0:
-                    opus_frames.extend(opus_frame)
+                    opus_frames_list.append(opus_frame)  # 個別フレームとして保存
                     frame_count += 1
                     logger.debug(f"Encoded Opus frame {frame_count}: {len(opus_frame)} bytes")
                 else:
                     logger.warning(f"Empty Opus frame generated for frame {frame_count}")
             
-            logger.debug(f"Generated {frame_count} Opus frames, total {len(opus_frames)} bytes from {len(raw_data)} bytes PCM")
-            return bytes(opus_frames)
+            logger.debug(f"Generated {frame_count} individual Opus frames from {len(raw_data)} bytes PCM")
+            return opus_frames_list
             
         except Exception as e:
             logger.error(f"Opus encoding failed: {e}")
             import traceback
             logger.error(f"Opus encoding traceback: {traceback.format_exc()}")
-            return b""
+            return []
     
     def _add_binary_protocol3_header(self, opus_data: bytes) -> bytes:
         """ESP32 BinaryProtocol3ヘッダーを追加"""
