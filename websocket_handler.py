@@ -431,27 +431,26 @@ class ConnectionHandler:
             opus_frames_list = await self.tts_service.generate_speech(text)
             logger.info(f"🎶 [TTS_RESULT] ===== TTS generated: {len(opus_frames_list) if opus_frames_list else 0} individual Opus frames =====")
             
-            # 分割送信版: 個別フレーム送信で安定接続
+            # Server2完全移植: sendAudioHandle.py line 36-45 直接移植
             if opus_frames_list:
                 try:
+                    # Server2準拠: audios = 全フレーム結合bytes
+                    audios = b''.join(opus_frames_list)
                     total_frames = len(opus_frames_list)
-                    total_bytes = sum(len(frame) for frame in opus_frames_list)
                     
-                    logger.info(f"🎵 [AUDIO_SENDING] Frame-by-frame transmission to {self.device_id}")
-                    logger.info(f"🔗 [FRAME_STRATEGY] Sending {total_frames} individual Opus frames ({total_bytes} total bytes)")
+                    logger.info(f"🎵 [SERVER2_PORT] sendAudio port: audios={len(audios)} bytes from {total_frames} frames")
+                    logger.info(f"🔗 [SERVER2_PORT] WebSocket音声送信開始 bytes={len(audios)}")
                     
-                    # 個別フレーム送信（接続安定優先）
-                    for frame_num, opus_frame in enumerate(opus_frames_list, 1):
-                        logger.info(f"🎵 [FRAME] Sending frame {frame_num}/{total_frames}: {len(opus_frame)} bytes")
-                        
-                        await self.websocket.send_bytes(opus_frame)
-                        logger.info(f"🔗 [FRAME] Successfully sent frame {frame_num}/{total_frames}")
-                        
-                        # フレーム間の短い待機（接続安定性確保）
-                        if frame_num < total_frames:
-                            await asyncio.sleep(0.001)  # 1ms wait between frames
+                    # Server2完全移植: sendAudioHandle.py line 45
+                    # if hasattr(conn, 'websocket') and conn.websocket:
+                    #     await conn.websocket.send(audios)
+                    if hasattr(self, 'websocket') and self.websocket:
+                        await self.websocket.send_bytes(audios)  # FastAPI版: send → send_bytes
+                        logger.info(f"🔗 [SERVER2_PORT] WebSocket音声送信完了 bytes={len(audios)}")
+                    else:
+                        logger.error(f"🔗 [SERVER2_PORT] WebSocket未接続: websocket={getattr(self, 'websocket', None)}")
                     
-                    logger.info(f"🔵XIAOZHI_AUDIO_SENT🔵 ※ここを送ってver2_AUDIO※ 🎵 [AUDIO_SENT] ===== Sent {total_frames} Opus frames to {self.device_id} ({total_bytes} total bytes) =====")
+                    logger.info(f"🔵XIAOZHI_AUDIO_SENT🔵 ※ここを送ってver2_AUDIO※ 🎵 [AUDIO_SENT] ===== Sent {total_frames} Opus frames to {self.device_id} ({len(audios)} total bytes) =====")
                     logger.info(f"🔍 [DEBUG_SEND] WebSocket state after audio send: closed={self.websocket.closed}")
 
                     # Send TTS stop message (server2 style)
