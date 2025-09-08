@@ -55,8 +55,11 @@ class TTSService:
             # Server2準拠: PCM を60msフレームでOpusエンコード
             opus_data = await self._pcm_to_opus_frames(raw_data)
             
-            logger.debug(f"Opus frames generated: {len(opus_data)} bytes")
-            return opus_data
+            # ESP32プロトコル対応: BinaryProtocol3ヘッダーを追加
+            protocol_data = self._add_binary_protocol3_header(opus_data)
+            
+            logger.debug(f"Protocol3 data generated: {len(protocol_data)} bytes (Opus: {len(opus_data)} bytes)")
+            return protocol_data
             
         except Exception as e:
             logger.error(f"Audio conversion failed: {e}")
@@ -105,3 +108,31 @@ class TTSService:
             import traceback
             logger.error(f"Opus encoding traceback: {traceback.format_exc()}")
             return b""
+    
+    def _add_binary_protocol3_header(self, opus_data: bytes) -> bytes:
+        """ESP32 BinaryProtocol3ヘッダーを追加"""
+        try:
+            import struct
+            
+            # BinaryProtocol3構造:
+            # uint8_t type;           // 0 = OPUS audio data
+            # uint8_t reserved;       // 予約領域 (0)
+            # uint16_t payload_size;  // ペイロードサイズ (ネットワークバイトオーダー)
+            # uint8_t payload[];      // Opusデータ
+            
+            type_field = 0  # OPUS audio type
+            reserved_field = 0  # 予約領域
+            payload_size = len(opus_data)
+            
+            # ネットワークバイトオーダー (big-endian) でパック
+            header = struct.pack('>BBH', type_field, reserved_field, payload_size)
+            
+            # ヘッダー + Opusデータ
+            protocol_data = header + opus_data
+            
+            logger.debug(f"BinaryProtocol3 header: type={type_field}, reserved={reserved_field}, payload_size={payload_size}")
+            return protocol_data
+            
+        except Exception as e:
+            logger.error(f"BinaryProtocol3 header creation failed: {e}")
+            return opus_data  # ヘッダー追加に失敗した場合は生データを返す
