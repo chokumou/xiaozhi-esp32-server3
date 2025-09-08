@@ -451,19 +451,22 @@ class ConnectionHandler:
             msg_count = 0
             connection_ended = False
             
-            # Server2準拠: シンプルなWebSocketループ
+            # 詳細デバッグ: WebSocketメッセージ受信完全トレース
             try:
+                logger.info(f"🔍 [DEBUG_LOOP] Starting async for loop for {self.device_id}, websocket.closed={self.websocket.closed}")
                 async for msg in self.websocket:
                     msg_count += 1
-                    # ログ間引き: 10メッセージごとのみ出力
-                    if msg_count % 10 == 0:
-                        logger.info(f"📬 [WEBSOCKET_LOOP] Message {msg_count}: type={msg.type}, closed={self.websocket.closed}")
+                    logger.info(f"🔍 [DEBUG_LOOP] Message {msg_count}: type={msg.type}({msg.type.value}), closed={self.websocket.closed}, data_len={len(msg.data) if hasattr(msg, 'data') and msg.data else 'None'}")
                     
                     # Server2準拠: メッセージタイプ別処理
                     if msg.type == web.WSMsgType.TEXT:
+                        logger.info(f"🔍 [DEBUG_LOOP] Processing TEXT message: {msg.data[:100]}...")
                         await self.handle_message(msg.data)
+                        logger.info(f"🔍 [DEBUG_LOOP] TEXT message processed, continuing loop")
                     elif msg.type == web.WSMsgType.BINARY:
+                        logger.info(f"🔍 [DEBUG_LOOP] Processing BINARY message: {len(msg.data)} bytes")
                         await self.handle_message(msg.data)
+                        logger.info(f"🔍 [DEBUG_LOOP] BINARY message processed, continuing loop")
                     elif msg.type == web.WSMsgType.CLOSE:
                         logger.warning(f"🟣XIAOZHI_ESP32_CLOSE🟣 ※ここを送ってver2_CLOSE※ ⚠️ [WEBSOCKET] CLOSE message received for {self.device_id}")
                         connection_ended = True
@@ -472,6 +475,10 @@ class ConnectionHandler:
                         logger.error(f"🔥XIAOZHI_ERROR🔥 ❌ [WEBSOCKET] ERROR received for {self.device_id}: {self.websocket.exception()}")
                         connection_ended = True
                         break
+                    else:
+                        logger.warning(f"🔍 [DEBUG_LOOP] Unknown message type: {msg.type}({msg.type.value}), ignoring and continuing")
+                    
+                logger.info(f"🔍 [DEBUG_LOOP] async for loop ended naturally for {self.device_id}, final msg_count={msg_count}")
                     
             except Exception as loop_error:
                 logger.error(f"🔥XIAOZHI_ERROR🔥 ❌ [WEBSOCKET] Loop error for {self.device_id}: {loop_error}")
