@@ -429,27 +429,12 @@ class ConnectionHandler:
             
             # Server2準拠: 送信前stop_eventチェック削除（音声送信継続）
             if audio_bytes:
-                # Server2準拠: チャンク分割音声送信（ESP32バッファオーバーフロー対策）
+                # Server2準拠: 一括音声送信（Server2と同じ方式）
                 try:
-                    logger.info(f"🎵 [AUDIO_SENDING] Starting chunked audio transmission to {self.device_id} ({len(audio_bytes)} bytes)")
+                    logger.info(f"🎵 [AUDIO_SENDING] Starting audio transmission to {self.device_id} ({len(audio_bytes)} bytes)")
                     logger.info(f"🔍 [DEBUG_SEND] WebSocket state before audio send: closed={self.websocket.closed}")
-                    
-                    # ESP32受信バッファ対策: 1KB チャンクで分割送信
-                    chunk_size = 1024  # 1KB chunks to prevent buffer overflow
-                    total_chunks = (len(audio_bytes) + chunk_size - 1) // chunk_size
-                    
-                    for i in range(0, len(audio_bytes), chunk_size):
-                        chunk = audio_bytes[i:i + chunk_size]
-                        chunk_num = i // chunk_size + 1
-                        
-                        await self.websocket.send_bytes(chunk)
-                        logger.debug(f"🔗 [CHUNK] Sent chunk {chunk_num}/{total_chunks}: {len(chunk)} bytes")
-                        
-                        # ESP32処理時間確保: 小さな待機時間
-                        if chunk_num < total_chunks:  # 最後のチャンク以外
-                            await asyncio.sleep(0.001)  # 1ms wait between chunks
-                    
-                    logger.info(f"🔵XIAOZHI_AUDIO_SENT🔵 ※ここを送ってver2_AUDIO※ 🎵 [AUDIO_SENT] ===== Sent chunked audio to {self.device_id} ({len(audio_bytes)} bytes in {total_chunks} chunks) =====")
+                    await self.websocket.send_bytes(audio_bytes)
+                    logger.info(f"🔵XIAOZHI_AUDIO_SENT🔵 ※ここを送ってver2_AUDIO※ 🎵 [AUDIO_SENT] ===== Sent audio response to {self.device_id} ({len(audio_bytes)} bytes) =====")
                     logger.info(f"🔍 [DEBUG_SEND] WebSocket state after audio send: closed={self.websocket.closed}")
 
                     # Send TTS stop message (server2 style)
