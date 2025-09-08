@@ -443,13 +443,12 @@ class ConnectionHandler:
                     for frame_num, opus_frame in enumerate(opus_frames_list, 1):
                         logger.info(f"🔍 [DEBUG_SEND] WebSocket state before frame {frame_num}: closed={self.websocket.closed}")
                         
-                        # v3プロトコル: type=1(下りオーディオ)ヘッダを付与
-                        v3_frame = bytes([1]) + opus_frame  # type=1 + Opusフレーム
+                        # Server2準拠: 純粋なOpusフレーム送信（ヘッダなし）
                         
-                        logger.info(f"🎵 [FRAME_DETAIL] Sending v3 frame {frame_num}: {len(v3_frame)} bytes (type=1 + {len(opus_frame)}B Opus), first 20 bytes: {v3_frame[:20].hex() if len(v3_frame) >= 20 else v3_frame.hex()}")
+                        logger.info(f"🎵 [FRAME_DETAIL] Sending pure Opus frame {frame_num}: {len(opus_frame)} bytes (Server2-style), first 20 bytes: {opus_frame[:20].hex() if len(opus_frame) >= 20 else opus_frame.hex()}")
                         
-                        await self.websocket.send_bytes(v3_frame)
-                        logger.info(f"🔗 [FRAME] Successfully sent v3 frame {frame_num}/{total_frames}: {len(v3_frame)} bytes")
+                        await self.websocket.send_bytes(opus_frame)  # 純粋なOpusフレーム
+                        logger.info(f"🔗 [FRAME] Successfully sent pure Opus frame {frame_num}/{total_frames}: {len(opus_frame)} bytes")
                         
                         # Server2準拠: フレーム間に小さな待機時間 (PONG timeout対策)
                         if frame_num < total_frames:  # 最後のフレーム以外
