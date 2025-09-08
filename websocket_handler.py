@@ -110,9 +110,12 @@ class ConnectionHandler:
     async def handle_binary_message(self, message: bytes):
         """Handle binary audio data based on protocol version"""
         try:
+            # Server2準拠: 小パケットでも活動時間を更新（ESP32からの継続通信を認識）
+            self.last_activity_time = time.time() * 1000
+            
             # logger.info(f"🔧 [DEBUG] Processing binary message: {len(message)} bytes, protocol v{self.protocol_version}")  # レート制限対策で削除
-            if len(message) <= 12:  # Skip very small packets (DTX/keepalive)
-                logger.info(f"⏭️ [DEBUG] Skipping small packet: {len(message)} bytes")
+            if len(message) <= 12:  # Skip very small packets (DTX/keepalive) but keep activity alive
+                logger.info(f"⏭️ [DEBUG] Skipping small packet: {len(message)} bytes (activity updated)")
                 return
                 
             if self.protocol_version == 2:
@@ -136,8 +139,7 @@ class ConnectionHandler:
             await self.audio_handler.handle_audio_frame(audio_data)
             # logger.info(f"✅ [DEBUG] server2-style audio processing completed")  # レート制限対策で削除
             
-            # Server2準拠: 活動時間更新
-            self.last_activity_time = time.time() * 1000
+            # 注意: 活動時間更新は既にメソッド冒頭で実行済み
             
         except Exception as e:
             logger.error(f"❌ [ERROR] Error handling binary message from {self.device_id}: {e}")
