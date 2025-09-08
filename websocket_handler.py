@@ -403,6 +403,10 @@ class ConnectionHandler:
                 }
                 await self.websocket.send_str(json.dumps(tts_start_msg))
                 logger.info(f"📢 [TTS] Sent TTS start message")
+                
+                # ハンドシェイク待ち: ESP32の音声受信準備完了まで待機
+                logger.info(f"⏳ [HANDSHAKE] Waiting 500ms for ESP32 audio readiness")
+                await asyncio.sleep(0.5)  # 500ms待機
             except Exception as status_error:
                 logger.warning(f"⚠️ [TTS] Failed to send TTS start: {status_error}")
                 return
@@ -438,10 +442,14 @@ class ConnectionHandler:
                     
                     for frame_num, opus_frame in enumerate(opus_frames_list, 1):
                         logger.info(f"🔍 [DEBUG_SEND] WebSocket state before frame {frame_num}: closed={self.websocket.closed}")
-                        logger.info(f"🎵 [FRAME_DETAIL] Sending Opus frame {frame_num}: {len(opus_frame)} bytes, first 20 bytes: {opus_frame[:20].hex() if len(opus_frame) >= 20 else opus_frame.hex()}")
                         
-                        await self.websocket.send_bytes(opus_frame)
-                        logger.info(f"🔗 [FRAME] Successfully sent frame {frame_num}/{total_frames}: {len(opus_frame)} bytes")
+                        # v3プロトコル: type=1(下りオーディオ)ヘッダを付与
+                        v3_frame = bytes([1]) + opus_frame  # type=1 + Opusフレーム
+                        
+                        logger.info(f"🎵 [FRAME_DETAIL] Sending v3 frame {frame_num}: {len(v3_frame)} bytes (type=1 + {len(opus_frame)}B Opus), first 20 bytes: {v3_frame[:20].hex() if len(v3_frame) >= 20 else v3_frame.hex()}")
+                        
+                        await self.websocket.send_bytes(v3_frame)
+                        logger.info(f"🔗 [FRAME] Successfully sent v3 frame {frame_num}/{total_frames}: {len(v3_frame)} bytes")
                         
                         # Server2準拠: フレーム間に小さな待機時間
                         if frame_num < total_frames:  # 最後のフレーム以外
