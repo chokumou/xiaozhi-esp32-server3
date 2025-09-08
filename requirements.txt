@@ -8,3 +8,4 @@ PyJWT
 aiohttp
 opuslib-next
 numpy
+pydub
