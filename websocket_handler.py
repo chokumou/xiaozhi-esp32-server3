@@ -438,8 +438,10 @@ class ConnectionHandler:
                     
                     for frame_num, opus_frame in enumerate(opus_frames_list, 1):
                         logger.info(f"🔍 [DEBUG_SEND] WebSocket state before frame {frame_num}: closed={self.websocket.closed}")
+                        logger.info(f"🎵 [FRAME_DETAIL] Sending Opus frame {frame_num}: {len(opus_frame)} bytes, first 20 bytes: {opus_frame[:20].hex() if len(opus_frame) >= 20 else opus_frame.hex()}")
+                        
                         await self.websocket.send_bytes(opus_frame)
-                        logger.debug(f"🔗 [FRAME] Sent frame {frame_num}/{total_frames}: {len(opus_frame)} bytes")
+                        logger.info(f"🔗 [FRAME] Successfully sent frame {frame_num}/{total_frames}: {len(opus_frame)} bytes")
                         
                         # Server2準拠: フレーム間に小さな待機時間
                         if frame_num < total_frames:  # 最後のフレーム以外
