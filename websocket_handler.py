@@ -460,8 +460,20 @@ class ConnectionHandler:
                     logger.info(f"🔍 [CONNECTION_CHECK] Just before send_bytes: closed={self.websocket.closed}")
                     
                     if hasattr(self, 'websocket') and self.websocket and not self.websocket.closed:
-                        await self.websocket.send_bytes(v3_data)  # v3ヘッダー付き一括送信
-                        logger.info(f"✅ [V3_PROTOCOL] V3 protocol send completed: {len(v3_data)} bytes")
+                        # ESP32バッファオーバーフロー対策：8KB分割送信
+                        chunk_size = 8192  # 8KB chunks
+                        if len(v3_data) > chunk_size:
+                            logger.info(f"📦 [CHUNKED_SEND] Large data detected ({len(v3_data)} bytes), sending in {chunk_size} byte chunks")
+                            for i in range(0, len(v3_data), chunk_size):
+                                chunk = v3_data[i:i + chunk_size]
+                                logger.info(f"📦 [CHUNKED_SEND] Sending chunk {i//chunk_size + 1}: {len(chunk)} bytes")
+                                await self.websocket.send_bytes(chunk)
+                                await asyncio.sleep(0.01)  # 10ms delay between chunks
+                                logger.info(f"📦 [CHUNKED_SEND] Chunk {i//chunk_size + 1} sent, connection: closed={self.websocket.closed}")
+                            logger.info(f"✅ [CHUNKED_SEND] All chunks sent successfully: {len(v3_data)} total bytes")
+                        else:
+                            await self.websocket.send_bytes(v3_data)  # 小さいデータは一括送信
+                            logger.info(f"✅ [V3_PROTOCOL] V3 protocol send completed: {len(v3_data)} bytes")
                     else:
                         logger.error(f"❌ [V3_PROTOCOL] WebSocket disconnected before send")
                     
