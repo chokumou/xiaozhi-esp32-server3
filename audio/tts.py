@@ -65,6 +65,8 @@ class TTSService:
     async def _pcm_to_opus_frames(self, raw_data: bytes) -> bytes:
         """Server2準拠: PCMデータを60msフレームでOpusエンコード"""
         try:
+            import numpy as np
+            
             # Opus エンコーダー初期化
             encoder = opuslib_next.Encoder(16000, 1, opuslib_next.APPLICATION_AUDIO)
             
@@ -73,8 +75,9 @@ class TTSService:
             frame_size = int(16000 * frame_duration / 1000)  # 960 samples/frame
             
             opus_frames = bytearray()
+            frame_count = 0
             
-            # PCMデータを60msフレームごとにエンコード
+            # PCMデータを60msフレームごとにエンコード (Server2準拠)
             for i in range(0, len(raw_data), frame_size * 2):  # 16bit=2bytes/sample
                 chunk = raw_data[i:i + frame_size * 2]
                 
@@ -82,13 +85,23 @@ class TTSService:
                 if len(chunk) < frame_size * 2:
                     chunk += b'\x00' * (frame_size * 2 - len(chunk))
                 
-                # Opus エンコード
-                opus_frame = encoder.encode(chunk, frame_size)
-                opus_frames.extend(opus_frame)
+                # Server2準拠: numpy配列経由でエンコード
+                np_frame = np.frombuffer(chunk, dtype=np.int16)
+                opus_frame = encoder.encode(np_frame.tobytes(), frame_size)
+                
+                # フレーム長をチェック (ESP32互換性)
+                if len(opus_frame) > 0:
+                    opus_frames.extend(opus_frame)
+                    frame_count += 1
+                    logger.debug(f"Encoded Opus frame {frame_count}: {len(opus_frame)} bytes")
+                else:
+                    logger.warning(f"Empty Opus frame generated for frame {frame_count}")
             
-            logger.debug(f"Encoded {len(opus_frames)} bytes of Opus frames from {len(raw_data)} bytes PCM")
+            logger.debug(f"Generated {frame_count} Opus frames, total {len(opus_frames)} bytes from {len(raw_data)} bytes PCM")
             return bytes(opus_frames)
             
         except Exception as e:
             logger.error(f"Opus encoding failed: {e}")
+            import traceback
+            logger.error(f"Opus encoding traceback: {traceback.format_exc()}")
             return b""
