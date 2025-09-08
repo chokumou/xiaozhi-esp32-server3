@@ -429,8 +429,13 @@ class ConnectionHandler:
             
             # Server2準拠: 送信前stop_eventチェック削除（音声送信継続）
             if audio_bytes:
-                # Server2準拠: 一括音声送信（Server2と同じ方式）
+                # ESP32受信バッファ対策: TTS start後に受信準備時間を確保
                 try:
+                    logger.info(f"🎵 [AUDIO_SENDING] Waiting for ESP32 receive buffer preparation...")
+                    
+                    # ESP32の受信準備時間確保: TTS start → 音声データ送信の間に待機
+                    await asyncio.sleep(0.5)  # 500ms wait for ESP32 to prepare receive buffer
+                    
                     logger.info(f"🎵 [AUDIO_SENDING] Starting audio transmission to {self.device_id} ({len(audio_bytes)} bytes)")
                     logger.info(f"🔍 [DEBUG_SEND] WebSocket state before audio send: closed={self.websocket.closed}")
                     await self.websocket.send_bytes(audio_bytes)
