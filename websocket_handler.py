@@ -460,17 +460,30 @@ class ConnectionHandler:
                     logger.info(f"🔍 [CONNECTION_CHECK] Just before send_bytes: closed={self.websocket.closed}")
                     
                     if hasattr(self, 'websocket') and self.websocket and not self.websocket.closed:
-                        # ESP32バッファオーバーフロー対策：8KB分割送信
-                        chunk_size = 8192  # 8KB chunks
-                        if len(v3_data) > chunk_size:
-                            logger.info(f"📦 [CHUNKED_SEND] Large data detected ({len(v3_data)} bytes), sending in {chunk_size} byte chunks")
-                            for i in range(0, len(v3_data), chunk_size):
-                                chunk = v3_data[i:i + chunk_size]
-                                logger.info(f"📦 [CHUNKED_SEND] Sending chunk {i//chunk_size + 1}: {len(chunk)} bytes")
-                                await self.websocket.send_bytes(chunk)
+                        # ESP32バッファオーバーフロー対策：Opusペイロードのみ分割、ヘッダーは各チャンクに個別追加
+                        chunk_size = 8192  # 8KB chunks  
+                        if len(audios) > chunk_size:
+                            logger.info(f"📦 [PROTOCOL_CHUNKED] Large audio data ({len(audios)} bytes), splitting into {chunk_size} byte chunks with individual headers")
+                            chunk_count = 0
+                            for i in range(0, len(audios), chunk_size):
+                                chunk_count += 1
+                                audio_chunk = audios[i:i + chunk_size]
+                                
+                                # 各チャンクに個別のBinaryProtocol3ヘッダーを追加
+                                chunk_header = struct.pack('>BH', type_field, len(audio_chunk))
+                                chunk_data = chunk_header + audio_chunk
+                                
+                                logger.info(f"📦 [PROTOCOL_CHUNKED] Sending chunk {chunk_count}: header=3bytes + audio={len(audio_chunk)}bytes = {len(chunk_data)}bytes total")
+                                await self.websocket.send_bytes(chunk_data)
                                 await asyncio.sleep(0.01)  # 10ms delay between chunks
-                                logger.info(f"📦 [CHUNKED_SEND] Chunk {i//chunk_size + 1} sent, connection: closed={self.websocket.closed}")
-                            logger.info(f"✅ [CHUNKED_SEND] All chunks sent successfully: {len(v3_data)} total bytes")
+                                logger.info(f"📦 [PROTOCOL_CHUNKED] Chunk {chunk_count} sent, connection: closed={self.websocket.closed}")
+                                
+                                if self.websocket.closed:
+                                    logger.error(f"🚨 [PROTOCOL_CHUNKED] Connection closed after chunk {chunk_count}, stopping transmission")
+                                    break
+                                    
+                            if not self.websocket.closed:
+                                logger.info(f"✅ [PROTOCOL_CHUNKED] All {chunk_count} chunks sent successfully: {len(audios)} total audio bytes")
                         else:
                             await self.websocket.send_bytes(v3_data)  # 小さいデータは一括送信
                             logger.info(f"✅ [V3_PROTOCOL] V3 protocol send completed: {len(v3_data)} bytes")
