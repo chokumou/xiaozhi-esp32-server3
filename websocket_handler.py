@@ -142,9 +142,13 @@ class ConnectionHandler:
             # 注意: 活動時間更新は既にメソッド冒頭で実行済み
             
         except Exception as e:
-            logger.error(f"❌ [ERROR] Error handling binary message from {self.device_id}: {e}")
+            logger.error(f"🚨 [CRITICAL_ERROR] Binary message processing failed for {self.device_id}: {e}")
+            logger.error(f"🚨 [CRITICAL_ERROR] Message details: len={len(message)}, protocol_v={self.protocol_version}")
+            logger.error(f"🚨 [CRITICAL_ERROR] Message hex: {message.hex() if len(message) <= 100 else message[:100].hex()}")
             import traceback
-            logger.error(f"❌ [ERROR] Traceback: {traceback.format_exc()}")
+            logger.error(f"🚨 [CRITICAL_ERROR] Full traceback: {traceback.format_exc()}")
+            # Continue processing despite error to avoid connection drop
+            raise  # Re-raise to trigger WebSocket disconnect investigation
 
     async def handle_hello_message(self, msg_json: Dict[str, Any]):
         """Handle ESP32 hello message"""
