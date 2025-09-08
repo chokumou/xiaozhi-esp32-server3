@@ -451,9 +451,9 @@ class ConnectionHandler:
                         await self.websocket.send_bytes(v3_frame)
                         logger.info(f"🔗 [FRAME] Successfully sent v3 frame {frame_num}/{total_frames}: {len(v3_frame)} bytes")
                         
-                        # Server2準拠: フレーム間に小さな待機時間
+                        # Server2準拠: フレーム間に小さな待機時間 (PONG timeout対策)
                         if frame_num < total_frames:  # 最後のフレーム以外
-                            await asyncio.sleep(0.005)  # 5ms wait between frames (shorter than chunks)
+                            await asyncio.sleep(0.001)  # 1ms wait (PONG timeout対策で短縮)
                     
                     logger.info(f"🔵XIAOZHI_AUDIO_SENT🔵 ※ここを送ってver2_AUDIO※ 🎵 [AUDIO_SENT] ===== Sent {total_frames} Opus frames to {self.device_id} ({total_bytes} total bytes) =====")
                     logger.info(f"🔍 [DEBUG_SEND] WebSocket state after audio send: closed={self.websocket.closed}")
