@@ -479,10 +479,16 @@ class ConnectionHandler:
                 logger.info(f"🔍 [DEBUG_LOOP] Starting async for loop for {self.device_id}, websocket.closed={self.websocket.closed}")
                 last_msg_time = time.time()
                 
-                # 🚨 重要: async for の内部動作を詳細監視
+                # 🚨 重要: Server2準拠のWebSocketメッセージ処理ループ
                 logger.info(f"🔍 [LOOP_MONITOR] About to enter async for msg in self.websocket")
                 async for msg in self.websocket:
                     logger.info(f"🔍 [LOOP_MONITOR] Received message in async for loop")
+                    
+                    # Server2準拠: ESP32切断メッセージの事前検知
+                    if msg.type in (web.WSMsgType.CLOSE, web.WSMsgType.CLOSED, web.WSMsgType.ERROR):
+                        logger.warning(f"🟣XIAOZHI_ESP32_CLOSE🟣 ESP32 initiated close: type={msg.type}, code={getattr(msg, 'extra', 'None')}")
+                        connection_ended = True
+                        break
                     msg_count += 1
                     current_time = time.time()
                     time_since_last = current_time - last_msg_time
@@ -506,14 +512,6 @@ class ConnectionHandler:
                         logger.info(f"🔍 [DEBUG_LOOP] Processing BINARY message: {len(msg.data)} bytes")
                         await self.handle_message(msg.data)
                         logger.info(f"🔍 [DEBUG_LOOP] BINARY message processed, continuing loop, closed={self.websocket.closed}")
-                    elif msg.type == web.WSMsgType.CLOSE:
-                        logger.warning(f"🟣XIAOZHI_ESP32_CLOSE🟣 ※ここを送ってver2_CLOSE※ ⚠️ [WEBSOCKET] CLOSE message received for {self.device_id}")
-                        connection_ended = True
-                        break
-                    elif msg.type == web.WSMsgType.ERROR:
-                        logger.error(f"🔥XIAOZHI_ERROR🔥 ❌ [WEBSOCKET] ERROR received for {self.device_id}: {self.websocket.exception()}")
-                        connection_ended = True
-                        break
                     else:
                         logger.warning(f"🔍 [DEBUG_LOOP] Unknown message type: {msg.type}({msg.type.value}), ignoring and continuing")
                     
