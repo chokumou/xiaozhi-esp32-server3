@@ -431,30 +431,21 @@ class ConnectionHandler:
             opus_frames_list = await self.tts_service.generate_speech(text)
             logger.info(f"🎶 [TTS_RESULT] ===== TTS generated: {len(opus_frames_list) if opus_frames_list else 0} individual Opus frames =====")
             
-            # Server2準拠: 個別Opusフレーム送信
+            # Server2準拠: 全フレーム一括送信（sendAudioHandle.py line 45準拠）
             if opus_frames_list:
                 try:
+                    # Server2準拠: 個別フレームを結合して一括送信
+                    all_opus_data = b''.join(opus_frames_list)
                     total_frames = len(opus_frames_list)
-                    total_bytes = sum(len(frame) for frame in opus_frames_list)
                     
-                    logger.info(f"🎵 [AUDIO_SENDING] Starting Server2-style individual frame transmission to {self.device_id}")
-                    logger.info(f"🔗 [FRAME_STRATEGY] Sending {total_frames} individual Opus frames ({total_bytes} total bytes)")
+                    logger.info(f"🎵 [AUDIO_SENDING] Server2-style batch transmission to {self.device_id}")
+                    logger.info(f"🔗 [BATCH_STRATEGY] Sending {total_frames} Opus frames as single payload ({len(all_opus_data)} total bytes)")
+                    logger.info(f"🎵 [BATCH_DETAIL] First 40 bytes: {all_opus_data[:40].hex() if len(all_opus_data) >= 40 else all_opus_data.hex()}")
                     
-                    for frame_num, opus_frame in enumerate(opus_frames_list, 1):
-                        logger.info(f"🔍 [DEBUG_SEND] WebSocket state before frame {frame_num}: closed={self.websocket.closed}")
-                        
-                        # Server2準拠: 純粋なOpusフレーム送信（ヘッダなし）
-                        
-                        logger.info(f"🎵 [FRAME_DETAIL] Sending pure Opus frame {frame_num}: {len(opus_frame)} bytes (Server2-style), first 20 bytes: {opus_frame[:20].hex() if len(opus_frame) >= 20 else opus_frame.hex()}")
-                        
-                        await self.websocket.send_bytes(opus_frame)  # 純粋なOpusフレーム
-                        logger.info(f"🔗 [FRAME] Successfully sent pure Opus frame {frame_num}/{total_frames}: {len(opus_frame)} bytes")
-                        
-                        # Server2準拠: フレーム間に小さな待機時間 (PONG timeout対策)
-                        if frame_num < total_frames:  # 最後のフレーム以外
-                            await asyncio.sleep(0.001)  # 1ms wait (PONG timeout対策で短縮)
+                    # Server2準拠: await conn.websocket.send(audios) 
+                    await self.websocket.send_bytes(all_opus_data)
                     
-                    logger.info(f"🔵XIAOZHI_AUDIO_SENT🔵 ※ここを送ってver2_AUDIO※ 🎵 [AUDIO_SENT] ===== Sent {total_frames} Opus frames to {self.device_id} ({total_bytes} total bytes) =====")
+                    logger.info(f"🔵XIAOZHI_AUDIO_SENT🔵 ※ここを送ってver2_AUDIO※ 🎵 [AUDIO_SENT] ===== Sent batch Opus data to {self.device_id} ({len(all_opus_data)} total bytes) =====")
                     logger.info(f"🔍 [DEBUG_SEND] WebSocket state after audio send: closed={self.websocket.closed}")
 
                     # Send TTS stop message (server2 style)
