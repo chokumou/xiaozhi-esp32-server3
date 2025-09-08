@@ -415,13 +415,17 @@ class ConnectionHandler:
                 # Server2準拠: シンプル音声送信
                 try:
                     logger.info(f"🎵 [AUDIO_SENDING] Starting audio transmission to {self.device_id} ({len(audio_bytes)} bytes)")
+                    logger.info(f"🔍 [DEBUG_SEND] WebSocket state before audio send: closed={self.websocket.closed}")
                     await self.websocket.send_bytes(audio_bytes)
                     logger.info(f"🔵XIAOZHI_AUDIO_SENT🔵 ※ここを送ってver2_AUDIO※ 🎵 [AUDIO_SENT] ===== Sent audio response to {self.device_id} ({len(audio_bytes)} bytes) =====")
+                    logger.info(f"🔍 [DEBUG_SEND] WebSocket state after audio send: closed={self.websocket.closed}")
 
                     # Send TTS stop message (server2 style)
                     tts_stop_msg = {"type": "tts", "state": "stop", "session_id": self.session_id}
+                    logger.info(f"🔍 [DEBUG_SEND] About to send TTS stop message: {tts_stop_msg}")
                     await self.websocket.send_str(json.dumps(tts_stop_msg))
                     logger.info(f"🟡XIAOZHI_TTS_STOP🟡 ※ここを送ってver2_TTS_STOP※ 📢 [TTS] Sent TTS stop message")
+                    logger.info(f"🔍 [DEBUG_SEND] WebSocket state after TTS stop: closed={self.websocket.closed}")
                     
                     # Server2準拠: TTS完了後の接続制御
                     if self.close_after_chat:
@@ -430,9 +434,11 @@ class ConnectionHandler:
                         return
                     else:
                         logger.info(f"🔵XIAOZHI_CONTINUE_CONNECTION🔵 Maintaining connection after TTS completion for {self.device_id}")
+                        logger.info(f"🔍 [DEBUG_SEND] WebSocket final state: closed={self.websocket.closed}")
 
                 except Exception as send_error:
                     logger.error(f"❌ [WEBSOCKET] Audio send failed to {self.device_id}: {send_error}")
+                    logger.error(f"🔍 [DEBUG_SEND] WebSocket state after error: closed={self.websocket.closed}")
             else:
                 logger.warning(f"Failed to generate audio for {self.device_id}")
                 
@@ -479,6 +485,14 @@ class ConnectionHandler:
                         logger.warning(f"🔍 [DEBUG_LOOP] Unknown message type: {msg.type}({msg.type.value}), ignoring and continuing")
                     
                 logger.info(f"🔍 [DEBUG_LOOP] async for loop ended naturally for {self.device_id}, final msg_count={msg_count}")
+                logger.info(f"🔍 [DEBUG_LOOP] WebSocket state: closed={self.websocket.closed}, close_code={getattr(self.websocket, 'close_code', 'None')}")
+                
+                # ESP32側切断詳細調査
+                try:
+                    # WebSocket状態詳細ログ
+                    logger.info(f"🔍 [DEBUG_LOOP] WebSocket exception: {self.websocket.exception()}")
+                except:
+                    logger.info(f"🔍 [DEBUG_LOOP] No WebSocket exception")
                     
             except Exception as loop_error:
                 logger.error(f"🔥XIAOZHI_ERROR🔥 ❌ [WEBSOCKET] Loop error for {self.device_id}: {loop_error}")
@@ -494,6 +508,7 @@ class ConnectionHandler:
                     # 実際の音声送信完了チェックはここで実装可能
                     
             logger.info(f"🔵XIAOZHI_LOOP_COMPLETE🔵 ✅ [WEBSOCKET_LOOP] Loop completed for {self.device_id} after {msg_count} messages")
+            logger.info(f"🔍 [DEBUG_LOOP] Final WebSocket state: closed={self.websocket.closed}, close_code={getattr(self.websocket, 'close_code', 'None')}")
         except Exception as e:
             logger.error(f"❌ [WEBSOCKET] Unhandled error in connection handler for {self.device_id}: {e}")
         finally:
