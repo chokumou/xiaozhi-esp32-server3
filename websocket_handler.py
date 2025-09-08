@@ -52,8 +52,8 @@ class ConnectionHandler:
         import time
         self.last_activity_time = time.time() * 1000
         
-        # Server2準拠: タイムアウト監視（ESP32の120秒より短く設定）
-        self.timeout_seconds = 100  # ESP32の120秒より短くしてサーバー側から先に制御
+        # Server2準拠: タイムアウト監視（元の180秒に戻して詳細調査）
+        self.timeout_seconds = 180  # 120 + 60秒のバッファ（ESP32エラー原因を特定するため）
         self.timeout_task = None
         
         # Initialize server2-style audio handler
