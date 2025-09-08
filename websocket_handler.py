@@ -460,19 +460,28 @@ class ConnectionHandler:
             # 詳細デバッグ: WebSocketメッセージ受信完全トレース
             try:
                 logger.info(f"🔍 [DEBUG_LOOP] Starting async for loop for {self.device_id}, websocket.closed={self.websocket.closed}")
+                last_msg_time = time.time()
                 async for msg in self.websocket:
                     msg_count += 1
-                    logger.info(f"🔍 [DEBUG_LOOP] Message {msg_count}: type={msg.type}({msg.type.value}), closed={self.websocket.closed}, data_len={len(msg.data) if hasattr(msg, 'data') and msg.data else 'None'}")
+                    current_time = time.time()
+                    time_since_last = current_time - last_msg_time
+                    last_msg_time = current_time
+                    
+                    # メッセージ間隔も監視
+                    if time_since_last > 1.0:  # 1秒以上の間隔
+                        logger.info(f"🔍 [DEBUG_LOOP] Long gap detected: {time_since_last:.1f}s since last message")
+                    
+                    logger.info(f"🔍 [DEBUG_LOOP] Message {msg_count}: type={msg.type}({msg.type.value}), closed={self.websocket.closed}, data_len={len(msg.data) if hasattr(msg, 'data') and msg.data else 'None'}, gap={time_since_last:.1f}s")
                     
                     # Server2準拠: メッセージタイプ別処理
                     if msg.type == web.WSMsgType.TEXT:
                         logger.info(f"🔍 [DEBUG_LOOP] Processing TEXT message: {msg.data[:100]}...")
                         await self.handle_message(msg.data)
-                        logger.info(f"🔍 [DEBUG_LOOP] TEXT message processed, continuing loop")
+                        logger.info(f"🔍 [DEBUG_LOOP] TEXT message processed, continuing loop, closed={self.websocket.closed}")
                     elif msg.type == web.WSMsgType.BINARY:
                         logger.info(f"🔍 [DEBUG_LOOP] Processing BINARY message: {len(msg.data)} bytes")
                         await self.handle_message(msg.data)
-                        logger.info(f"🔍 [DEBUG_LOOP] BINARY message processed, continuing loop")
+                        logger.info(f"🔍 [DEBUG_LOOP] BINARY message processed, continuing loop, closed={self.websocket.closed}")
                     elif msg.type == web.WSMsgType.CLOSE:
                         logger.warning(f"🟣XIAOZHI_ESP32_CLOSE🟣 ※ここを送ってver2_CLOSE※ ⚠️ [WEBSOCKET] CLOSE message received for {self.device_id}")
                         connection_ended = True
@@ -484,7 +493,11 @@ class ConnectionHandler:
                     else:
                         logger.warning(f"🔍 [DEBUG_LOOP] Unknown message type: {msg.type}({msg.type.value}), ignoring and continuing")
                     
+                    # ループ継続確認
+                    logger.debug(f"🔍 [DEBUG_LOOP] Loop iteration {msg_count} complete, websocket.closed={self.websocket.closed}")
+                    
                 logger.info(f"🔍 [DEBUG_LOOP] async for loop ended naturally for {self.device_id}, final msg_count={msg_count}")
+                logger.info(f"🔍 [DEBUG_LOOP] Time since last message when loop ended: {time.time() - last_msg_time:.1f}s")
                 logger.info(f"🔍 [DEBUG_LOOP] WebSocket state: closed={self.websocket.closed}, close_code={getattr(self.websocket, 'close_code', 'None')}")
                 
                 # ESP32側切断詳細調査
