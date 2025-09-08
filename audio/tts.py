@@ -45,9 +45,9 @@ class TTSService:
         try:
             logger.debug(f"Converting {file_type} audio to Opus frames ({len(audio_bytes)} bytes)")
             
-            # AudioSegment で PCM に変換 (Server2準拠: 24kHz)
+            # AudioSegment で PCM に変換 (Server2準拠: 16kHz)
             audio = AudioSegment.from_file(BytesIO(audio_bytes), format=file_type)
-            audio = audio.set_channels(1).set_frame_rate(24000).set_sample_width(2)  # Server2準拠: 24kHz
+            audio = audio.set_channels(1).set_frame_rate(16000).set_sample_width(2)  # Server2準拠: 16kHz
             raw_data = audio.raw_data
             
             logger.debug(f"PCM conversion: {len(raw_data)} bytes")
@@ -75,17 +75,12 @@ class TTSService:
         try:
             import numpy as np
             
-            # Opus エンコーダー初期化 (Server2準拠: 24kHz)
-            encoder = opuslib_next.Encoder(24000, 1, opuslib_next.APPLICATION_AUDIO)
+            # Opus エンコーダー初期化 (Server2準拠: 16kHz)
+            encoder = opuslib_next.Encoder(16000, 1, opuslib_next.APPLICATION_AUDIO)
             
-            # Server2準拠: ビットレートと品質設定
-            encoder.bitrate = 24000  # Server2と同じビットレート
-            encoder.complexity = 10  # Server2と同じ最高品質
-            encoder.signal = opuslib_next.SIGNAL_VOICE  # 音声信号最適化
-            
-            # 60ms フレーム設定 (Server2準拠: 24kHz)
+            # 60ms フレーム設定 (Server2準拠: 16kHz)
             frame_duration = 60  # 60ms per frame
-            frame_size = int(24000 * frame_duration / 1000)  # 1440 samples/frame (24kHz)
+            frame_size = int(16000 * frame_duration / 1000)  # 960 samples/frame (16kHz)
             
             opus_frames_list = []  # 個別フレームのリスト
             frame_count = 0
@@ -110,7 +105,7 @@ class TTSService:
                 else:
                     logger.warning(f"Empty Opus frame generated for frame {frame_count}")
             
-            logger.info(f"🎵 [SERVER2_COMPAT] Generated {frame_count} Opus frames (24kHz, 60ms, bitrate=24k) from {len(raw_data)} bytes PCM")
+            logger.info(f"🎵 [SERVER2_COMPAT] Generated {frame_count} Opus frames (16kHz, 60ms) from {len(raw_data)} bytes PCM")
             return opus_frames_list
             
         except Exception as e:
