@@ -427,13 +427,24 @@ class ConnectionHandler:
             
             # Server2準拠: stop_eventチェック削除（TTS中断なし）
             
+            # TTS処理前の接続状態チェック
+            logger.info(f"🔍 [CONNECTION_CHECK] Before TTS generation: closed={self.websocket.closed}")
+            
             # Generate TTS audio (server2 style - individual frames)
             opus_frames_list = await self.tts_service.generate_speech(text)
             logger.info(f"🎶 [TTS_RESULT] ===== TTS generated: {len(opus_frames_list) if opus_frames_list else 0} individual Opus frames =====")
             
+            # TTS処理後の接続状態チェック
+            logger.info(f"🔍 [CONNECTION_CHECK] After TTS generation: closed={self.websocket.closed}")
+            
             # Server2完全移植: sendAudioHandle.py line 36-45 直接移植
             if opus_frames_list:
                 try:
+                    # 送信直前の最終接続確認
+                    if self.websocket.closed:
+                        logger.error(f"🚨 [CONNECTION_ERROR] WebSocket already closed before audio send")
+                        return
+                    
                     # Server2準拠: audios = 全フレーム結合bytes
                     audios = b''.join(opus_frames_list)
                     total_frames = len(opus_frames_list)
@@ -446,12 +457,13 @@ class ConnectionHandler:
                     v3_data = header + audios
                     
                     logger.info(f"🎵 [V3_PROTOCOL] BinaryProtocol3: type={type_field}, size={payload_size}, total={len(v3_data)} bytes")
+                    logger.info(f"🔍 [CONNECTION_CHECK] Just before send_bytes: closed={self.websocket.closed}")
                     
-                    if hasattr(self, 'websocket') and self.websocket:
+                    if hasattr(self, 'websocket') and self.websocket and not self.websocket.closed:
                         await self.websocket.send_bytes(v3_data)  # v3ヘッダー付き一括送信
                         logger.info(f"✅ [V3_PROTOCOL] V3 protocol send completed: {len(v3_data)} bytes")
                     else:
-                        logger.error(f"❌ [V3_PROTOCOL] WebSocket disconnected")
+                        logger.error(f"❌ [V3_PROTOCOL] WebSocket disconnected before send")
                     
                     logger.info(f"🔵XIAOZHI_AUDIO_SENT🔵 ※ここを送ってver2_AUDIO※ 🎵 [AUDIO_SENT] ===== Sent {total_frames} Opus frames to {self.device_id} ({len(audios)} total bytes) =====")
                     logger.info(f"🔍 [DEBUG_SEND] WebSocket state after audio send: closed={self.websocket.closed}")
