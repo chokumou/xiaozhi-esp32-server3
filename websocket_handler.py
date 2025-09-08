@@ -429,17 +429,29 @@ class ConnectionHandler:
             
             # Server2準拠: 送信前stop_eventチェック削除（音声送信継続）
             if audio_bytes:
-                # ESP32受信バッファ対策: TTS start後に受信準備時間を確保
+                # ESP32受信バッファオーバーフロー根本対策: 小さなチャンクで分割送信
                 try:
-                    logger.info(f"🎵 [AUDIO_SENDING] Waiting for ESP32 receive buffer preparation...")
+                    logger.info(f"🎵 [AUDIO_SENDING] Starting chunked transmission to {self.device_id} ({len(audio_bytes)} bytes)")
                     
-                    # ESP32の受信準備時間確保: TTS start → 音声データ送信の間に待機
-                    await asyncio.sleep(0.5)  # 500ms wait for ESP32 to prepare receive buffer
+                    # ESP32受信能力に合わせた小さなチャンク (512 bytes)
+                    chunk_size = 512  # 512 bytes per chunk to prevent buffer overflow
+                    total_chunks = (len(audio_bytes) + chunk_size - 1) // chunk_size
                     
-                    logger.info(f"🎵 [AUDIO_SENDING] Starting audio transmission to {self.device_id} ({len(audio_bytes)} bytes)")
-                    logger.info(f"🔍 [DEBUG_SEND] WebSocket state before audio send: closed={self.websocket.closed}")
-                    await self.websocket.send_bytes(audio_bytes)
-                    logger.info(f"🔵XIAOZHI_AUDIO_SENT🔵 ※ここを送ってver2_AUDIO※ 🎵 [AUDIO_SENT] ===== Sent audio response to {self.device_id} ({len(audio_bytes)} bytes) =====")
+                    logger.info(f"🔗 [CHUNK_STRATEGY] Sending {len(audio_bytes)} bytes in {total_chunks} chunks of {chunk_size} bytes each")
+                    
+                    for i in range(0, len(audio_bytes), chunk_size):
+                        chunk = audio_bytes[i:i + chunk_size]
+                        chunk_num = i // chunk_size + 1
+                        
+                        logger.info(f"🔍 [DEBUG_SEND] WebSocket state before chunk {chunk_num}: closed={self.websocket.closed}")
+                        await self.websocket.send_bytes(chunk)
+                        logger.debug(f"🔗 [CHUNK] Sent chunk {chunk_num}/{total_chunks}: {len(chunk)} bytes")
+                        
+                        # ESP32処理時間確保: チャンク間に待機時間
+                        if chunk_num < total_chunks:  # 最後のチャンク以外
+                            await asyncio.sleep(0.01)  # 10ms wait between chunks
+                    
+                    logger.info(f"🔵XIAOZHI_AUDIO_SENT🔵 ※ここを送ってver2_AUDIO※ 🎵 [AUDIO_SENT] ===== Sent chunked audio to {self.device_id} ({len(audio_bytes)} bytes in {total_chunks} chunks) =====")
                     logger.info(f"🔍 [DEBUG_SEND] WebSocket state after audio send: closed={self.websocket.closed}")
 
                     # Send TTS stop message (server2 style)
