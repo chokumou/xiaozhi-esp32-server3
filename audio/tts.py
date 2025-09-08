@@ -55,11 +55,16 @@ class TTSService:
             # Server2準拠: PCM を60msフレームでOpusエンコード
             opus_data = await self._pcm_to_opus_frames(raw_data)
             
-            # ESP32プロトコル対応: BinaryProtocol3ヘッダーを追加
-            protocol_data = self._add_binary_protocol3_header(opus_data)
+            # 実験: Server2準拠で生のOpusデータを送信（ヘッダーなし）
+            logger.debug(f"Raw Opus data generated: {len(opus_data)} bytes")
+            logger.info(f"🔬 [EXPERIMENT] Sending raw Opus data without BinaryProtocol3 header")
+            return opus_data
             
-            logger.debug(f"Protocol3 data generated: {len(protocol_data)} bytes (Opus: {len(opus_data)} bytes)")
-            return protocol_data
+            # # ESP32プロトコル対応: BinaryProtocol3ヘッダーを追加
+            # protocol_data = self._add_binary_protocol3_header(opus_data)
+            # 
+            # logger.debug(f"Protocol3 data generated: {len(protocol_data)} bytes (Opus: {len(opus_data)} bytes)")
+            # return protocol_data
             
         except Exception as e:
             logger.error(f"Audio conversion failed: {e}")
