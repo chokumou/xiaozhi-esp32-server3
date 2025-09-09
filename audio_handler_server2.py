@@ -25,8 +25,8 @@ class AudioHandlerServer2:
         # RMSベース音声検知システム (server2準拠)
         self.client_have_voice = False
         self.last_voice_activity_time = time.time() * 1000  # milliseconds
-        self.silence_threshold_ms = 1000  # 1秒無音で処理開始 (server2準拠)
-        self.rms_threshold = 200  # RMS閾値 (server2準拠)
+        self.silence_threshold_ms = 2000  # 2秒無音で処理開始 (長い発話対応)
+        self.rms_threshold = 250  # RMS閾値を上げて過敏反応を抑制
         self.voice_frame_count = 0  # 連続音声フレーム数
         self.silence_frame_count = 0  # 連続無音フレーム数
         self.is_processing = False  # 重複処理防止フラグ
