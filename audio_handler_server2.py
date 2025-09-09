@@ -79,6 +79,10 @@ class AudioHandlerServer2:
             
             # Store audio frame regardless (server2 style)
             self.asr_audio.append(audio_data)
+            
+            # 詳細フレーム蓄積ログ
+            if len(self.asr_audio) % 20 == 0:  # 20フレームごとにログ
+                logger.info(f"📦 [FRAME_ACCUMULATION] 蓄積フレーム数: {len(self.asr_audio)}, 最新フレーム: {len(audio_data)}B, 音声検知: {is_voice}")
             self.asr_audio = self.asr_audio[-100:]  # Keep more frames
             
             # logger.info(f"[AUDIO_TRACE] Frame: {len(audio_data)}B, RMS_voice={is_voice}, frames={len(self.asr_audio)}")  # レート制限対策で削除
@@ -167,6 +171,11 @@ class AudioHandlerServer2:
             self._reset_audio_state()
             
             logger.info(f"🔥 RID[{rid}] HANDLE_VOICE_STOP_PROCESSING: Converting {len(audio_frames)} frames to WAV")
+            
+            # フレーム詳細分析
+            total_bytes = sum(len(frame) for frame in audio_frames)
+            frame_sizes = [len(frame) for frame in audio_frames[:10]]  # 最初の10フレーム
+            logger.info(f"🔥 RID[{rid}] FRAME_ANALYSIS: total_bytes={total_bytes}, frame_sizes={frame_sizes}...")
             
             # Convert to WAV using server2 method
             wav_data = await self._opus_frames_to_wav(audio_frames)
