@@ -53,16 +53,10 @@ class AudioHandlerServer2:
             is_voice = await self._detect_voice_with_rms(audio_data)
             current_time = time.time() * 1000
 
-            # Server2準拠: TTS中の音声処理継続
+            # TTS中は音声処理を完全に停止（割り込み無効化）
             if self.tts_in_progress:
-                logger.debug(f"[TTS_ACTIVE] TTS中でも音声処理継続 (server2準拠)")
-                # TTS中に有意な音声（>100 bytes）が検出されたらバージイン
-                if len(audio_data) > 100 and is_voice:
-                    logger.info(f"※ここを送ってver2_BARGE_IN※ 🚨 [BARGE_IN] TTS中に割り込み音声検出: {len(audio_data)}B")
-                    # Server2のhandleAbortMessage相当処理
-                    await self.websocket_handler.handle_barge_in_abort()
-                    return  # BARGE_IN時は以降の処理をスキップ
-                # TTS中でも通常の音声処理を継続
+                logger.debug(f"[TTS_ACTIVE] TTS中は音声処理停止 - 割り込み無効化モード")
+                return  # TTS中は一切の音声処理をスキップ
             
             # デバッグ: RMS VAD動作確認
             # logger.info(f"🔍 [VAD_DEBUG] RMS検知結果: voice={is_voice}, audio_size={len(audio_data)}B")  # レート制限対策で削除
