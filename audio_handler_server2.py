@@ -36,6 +36,10 @@ class AudioHandlerServer2:
         self.current_request_id = None
         self.active_tts_rid = None  # 現在再生中のTTS RID
         
+        # Server2準拠: wake_guard機能（連続発話対応）
+        self.wake_until = 0  # この時間まで強制的に発話継続と判定
+        self.wake_guard_ms = 500  # 有音後500ms間は発話継続（server2の300msより長め）
+        
         # Initialize Opus decoder
         try:
             import opuslib_next
@@ -57,6 +61,13 @@ class AudioHandlerServer2:
             # RMSベース音声検知 (server2準拠)
             is_voice = await self._detect_voice_with_rms(audio_data)
             current_time = time.time() * 1000
+            
+            # Server2準拠: wake_guard機能（有音検知時の処理）
+            if is_voice:
+                self.last_voice_activity_time = current_time
+                # wake_guard設定: 有音後一定時間は強制的に発話継続と判定
+                self.wake_until = current_time + self.wake_guard_ms
+                logger.debug(f"[WAKE_GUARD] 有音検知: wake_until={self.wake_until}")
 
             # TTS中は音声処理を完全に停止（割り込み無効化）
             if self.tts_in_progress:
@@ -93,6 +104,11 @@ class AudioHandlerServer2:
                 if self.client_have_voice:
                     silence_duration = current_time - self.last_voice_activity_time
                     # logger.info(f"【無音継続】{silence_duration:.0f}ms / {self.silence_threshold_ms}ms (有音後)")  # ログ削減
+                    
+                    # Server2準拠: wake_guard期間中は無音検知をスキップ
+                    if current_time < self.wake_until:
+                        logger.debug(f"[WAKE_GUARD] 無音検知スキップ: 残り{self.wake_until - current_time:.0f}ms")
+                        return
                     
                     if silence_duration >= self.silence_threshold_ms and len(self.asr_audio) > 5 and not self.is_processing:
                         logger.info(f"🟠XIAOZHI_SILENCE_DETECT🟠 ※ここを送ってver2_SILENCE_DETECT※ 【無音検知完了】{silence_duration:.0f}ms無音 - 音声処理開始 (有音→無音)")
