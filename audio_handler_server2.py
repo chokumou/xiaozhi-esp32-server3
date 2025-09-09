@@ -43,7 +43,7 @@ class AudioHandlerServer2:
         
         # TTS終了後クールダウン（音響回り込み防止）
         self.tts_cooldown_until = 0  # この時間まで音声処理をスキップ
-        self.tts_cooldown_ms = 400  # TTS終了後400msクールダウン
+        self.tts_cooldown_ms = 800  # TTS終了後800msクールダウン（エコー完全安定化）
         
         # Initialize Opus decoder
         try:
