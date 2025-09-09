@@ -464,33 +464,25 @@ class ConnectionHandler:
                     logger.info(f"🔍 [CONNECTION_CHECK] Just before send_bytes: closed={self.websocket.closed}")
                     
                     if hasattr(self, 'websocket') and self.websocket and not self.websocket.closed:
-                        # ESP32バッファオーバーフロー対策：Opusペイロードのみ分割、ヘッダーは各チャンクに個別追加
-                        chunk_size = 8192  # 8KB chunks  
-                        if len(audios) > chunk_size:
-                            logger.info(f"📦 [PROTOCOL_CHUNKED] Large audio data ({len(audios)} bytes), splitting into {chunk_size} byte chunks with individual headers")
-                            chunk_count = 0
-                            for i in range(0, len(audios), chunk_size):
-                                chunk_count += 1
-                                audio_chunk = audios[i:i + chunk_size]
+                        # ESP32のOpusDecoder対応: 個別フレーム送信 (server2準拠)
+                        frame_count = len(opus_frames_list)
+                        logger.info(f"🎵 [INDIVIDUAL_FRAMES] Sending {frame_count} individual Opus frames")
+                        
+                        for i, opus_frame in enumerate(opus_frames_list):
+                            # 各フレームに個別のBinaryProtocol3ヘッダーを追加
+                            frame_header = struct.pack('>BH', type_field, len(opus_frame))
+                            frame_data = frame_header + opus_frame
+                            
+                            logger.info(f"🎵 [FRAME_SEND] Frame {i+1}/{frame_count}: header=3bytes + opus={len(opus_frame)}bytes = {len(frame_data)}bytes")
+                            await self.websocket.send_bytes(frame_data)
+                            await asyncio.sleep(0.005)  # 5ms delay between frames for ESP32 processing
+                            
+                            if self.websocket.closed:
+                                logger.error(f"🚨 [FRAME_SEND] Connection closed after frame {i+1}, stopping transmission")
+                                break
                                 
-                                # 各チャンクに個別のBinaryProtocol3ヘッダーを追加
-                                chunk_header = struct.pack('>BH', type_field, len(audio_chunk))
-                                chunk_data = chunk_header + audio_chunk
-                                
-                                logger.info(f"📦 [PROTOCOL_CHUNKED] Sending chunk {chunk_count}: header=3bytes + audio={len(audio_chunk)}bytes = {len(chunk_data)}bytes total")
-                                await self.websocket.send_bytes(chunk_data)
-                                await asyncio.sleep(0.01)  # 10ms delay between chunks
-                                logger.info(f"📦 [PROTOCOL_CHUNKED] Chunk {chunk_count} sent, connection: closed={self.websocket.closed}")
-                                
-                                if self.websocket.closed:
-                                    logger.error(f"🚨 [PROTOCOL_CHUNKED] Connection closed after chunk {chunk_count}, stopping transmission")
-                                    break
-                                    
-                            if not self.websocket.closed:
-                                logger.info(f"✅ [PROTOCOL_CHUNKED] All {chunk_count} chunks sent successfully: {len(audios)} total audio bytes")
-                        else:
-                            await self.websocket.send_bytes(v3_data)  # 小さいデータは一括送信
-                            logger.info(f"✅ [V3_PROTOCOL] V3 protocol send completed: {len(v3_data)} bytes")
+                        if not self.websocket.closed:
+                            logger.info(f"✅ [INDIVIDUAL_FRAMES] All {frame_count} frames sent successfully")
                     else:
                         logger.error(f"❌ [V3_PROTOCOL] WebSocket disconnected before send")
                     
