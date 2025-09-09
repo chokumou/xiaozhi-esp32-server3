@@ -365,7 +365,15 @@ class ConnectionHandler:
     async def handle_barge_in_abort(self):
         """Server2のhandleAbortMessage相当処理"""
         try:
-            logger.info("🚨 [BARGE_IN_ABORT] Handling TTS interruption - server2 style")
+            # 呼び出し元を詳細追跡
+            import traceback
+            full_stack = traceback.format_stack()
+            caller_details = []
+            for i, frame in enumerate(full_stack[-4:-1]):
+                caller_details.append(f"Level{i}: {frame.strip()}")
+            
+            logger.warning("🚨 [BARGE_IN_ABORT] Handling TTS interruption - server2 style")
+            logger.warning(f"🔍 [ABORT_CALL_STACK] {' | '.join(caller_details)}")
             
             # TTS停止状態設定
             self.tts_active = False
@@ -384,6 +392,7 @@ class ConnectionHandler:
             if hasattr(self.audio_handler, 'asr_audio'):
                 self.audio_handler.asr_audio.clear()
             if hasattr(self.audio_handler, 'is_processing'):
+                logger.warning(f"🚨 [IS_PROCESSING_ABORT] Setting is_processing=False in handle_barge_in_abort")
                 self.audio_handler.is_processing = False
                 
             logger.info("✅ [BARGE_IN_ABORT] TTS interruption handled successfully")

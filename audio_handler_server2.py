@@ -330,4 +330,7 @@ class AudioHandlerServer2:
             self.is_processing = False
             logger.info("[AUDIO_TRACE] Audio state reset (is_processingもリセット)")
         else:
-            logger.info("[AUDIO_TRACE] Audio state reset (TTS中のためis_processing維持)")
+            logger.warning(f"🚨 [IS_PROCESSING_PROTECTION] TTS中のためis_processing維持 (tts_in_progress={self.tts_in_progress})")
+            
+        # is_processing変更を詳細ログ
+        logger.info(f"🔍 [IS_PROCESSING_STATE] After _reset_audio_state: is_processing={self.is_processing}, tts_in_progress={self.tts_in_progress}")
