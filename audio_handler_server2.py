@@ -59,7 +59,9 @@ class AudioHandlerServer2:
                 # TTS中に有意な音声（>100 bytes）が検出されたらバージイン
                 if len(audio_data) > 100 and is_voice:
                     logger.info(f"※ここを送ってver2_BARGE_IN※ 🚨 [BARGE_IN] TTS中に割り込み音声検出: {len(audio_data)}B")
-                    # TODO: handleAbortMessage equivalent
+                    # Server2のhandleAbortMessage相当処理
+                    await self.websocket_handler.handle_barge_in_abort()
+                    return  # BARGE_IN時は以降の処理をスキップ
                 # TTS中でも通常の音声処理を継続
             
             # デバッグ: RMS VAD動作確認

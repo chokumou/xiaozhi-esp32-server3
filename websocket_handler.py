@@ -348,6 +348,35 @@ class ConnectionHandler:
         finally:
             self._processing_text = False
 
+    async def handle_barge_in_abort(self):
+        """Server2のhandleAbortMessage相当処理"""
+        try:
+            logger.info("🚨 [BARGE_IN_ABORT] Handling TTS interruption - server2 style")
+            
+            # TTS停止状態設定
+            self.tts_active = False
+            self._processing_text = False
+            
+            # ESP32にTTS停止メッセージ送信 (server2準拠)
+            abort_message = {
+                "type": "tts", 
+                "state": "stop", 
+                "session_id": getattr(self, 'session_id', 'unknown')
+            }
+            await self.websocket.send_str(json.dumps(abort_message))
+            logger.info("📱 [TTS_ABORT] Sent TTS stop message to ESP32")
+            
+            # 音声処理状態クリア
+            if hasattr(self.audio_handler, 'asr_audio'):
+                self.audio_handler.asr_audio.clear()
+            if hasattr(self.audio_handler, 'is_processing'):
+                self.audio_handler.is_processing = False
+                
+            logger.info("✅ [BARGE_IN_ABORT] TTS interruption handled successfully")
+            
+        except Exception as e:
+            logger.error(f"❌ [BARGE_IN_ABORT] Error handling TTS interruption: {e}")
+
     async def send_stt_message(self, text: str):
         """Send STT message to display user input (server2 style)"""
         try:
