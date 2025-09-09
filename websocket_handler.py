@@ -498,7 +498,14 @@ class ConnectionHandler:
                                 logger.info(f"🎵 [FRAME_SEND] Frame {i+1}/{frame_count}: opus={len(opus_frame)}bytes")
                             
                             await self.websocket.send_bytes(frame_data)
-                            await asyncio.sleep(0.005)  # 5ms delay between frames for ESP32 processing
+                            await asyncio.sleep(0.020)  # 20ms delay - TLS負荷軽減
+                            
+                            # TLS接続状態詳細チェック
+                            if self.websocket.closed:
+                                logger.error(f"🚨 [TLS_ERROR] WebSocket closed during frame {i+1}, close_code={getattr(self.websocket, 'close_code', 'None')}")
+                            elif getattr(self.websocket, '_writer', None) is None:
+                                logger.error(f"🚨 [TLS_ERROR] Writer lost during frame {i+1}")
+                                break
                             
                             if self.websocket.closed:
                                 logger.error(f"🚨 [FRAME_SEND] Connection closed after frame {i+1}, stopping transmission")
