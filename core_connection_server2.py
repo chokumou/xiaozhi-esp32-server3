@@ -29,15 +29,11 @@ class Server2StyleConnectionHandler:
     async def route_message(self, message: bytes, audio_handler):
         """Server2準拠のメッセージルーティング"""
         try:
-            logger.info(f"🔥S2🔥 ★TEST★ [CONNECTION_ROUTE] Start route_message: {len(message)}B, type={type(message)}")
-            
             if isinstance(message, bytes):
-                logger.info(f"🔥S2🔥 ★TEST★ [CONNECTION_ROUTE] Processing {len(message)}B bytes message")
                 result = await self._handle_binary_message(message, audio_handler)
-                logger.info(f"🔥S2🔥 ★TEST★ [CONNECTION_ROUTE] _handle_binary_message completed")
                 return result
             else:
-                logger.warning(f"⚠️ ★TEST★ [CONNECTION_ROUTE] Non-bytes message: {type(message)}")
+                logger.warning(f"⚠️ [CONNECTION_ROUTE] Non-bytes message: {type(message)}")
                 return None
         except Exception as e:
             logger.error(f"🚨S2🚨 ★TEST★ [CONNECTION_ERROR] route_message failed: {e}")
@@ -51,26 +47,20 @@ class Server2StyleConnectionHandler:
     async def _handle_binary_message(self, message: bytes, audio_handler):
         """Server2準拠のバイナリメッセージ処理"""
         
-        logger.info(f"🔥S2🔥 ★TEST★ [BINARY_DEBUG] _handle_binary_message start: {len(message)}B")
-        
         # Step 1: Connection層DTXフィルタ (Server2 connection.py:375)
         try:
             dtx_threshold = int(os.getenv("DTX_THRESHOLD", "12"))
-            logger.info(f"🔥S2🔥 ★TEST★ [BINARY_DEBUG] DTX check: {len(message)}B vs threshold {dtx_threshold}")
             
             if len(message) <= dtx_threshold:
                 self.dtx_drop_count += 1
-                if self.dtx_drop_count % 50 == 0:
+                if self.dtx_drop_count % 100 == 0:
                     logger.info(
-                        f"🛡️S2🛡️ ★TEST★ [CONNECTION_DTX] DTX小パケット破棄: {self.dtx_drop_count}回 "
+                        f"🛡️ [CONNECTION_DTX] DTX小パケット破棄: {self.dtx_drop_count}回 "
                         f"UTT#{self.utt_seq} bytes={len(message)} (likely DTX/keepalive) threshold={dtx_threshold}"
                     )
-                logger.info(f"🔥S2🔥 ★TEST★ [BINARY_DEBUG] Message dropped by DTX filter")
                 return  # 完全破棄
-            
-            logger.info(f"🔥S2🔥 ★TEST★ [BINARY_DEBUG] Message passed DTX filter, proceeding to stats")
         except Exception as e:
-            logger.error(f"🚨S2🚨 ★TEST★ [BINARY_ERROR] DTX filter error: {e}")
+            logger.error(f"🚨 [BINARY_ERROR] DTX filter error: {e}")
             pass
             
         # Step 2: 統計更新 (Server2準拠)
@@ -80,14 +70,14 @@ class Server2StyleConnectionHandler:
         self.rx_bytes_since_listen += len(message)
         
         # Step 3: 統計ログ (Server2準拠)
-        if (self.rx_frames_since_listen % 50) == 0:
+        if (self.rx_frames_since_listen % 100) == 0:
             logger.info(
-                f"📊S2📊 ★TEST★ [AUDIO_TRACE] UTT#{self.utt_seq} recv frames={self.rx_frames_since_listen}, bytes={self.rx_bytes_since_listen}"
+                f"📊 [AUDIO_TRACE] UTT#{self.utt_seq} recv frames={self.rx_frames_since_listen}, bytes={self.rx_bytes_since_listen}"
             )
         
-        if (self._rx_frame_count % 25) == 0:
+        if (self._rx_frame_count % 50) == 0:
             logger.info(
-                f"📈S2📈 ★TEST★ [CONNECTION_STATS] 音声フレーム受信統計: {self._rx_frame_count} フレーム, {self._rx_bytes_total} バイト"
+                f"📈 [CONNECTION_STATS] 音声フレーム受信統計: {self._rx_frame_count} フレーム, {self._rx_bytes_total} バイト"
             )
             
         # Step 4: receiveAudioHandle層への転送
@@ -104,7 +94,7 @@ class Server2StyleConnectionHandler:
             
         if audio and len(audio) <= dtx_thr:
             try:
-                logger.info(f"🚫 ★TEST★ [AUDIO_DTX] DROP_DTX pkt={len(audio)}B")
+                logger.debug(f"🚫 [AUDIO_DTX] DROP_DTX pkt={len(audio)}B")
             except Exception:
                 pass
             return  # DTX破棄

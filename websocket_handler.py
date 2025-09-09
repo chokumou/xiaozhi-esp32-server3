@@ -144,14 +144,9 @@ class ConnectionHandler:
                 self.connection_handler = Server2StyleConnectionHandler()
                 logger.info("🎯 [CONNECTION_INIT] Server2StyleConnectionHandler initialized")
                 
-            # Server2準拠のメッセージルーティング（デバッグ強化）
+            # Server2準拠のメッセージルーティング
             try:
-                logger.info(f"🟢S2🟢 ★TEST★ [ROUTE_DEBUG] About to call route_message with {len(audio_data)}B audio_data")
-                logger.info(f"🟢S2🟢 ★TEST★ [ROUTE_DEBUG] connection_handler type: {type(self.connection_handler)}")
-                logger.info(f"🟢S2🟢 ★TEST★ [ROUTE_DEBUG] connection_handler has route_message: {hasattr(self.connection_handler, 'route_message')}")
-                
                 await self.connection_handler.route_message(audio_data, self.audio_handler)
-                logger.info(f"🟢S2🟢 ★TEST★ [ROUTE_DEBUG] route_message completed successfully")
             except Exception as route_error:
                 logger.error(f"🚨S2🚨 ★TEST★ [ROUTE_ERROR] route_message failed: {route_error}")
                 import traceback
