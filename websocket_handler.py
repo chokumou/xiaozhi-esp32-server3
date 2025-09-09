@@ -658,7 +658,6 @@ class ConnectionHandler:
                 # TTS完了時に is_processing をリセット
                 self.audio_handler.is_processing = False
                 # TTS終了後クールダウン開始（音響回り込み防止）
-                import time
                 self.audio_handler.tts_cooldown_until = time.time() * 1000 + self.audio_handler.tts_cooldown_ms
                 logger.info(f"🔥 RID[{rid if 'rid' in locals() else 'unknown'}] TTS_COMPLETE: is_processing=False, cooldown={self.audio_handler.tts_cooldown_ms}ms")
 
