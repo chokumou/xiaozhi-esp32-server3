@@ -508,7 +508,8 @@ class ConnectionHandler:
                 self.audio_handler.client_is_speaking = True  # AI発話開始
                 # TTS送信中は is_processing を強制維持
                 self.audio_handler.is_processing = True
-                logger.info(f"🎤 [MIC_CONTROL] AI発話開始: client_is_speaking=True (エコー防止)")
+                handler_id = id(self.audio_handler)
+                logger.info(f"🎤 [MIC_CONTROL] AI発話開始: client_is_speaking=True (エコー防止), handler_id={handler_id}")
                 logger.info(f"🛡️ [TTS_PROTECTION] Set is_processing=True for TTS protection")
             
             # Check if websocket is still open (server2 style)

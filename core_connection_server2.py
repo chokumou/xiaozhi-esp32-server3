@@ -58,7 +58,9 @@ class Server2StyleConnectionHandler:
                 self._debug_counter = 1
             
             if self._debug_counter % 5 == 0:
-                logger.info(f"🔍 [MIC_DEBUG] client_is_speaking={client_is_speaking}, msg_size={len(message)}B")
+                handler_id = id(audio_handler)
+                has_attr = hasattr(audio_handler, 'client_is_speaking')
+                logger.info(f"🔍 [MIC_DEBUG] client_is_speaking={client_is_speaking}, msg_size={len(message)}B, handler_id={handler_id}, has_attr={has_attr}")
             
             if client_is_speaking:
                 # AI発話中は全ての音声フレームを無視（完全マイクオフ）
