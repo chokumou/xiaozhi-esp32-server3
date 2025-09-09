@@ -67,7 +67,7 @@ class AudioHandlerServer2:
                 self.last_voice_activity_time = current_time
                 # wake_guard設定: 有音後一定時間は強制的に発話継続と判定
                 self.wake_until = current_time + self.wake_guard_ms
-                logger.debug(f"[WAKE_GUARD] 有音検知: wake_until={self.wake_until}")
+                logger.info(f"🔥 [WAKE_GUARD] 有音検知: current={current_time}, wake_until={self.wake_until}, guard_ms={self.wake_guard_ms}")
 
             # TTS中は音声処理を完全に停止（割り込み無効化）
             if self.tts_in_progress:
@@ -111,7 +111,7 @@ class AudioHandlerServer2:
                     
                     # Server2準拠: wake_guard期間中は無音検知をスキップ
                     if current_time < self.wake_until:
-                        logger.debug(f"[WAKE_GUARD] 無音検知スキップ: 残り{self.wake_until - current_time:.0f}ms")
+                        logger.info(f"🛡️ [WAKE_GUARD] 無音検知スキップ: 残り{self.wake_until - current_time:.0f}ms")
                         return
                     
                     if silence_duration >= self.silence_threshold_ms and len(self.asr_audio) > 5 and not self.is_processing:
