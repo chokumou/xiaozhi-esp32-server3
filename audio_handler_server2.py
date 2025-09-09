@@ -40,6 +40,10 @@ class AudioHandlerServer2:
         self.wake_until = 0  # この時間まで強制的に発話継続と判定
         self.wake_guard_ms = 500  # 有音後500ms間は発話継続（server2の300msより長め）
         
+        # TTS終了後クールダウン（音響回り込み防止）
+        self.tts_cooldown_until = 0  # この時間まで音声処理をスキップ
+        self.tts_cooldown_ms = 400  # TTS終了後400msクールダウン
+        
         # Initialize Opus decoder
         try:
             import opuslib_next
@@ -53,14 +57,33 @@ class AudioHandlerServer2:
         """Handle single audio frame with RMS-based silence detection (server2準拠)"""
         try:
             # Drop tiny DTX packets (server2 style)
+            current_time = time.time() * 1000
+            
+            # TTS終了後クールダウン期間のチェック（最優先）
+            if current_time < self.tts_cooldown_until:
+                logger.debug(f"[TTS_COOLDOWN] 音声処理スキップ: 残り{self.tts_cooldown_until - current_time:.0f}ms")
+                return
+            
+            # 強化DTXフィルタ: 1バイトフレーム連射防止
+            if len(audio_data) == 1:
+                # 1バイトDTX連射によるTLS負荷を防止
+                if not hasattr(self, 'last_dtx_time'):
+                    self.last_dtx_time = 0
+                # 1バイトDTXは300msに1回まで（keepalive用途のみ）
+                if current_time - self.last_dtx_time < 300:
+                    logger.debug(f"[DTX_RATE_LIMIT] 1バイトDTX連射防止: スキップ")
+                    return
+                self.last_dtx_time = current_time
+                logger.debug(f"[DTX_KEEPALIVE] 1バイトDTX keepalive送信")
+                
+            # Server2準拠: DTX tiny packetsをドロップ
             dtx_threshold = 3
             if len(audio_data) <= dtx_threshold:
-                logger.info(f"[AUDIO_TRACE] DROP_DTX pkt={len(audio_data)}")
+                logger.debug(f"[AUDIO_TRACE] DROP_DTX pkt={len(audio_data)}B")
                 return
 
             # RMSベース音声検知 (server2準拠)
             is_voice = await self._detect_voice_with_rms(audio_data)
-            current_time = time.time() * 1000
             
             # Server2準拠: wake_guard機能（有音検知時の処理）
             if is_voice:
