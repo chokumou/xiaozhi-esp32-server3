@@ -69,12 +69,17 @@ class AudioHandlerServer2:
                 # 1バイトDTX連射によるTLS負荷を防止
                 if not hasattr(self, 'last_dtx_time'):
                     self.last_dtx_time = 0
-                # 1バイトDTXは300msに1回まで（keepalive用途のみ）
-                if current_time - self.last_dtx_time < 300:
-                    logger.debug(f"[DTX_RATE_LIMIT] 1バイトDTX連射防止: スキップ")
+                if not hasattr(self, 'dtx_drop_count'):
+                    self.dtx_drop_count = 0
+                    
+                # 1バイトDTXは500msに1回まで（keepalive用途のみ、さらに厳格化）
+                if current_time - self.last_dtx_time < 500:
+                    self.dtx_drop_count += 1
+                    if self.dtx_drop_count % 20 == 0:  # 20回ごとにログ
+                        logger.info(f"[DTX_RATE_LIMIT] 1バイトDTX連射防止: {self.dtx_drop_count}回ドロップ")
                     return
                 self.last_dtx_time = current_time
-                logger.debug(f"[DTX_KEEPALIVE] 1バイトDTX keepalive送信")
+                logger.debug(f"[DTX_KEEPALIVE] 1バイトDTX keepalive送信 (ドロップ数: {self.dtx_drop_count})")
                 
             # Server2準拠: DTX tiny packetsをドロップ
             dtx_threshold = 3
@@ -110,9 +115,11 @@ class AudioHandlerServer2:
             # Store audio frame regardless (server2 style)
             self.asr_audio.append(audio_data)
             
-            # 詳細フレーム蓄積ログ
-            if len(self.asr_audio) % 20 == 0:  # 20フレームごとにログ
-                logger.info(f"📦 [FRAME_ACCUMULATION] 蓄積フレーム数: {len(self.asr_audio)}, 最新フレーム: {len(audio_data)}B, 音声検知: {is_voice}")
+            # 詳細フレーム蓄積ログ + DTX統計
+            if len(self.asr_audio) % 30 == 0:  # 30フレームごとにログ
+                dtx_drop = getattr(self, 'dtx_drop_count', 0)
+                cooldown_active = current_time < self.tts_cooldown_until
+                logger.info(f"📦 [FRAME_ACCUMULATION] 蓄積フレーム数: {len(self.asr_audio)}, 最新フレーム: {len(audio_data)}B, 音声検知: {is_voice}, DTXドロップ: {dtx_drop}, クールダウン: {cooldown_active}")
             self.asr_audio = self.asr_audio[-100:]  # Keep more frames
             
             # logger.info(f"[AUDIO_TRACE] Frame: {len(audio_data)}B, RMS_voice={is_voice}, frames={len(self.asr_audio)}")  # レート制限対策で削除

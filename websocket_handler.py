@@ -632,11 +632,11 @@ class ConnectionHandler:
                     logger.info(f"🔵XIAOZHI_AUDIO_SENT🔵 ※ここを送ってver2_AUDIO※ 🎵 [AUDIO_SENT] ===== Sent {total_frames} Opus frames to {self.device_id} ({len(audios)} total bytes) =====")
                     logger.info(f"🔍 [DEBUG_SEND] WebSocket state after audio send: closed={self.websocket.closed}")
 
-                    # Send TTS stop message (server2 style)
-                    tts_stop_msg = {"type": "tts", "state": "stop", "session_id": self.session_id}
+                    # Send TTS stop message with cooldown info (server2 style + 回り込み防止)
+                    tts_stop_msg = {"type": "tts", "state": "stop", "session_id": self.session_id, "cooldown_ms": 400}
                     logger.info(f"🔍 [DEBUG_SEND] About to send TTS stop message: {tts_stop_msg}")
                     await self.websocket.send_str(json.dumps(tts_stop_msg))
-                    logger.info(f"🟡XIAOZHI_TTS_STOP🟡 ※ここを送ってver2_TTS_STOP※ 📢 [TTS] Sent TTS stop message")
+                    logger.info(f"🟡XIAOZHI_TTS_STOP🟡 ※ここを送ってver2_TTS_STOP※ 📢 [TTS] Sent TTS stop message with cooldown=400ms")
                     logger.info(f"🔍 [DEBUG_SEND] WebSocket state after TTS stop: closed={self.websocket.closed}")
                     
                     # Server2準拠: TTS完了後の接続制御
