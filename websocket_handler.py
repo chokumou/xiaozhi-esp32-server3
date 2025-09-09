@@ -468,12 +468,20 @@ class ConnectionHandler:
                         frame_count = len(opus_frames_list)
                         logger.info(f"🎵 [INDIVIDUAL_FRAMES] Sending {frame_count} individual Opus frames")
                         
+                        # デバッグ：最初のフレーム詳細解析
+                        if frame_count > 0:
+                            first_frame = opus_frames_list[0]
+                            logger.info(f"🔬 [OPUS_DEBUG] First frame: size={len(first_frame)}bytes, hex_header={first_frame[:8].hex() if len(first_frame)>=8 else first_frame.hex()}")
+                        
                         for i, opus_frame in enumerate(opus_frames_list):
                             # 各フレームに個別のBinaryProtocol3ヘッダーを追加
                             frame_header = struct.pack('>BH', type_field, len(opus_frame))
                             frame_data = frame_header + opus_frame
                             
-                            logger.info(f"🎵 [FRAME_SEND] Frame {i+1}/{frame_count}: header=3bytes + opus={len(opus_frame)}bytes = {len(frame_data)}bytes")
+                            # ログ削減：10フレームごとまたは最初/最後のみ
+                            if i == 0 or i == frame_count-1 or (i+1) % 10 == 0:
+                                logger.info(f"🎵 [FRAME_SEND] Frame {i+1}/{frame_count}: opus={len(opus_frame)}bytes")
+                            
                             await self.websocket.send_bytes(frame_data)
                             await asyncio.sleep(0.005)  # 5ms delay between frames for ESP32 processing
                             

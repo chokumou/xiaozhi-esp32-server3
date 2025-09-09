@@ -106,6 +106,11 @@ class TTSService:
                 if len(opus_frame) > 0:
                     opus_frames_list.append(opus_frame)  # 個別フレームとして保存
                     frame_count += 1
+                    
+                    # 最初のフレーム詳細ログ
+                    if frame_count == 1:
+                        logger.info(f"🔬 [OPUS_ENCODE] First frame: size={len(opus_frame)}bytes, pcm_samples={len(np_frame)}, hex={opus_frame[:8].hex()}")
+                    
                     logger.debug(f"Encoded Opus frame {frame_count}: {len(opus_frame)} bytes")
                 else:
                     logger.warning(f"Empty Opus frame generated for frame {frame_count}")
