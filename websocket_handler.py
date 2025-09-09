@@ -294,12 +294,17 @@ class ConnectionHandler:
         try:
             # 重複process_text検知
             logger.info(f"🚨 [PROCESS_TEXT_CHECK] process_text called with: '{text}'")
-            
+
+            # TTS中は新しいテキスト処理を拒否
+            if hasattr(self, 'tts_active') and self.tts_active:
+                logger.warning(f"🚨 [TTS_BUSY] TTS中のため新しいテキスト処理を拒否: '{text}'")
+                return
+
             # 重複実行防止
             if hasattr(self, '_processing_text') and self._processing_text:
                 logger.warning(f"🚨 [PROCESS_TEXT_DUPLICATE] Already processing text, skipping: '{text}'")
                 return
-                
+
             self._processing_text = True
             
             logger.info(f"🧠 [LLM_START] ===== Processing text input: '{text}' =====")

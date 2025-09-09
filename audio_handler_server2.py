@@ -113,6 +113,11 @@ class AudioHandlerServer2:
             # 重複呼び出し検知
             logger.info(f"🚨 [DUPLICATE_CHECK] _process_voice_stop called, is_processing={self.is_processing}, audio_frames={len(self.asr_audio)}")
             
+            # TTS中は音声処理を完全に無視
+            if self.tts_in_progress:
+                logger.warning("🚨 [TTS_PROTECTION] TTS中のため_process_voice_stopをスキップ")
+                return
+            
             # Set processing flag at the start
             if self.is_processing:
                 logger.warning(f"🚨 [DUPLICATE_DETECT] Already processing, skipping duplicate call")
