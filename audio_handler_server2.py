@@ -114,7 +114,14 @@ class AudioHandlerServer2:
     async def _process_voice_stop(self):
         """Process accumulated audio when voice stops (server2 style)"""
         try:
+            # 重複呼び出し検知
+            logger.info(f"🚨 [DUPLICATE_CHECK] _process_voice_stop called, is_processing={self.is_processing}, audio_frames={len(self.asr_audio)}")
+            
             # Set processing flag at the start
+            if self.is_processing:
+                logger.warning(f"🚨 [DUPLICATE_DETECT] Already processing, skipping duplicate call")
+                return
+                
             self.is_processing = True
             logger.info(f"🔄 [PROCESSING] Starting voice processing")
                 
@@ -195,6 +202,9 @@ class AudioHandlerServer2:
     async def _process_with_asr(self, wav_data: bytes):
         """Process WAV data with ASR"""
         try:
+            # 重複ASR処理検知
+            logger.info(f"🚨 [ASR_DUPLICATE_CHECK] _process_with_asr called, wav_size={len(wav_data)}")
+            
             # Create file-like object for ASR
             wav_file = io.BytesIO(wav_data)
             wav_file.name = "audio.wav"
