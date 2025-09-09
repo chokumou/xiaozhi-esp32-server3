@@ -110,8 +110,14 @@ class AudioHandlerServer2:
     async def _process_voice_stop(self):
         """Process accumulated audio when voice stops (server2 style)"""
         try:
+            # 呼び出し元詳細トレース
+            import traceback
+            call_stack = traceback.format_stack()
+            caller_info = call_stack[-2].strip() if len(call_stack) >= 2 else "unknown"
+            
             # 重複呼び出し検知
             logger.info(f"🚨 [DUPLICATE_CHECK] _process_voice_stop called, is_processing={self.is_processing}, audio_frames={len(self.asr_audio)}")
+            logger.info(f"🔍 [CALL_TRACE] Called from: {caller_info}")
             
             # TTS中は音声処理を完全に無視
             if self.tts_in_progress:
@@ -203,11 +209,17 @@ class AudioHandlerServer2:
     async def _process_with_asr(self, wav_data: bytes):
         """Process WAV data with ASR"""
         try:
-            # 重複ASR処理検知 + スタック追跡
+            # 重複ASR処理検知 + 詳細スタック追跡
             import traceback
-            stack_trace = traceback.format_stack()[-3:-1]  # 直近2レベルの呼び出し元
+            full_stack = traceback.format_stack()
+            # より詳細な呼び出し元情報
+            caller_details = []
+            for i, frame in enumerate(full_stack[-5:-1]):  # 直近4レベル
+                if 'audio_handler' in frame or 'websocket_handler' in frame:
+                    caller_details.append(f"Level{i}: {frame.strip()}")
+            
             logger.info(f"🚨 [ASR_DUPLICATE_CHECK] _process_with_asr called, wav_size={len(wav_data)}")
-            logger.info(f"🔍 [CALL_STACK] Called from: {' -> '.join([line.strip() for line in stack_trace])}")
+            logger.info(f"🔍 [DETAILED_CALL_STACK] {' | '.join(caller_details)}")
             
             # ASR重複処理防止
             if hasattr(self, '_asr_processing') and self._asr_processing:

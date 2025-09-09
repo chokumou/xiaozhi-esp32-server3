@@ -292,8 +292,17 @@ class ConnectionHandler:
     async def process_text(self, text: str):
         """Process text input through LLM and generate response"""
         try:
+            # 呼び出し元詳細トレース
+            import traceback
+            full_stack = traceback.format_stack()
+            caller_details = []
+            for i, frame in enumerate(full_stack[-4:-1]):  # 直近3レベル
+                if 'audio_handler' in frame or 'websocket_handler' in frame:
+                    caller_details.append(f"Level{i}: {frame.strip()}")
+            
             # 重複process_text検知
             logger.info(f"🚨 [PROCESS_TEXT_CHECK] process_text called with: '{text}'")
+            logger.info(f"🔍 [TEXT_CALL_STACK] {' | '.join(caller_details)}")
 
             # TTS中は新しいテキスト処理を拒否
             if hasattr(self, 'tts_active') and self.tts_active:
