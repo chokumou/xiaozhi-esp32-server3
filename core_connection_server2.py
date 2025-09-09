@@ -47,7 +47,22 @@ class Server2StyleConnectionHandler:
     async def _handle_binary_message(self, message: bytes, audio_handler):
         """Server2準拠のバイナリメッセージ処理"""
         
-        # Step 1: Connection層DTXフィルタ (Server2 connection.py:375)
+        # Step 1: Server2準拠エコー防止フィルタ（最優先）
+        try:
+            # AI発話中は100バイト以下を完全無視（エコー防止）
+            client_is_speaking = getattr(audio_handler, 'client_is_speaking', False)
+            if client_is_speaking:
+                if len(message) <= 100:
+                    logger.debug(f"🎤 [ECHO_FILTER_CONN] AI発話中エコー防止: {len(message)}B (≤100B) - Connection層で破棄")
+                    return  # エコー完全破棄
+                else:
+                    # 100バイト超は有意音声として記録（バージイン候補）
+                    logger.info(f"🚨 [POTENTIAL_BARGE_IN] AI発話中に有意音声: {len(message)}B (>100B) - 転送継続")
+        except Exception as e:
+            logger.error(f"🚨 [ECHO_FILTER_ERROR] エコーフィルタエラー: {e}")
+            pass
+            
+        # Step 2: Connection層DTXフィルタ (Server2 connection.py:375)
         try:
             dtx_threshold = int(os.getenv("DTX_THRESHOLD", "12"))
             
@@ -63,13 +78,13 @@ class Server2StyleConnectionHandler:
             logger.error(f"🚨 [BINARY_ERROR] DTX filter error: {e}")
             pass
             
-        # Step 2: 統計更新 (Server2準拠)
+        # Step 3: 統計更新 (Server2準拠)
         self._rx_frame_count += 1
         self._rx_bytes_total += len(message)
         self.rx_frames_since_listen += 1
         self.rx_bytes_since_listen += len(message)
         
-        # Step 3: 統計ログ (Server2準拠)
+        # Step 4: 統計ログ (Server2準拠)
         if (self.rx_frames_since_listen % 100) == 0:
             logger.info(
                 f"📊 [AUDIO_TRACE] UTT#{self.utt_seq} recv frames={self.rx_frames_since_listen}, bytes={self.rx_bytes_since_listen}"
@@ -80,7 +95,7 @@ class Server2StyleConnectionHandler:
                 f"📈 [CONNECTION_STATS] 音声フレーム受信統計: {self._rx_frame_count} フレーム, {self._rx_bytes_total} バイト"
             )
             
-        # Step 4: receiveAudioHandle層への転送
+        # Step 5: receiveAudioHandle層への転送
         await self._forward_to_audio_handler(message, audio_handler)
         
     async def _forward_to_audio_handler(self, audio: bytes, audio_handler):
