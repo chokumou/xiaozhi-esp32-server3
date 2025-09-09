@@ -26,6 +26,10 @@ class Server2StyleConnectionHandler:
         # DTX制御
         self.dtx_drop_count = 0
         
+        # AI発言中ブロック統計
+        self.blocked_frames = 0
+        self.blocked_bytes = 0
+        
     async def route_message(self, message: bytes, audio_handler):
         """Server2準拠のメッセージルーティング"""
         try:
@@ -54,7 +58,15 @@ class Server2StyleConnectionHandler:
             
             if client_is_speaking:
                 # AI発言中は全音声完全ブロック（バージイン無効）
-                logger.info(f"🔇 [AI_SPEAKING_BLOCK] AI発言中全ブロック: {len(message)}B - 完全破棄（エコー根絶）")
+                self.blocked_frames += 1
+                self.blocked_bytes += len(message)
+                
+                # ログ頻度制限: 5フレームに1回のみ記録
+                if not hasattr(self, '_block_counter'):
+                    self._block_counter = 0
+                self._block_counter += 1
+                if self._block_counter % 5 == 0:
+                    logger.info(f"🔇 [AI_SPEAKING_BLOCK] AI発言中全ブロック: 計{self.blocked_frames}フレーム({self.blocked_bytes}B)破棄 - エコー根絶中")
                 return  # 全音声完全破棄
         except Exception as e:
             logger.error(f"🚨 [AI_SPEAKING_ERROR] AI発言中ブロックエラー: {e}")

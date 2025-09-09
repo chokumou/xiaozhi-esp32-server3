@@ -505,7 +505,7 @@ class ConnectionHandler:
             self.client_is_speaking = True
             if hasattr(self, 'audio_handler'):
                 self.audio_handler.client_is_speaking = True  # 最優先でマイクオフ
-                logger.info(f"🔇 [URGENT_MIC_OFF] TTS生成前にマイク完全オフ: client_is_speaking=True")
+                logger.info(f"🎯 [CRITICAL_TEST] TTS開始: AI発言フラグON - エコーブロック開始")
                 
                 self.audio_handler.tts_in_progress = True
                 # TTS送信中は is_processing を強制維持
@@ -691,7 +691,7 @@ class ConnectionHandler:
                 self.audio_handler.is_processing = False
                 # TTS終了後クールダウン開始（音響回り込み防止）
                 self.audio_handler.tts_cooldown_until = time.time() * 1000 + self.audio_handler.tts_cooldown_ms
-                logger.info(f"🎤 [MIC_CONTROL] AI発話終了: client_is_speaking=False (マイク入力再開)")
+                logger.info(f"🎯 [CRITICAL_TEST] TTS終了: AI発言フラグOFF - エコーブロック解除")
                 logger.info(f"🔥 RID[{rid if 'rid' in locals() else 'unknown'}] TTS_COMPLETE: is_processing=False, cooldown={self.audio_handler.tts_cooldown_ms}ms")
 
     async def run(self):
