@@ -50,7 +50,7 @@ class ConnectionHandler:
         self.client_have_voice = False
         self.client_voice_stop = False
         import time
-        self.last_activity_time = time.time() * 1000
+        self.last_activity_time = time.time()
         
         # Server2準拠: タイムアウト監視（元の180秒に戻して詳細調査）
         self.timeout_seconds = 180  # 120 + 60秒のバッファ（ESP32エラー原因を特定するため）
@@ -111,7 +111,7 @@ class ConnectionHandler:
         """Handle binary audio data based on protocol version"""
         try:
             # Server2準拠: 小パケットでも活動時間を更新（ESP32からの継続通信を認識）
-            self.last_activity_time = time.time() * 1000
+            self.last_activity_time = time.time()
             
             # logger.info(f"🔧 [DEBUG] Processing binary message: {len(message)} bytes, protocol v{self.protocol_version}")  # レート制限対策で削除
             if len(message) <= 12:  # Skip very small packets (DTX/keepalive) but keep activity alive
@@ -431,14 +431,14 @@ class ConnectionHandler:
             logger.info(f"🔍 [CONNECTION_CHECK] Before TTS generation: closed={self.websocket.closed}")
             
             # TTS生成中のタイムアウト対策：活動状態更新
-            self.last_activity_time = asyncio.get_event_loop().time()
+            self.last_activity_time = time.time()
             
             # Generate TTS audio (server2 style - individual frames)
             opus_frames_list = await self.tts_service.generate_speech(text)
             logger.info(f"🎶 [TTS_RESULT] ===== TTS generated: {len(opus_frames_list) if opus_frames_list else 0} individual Opus frames =====")
             
             # TTS処理後の活動状態更新とタイムアウト対策
-            self.last_activity_time = asyncio.get_event_loop().time()
+            self.last_activity_time = time.time()
             logger.info(f"🔍 [CONNECTION_CHECK] After TTS generation: closed={self.websocket.closed}")
             
             # Server2完全移植: sendAudioHandle.py line 36-45 直接移植
@@ -628,12 +628,12 @@ class ConnectionHandler:
             while not self.stop_event.is_set():
                 # 活動時間初期化チェック
                 if self.last_activity_time > 0.0:
-                    current_time = time.time() * 1000
+                    current_time = time.time()
                     inactive_time = current_time - self.last_activity_time
                     
-                    if inactive_time > self.timeout_seconds * 1000:
+                    if inactive_time > self.timeout_seconds:
                         if not self.stop_event.is_set():
-                            logger.info(f"🕐 [TIMEOUT] ESP32 connection timeout after {inactive_time/1000:.1f}s for {self.device_id}")
+                            logger.info(f"🕐 [TIMEOUT] ESP32 connection timeout after {inactive_time:.1f}s for {self.device_id}")
                             self.stop_event.set()
                             try:
                                 await self.websocket.close()
