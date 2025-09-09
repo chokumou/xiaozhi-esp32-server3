@@ -485,6 +485,9 @@ class ConnectionHandler:
             # TTS中は音声検知一時停止
             if hasattr(self, 'audio_handler'):
                 self.audio_handler.tts_in_progress = True
+                # TTS送信中は is_processing を強制維持
+                self.audio_handler.is_processing = True
+                logger.info(f"🛡️ [TTS_PROTECTION] Set is_processing=True for TTS protection")
             
             # Check if websocket is still open (server2 style)
             # Enhanced connection validation
@@ -594,11 +597,14 @@ class ConnectionHandler:
                             if i % 50 == 0:  # 50フレームごとにチェック
                                 logger.info(f"🎵 [FRAME_PROGRESS] Frame {i+1}/{frame_count}: opus={len(opus_frame)}bytes, connection_ok={not self.websocket.closed}")
                                 
-                                # TTS中断要因チェック
-                                if hasattr(self, '_processing_text') and not self._processing_text:
-                                    logger.warning(f"🚨 [TTS_INTERRUPT] _processing_text became False during TTS at frame {i+1}")
-                                if hasattr(self.audio_handler, 'is_processing') and not self.audio_handler.is_processing:
-                                    logger.warning(f"🚨 [TTS_INTERRUPT] audio_handler.is_processing became False during TTS at frame {i+1}")
+                            # TTS中断要因チェック
+                            if hasattr(self, '_processing_text') and not self._processing_text:
+                                logger.warning(f"🚨 [TTS_INTERRUPT] _processing_text became False during TTS at frame {i+1}")
+                            if hasattr(self.audio_handler, 'is_processing') and not self.audio_handler.is_processing:
+                                logger.warning(f"🚨 [TTS_INTERRUPT] audio_handler.is_processing became False during TTS at frame {i+1}")
+                                # TTS送信中は強制的に is_processing を維持
+                                self.audio_handler.is_processing = True
+                                logger.warning(f"🛡️ [TTS_PROTECTION] Forcing is_processing=True during TTS frame {i+1}")
                             
                             # ログ削減：10フレームごとまたは最初/最後のみ  
                             elif i == 0 or i == frame_count-1 or (i+1) % 10 == 0:
