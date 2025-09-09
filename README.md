@@ -102,3 +102,4 @@ python main.py
 - コンソール出力: 設定可能レベル
 - ファイル出力: `logs/xiaozhi-server3.log`
 - ローテーション: 1日毎、7日間保持
+
