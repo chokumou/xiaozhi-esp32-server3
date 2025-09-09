@@ -86,11 +86,11 @@ class Server2StyleConnectionHandler:
     async def _forward_to_audio_handler(self, audio: bytes, audio_handler):
         """Server2 receiveAudioHandle.py準拠の処理"""
         
-        # receiveAudioHandle DTXフィルタ (line 22)
+        # receiveAudioHandle DTXフィルタ (line 22) - より厳格に
         try:
-            dtx_thr = int(os.getenv("DTX_THRESHOLD", "3"))
+            dtx_thr = int(os.getenv("DTX_THRESHOLD_HANDLER", "8"))  # より大きな閾値で二重防御
         except Exception:
-            dtx_thr = 3
+            dtx_thr = 8
             
         if audio and len(audio) <= dtx_thr:
             try:
