@@ -489,16 +489,31 @@ class ConnectionHandler:
                             logger.info(f"🔬 [OPUS_DEBUG] First frame: size={len(first_frame)}bytes, hex_header={first_frame[:8].hex() if len(first_frame)>=8 else first_frame.hex()}")
                         
                         for i, opus_frame in enumerate(opus_frames_list):
+                            # 極小フレーム（音質劣化の原因）をスキップ
+                            if len(opus_frame) < 10:
+                                logger.warning(f"🚨 [FRAME_SKIP] Skipping tiny frame {i+1}: {len(opus_frame)}bytes")
+                                continue
+                                
                             # 各フレームに個別のBinaryProtocol3ヘッダーを追加
                             frame_header = struct.pack('>BBH', 0, 0, len(opus_frame))  # type=0, reserved=0, size
                             frame_data = frame_header + opus_frame
                             
-                            # ログ削減：10フレームごとまたは最初/最後のみ
-                            if i == 0 or i == frame_count-1 or (i+1) % 10 == 0:
+                            # TTS送信中の中断検知
+                            if i % 50 == 0:  # 50フレームごとにチェック
+                                logger.info(f"🎵 [FRAME_PROGRESS] Frame {i+1}/{frame_count}: opus={len(opus_frame)}bytes, connection_ok={not self.websocket.closed}")
+                                
+                                # TTS中断要因チェック
+                                if hasattr(self, '_processing_text') and not self._processing_text:
+                                    logger.warning(f"🚨 [TTS_INTERRUPT] _processing_text became False during TTS at frame {i+1}")
+                                if hasattr(self.audio_handler, 'is_processing') and not self.audio_handler.is_processing:
+                                    logger.warning(f"🚨 [TTS_INTERRUPT] audio_handler.is_processing became False during TTS at frame {i+1}")
+                            
+                            # ログ削減：10フレームごとまたは最初/最後のみ  
+                            elif i == 0 or i == frame_count-1 or (i+1) % 10 == 0:
                                 logger.info(f"🎵 [FRAME_SEND] Frame {i+1}/{frame_count}: opus={len(opus_frame)}bytes")
                             
                             await self.websocket.send_bytes(frame_data)
-                            await asyncio.sleep(0.020)  # 20ms delay - TLS負荷軽減
+                            await asyncio.sleep(0.010)  # 10ms delay - 音質とTLS負荷のバランス
                             
                             # TLS接続状態詳細チェック
                             if self.websocket.closed:
