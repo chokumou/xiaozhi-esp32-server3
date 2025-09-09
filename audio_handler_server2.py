@@ -202,8 +202,11 @@ class AudioHandlerServer2:
     async def _process_with_asr(self, wav_data: bytes):
         """Process WAV data with ASR"""
         try:
-            # 重複ASR処理検知
+            # 重複ASR処理検知 + スタック追跡
+            import traceback
+            stack_trace = traceback.format_stack()[-3:-1]  # 直近2レベルの呼び出し元
             logger.info(f"🚨 [ASR_DUPLICATE_CHECK] _process_with_asr called, wav_size={len(wav_data)}")
+            logger.info(f"🔍 [CALL_STACK] Called from: {' -> '.join([line.strip() for line in stack_trace])}")
             
             # ASR重複処理防止
             if hasattr(self, '_asr_processing') and self._asr_processing:
