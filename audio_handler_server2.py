@@ -89,18 +89,11 @@ class AudioHandlerServer2:
                 self.wake_until = current_time + self.wake_guard_ms
                 logger.info(f"🔥 [WAKE_GUARD] 有音検知: current={current_time}, wake_until={self.wake_until}, guard_ms={self.wake_guard_ms}")
 
-            # Server2準拠: TTS中のマイク制御（エコー防止）
+            # Server2準拠: TTS中のマイク制御（完全エコー防止）
             if self.client_is_speaking:
-                # AI発話中: 100バイト以下は回り込み・DTXとして完全無視
-                if len(audio_data) <= 100:
-                    logger.debug(f"[ECHO_FILTER] AI発話中の小音声無視: {len(audio_data)}B (≤100B) - エコー防止")
-                    return
-                else:
-                    # 100バイト超の有意音声のみBARGE_INとして処理
-                    logger.info(f"🚨 [BARGE_IN] AI発話中の有意音声検知: {len(audio_data)}B (>100B) - 割り込み可能")
-                    if hasattr(self, 'handler'):
-                        await self.handler.handle_abort_message(source="barge_in_interrupt")
-                    return
+                # AI発話中は全音声を完全無視（マイクオフ状態）
+                logger.info(f"🔇 [MIC_OFF_AUDIO] AI発話中マイクオフ: {len(audio_data)}B - 全音声破棄（エコー完全防止）")
+                return  # 全音声完全破棄
             
             # デバッグ: RMS VAD動作確認
             # logger.info(f"🔍 [VAD_DEBUG] RMS検知結果: voice={is_voice}, audio_size={len(audio_data)}B")  # レート制限対策で削除

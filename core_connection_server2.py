@@ -49,17 +49,14 @@ class Server2StyleConnectionHandler:
         
         # Step 1: Server2準拠エコー防止フィルタ（最優先）
         try:
-            # AI発話中は100バイト以下を完全無視（エコー防止）
+            # AI発話中は全音声を完全無視（マイクオフ状態）
             client_is_speaking = getattr(audio_handler, 'client_is_speaking', False)
             if client_is_speaking:
-                if len(message) <= 100:
-                    logger.debug(f"🎤 [ECHO_FILTER_CONN] AI発話中エコー防止: {len(message)}B (≤100B) - Connection層で破棄")
-                    return  # エコー完全破棄
-                else:
-                    # 100バイト超は有意音声として記録（バージイン候補）
-                    logger.info(f"🚨 [POTENTIAL_BARGE_IN] AI発話中に有意音声: {len(message)}B (>100B) - 転送継続")
+                # AI発話中は全ての音声フレームを無視（完全マイクオフ）
+                logger.info(f"🔇 [MIC_OFF] AI発話中マイクオフ: {len(message)}B - 全音声破棄（エコー完全防止）")
+                return  # 全音声完全破棄
         except Exception as e:
-            logger.error(f"🚨 [ECHO_FILTER_ERROR] エコーフィルタエラー: {e}")
+            logger.error(f"🚨 [MIC_OFF_ERROR] マイクオフエラー: {e}")
             pass
             
         # Step 2: Connection層DTXフィルタ (Server2 connection.py:375)
