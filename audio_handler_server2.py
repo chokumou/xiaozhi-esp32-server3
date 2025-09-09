@@ -64,28 +64,31 @@ class AudioHandlerServer2:
                 logger.debug(f"[TTS_COOLDOWN] 音声処理スキップ: 残り{self.tts_cooldown_until - current_time:.0f}ms")
                 return
             
-            # 強化DTXフィルタ: 1バイトフレーム連射防止
-            if len(audio_data) == 1:
-                # 1バイトDTX連射によるTLS負荷を防止
-                if not hasattr(self, 'last_dtx_time'):
-                    self.last_dtx_time = 0
+            # Server2準拠: 環境変数ベースDTXフィルタ + 強化制御
+            import os
+            try:
+                dtx_threshold = int(os.getenv("DTX_THRESHOLD", "12"))
+            except:
+                dtx_threshold = 12
+                
+            if len(audio_data) <= dtx_threshold:
                 if not hasattr(self, 'dtx_drop_count'):
                     self.dtx_drop_count = 0
-                    
-                # 1バイトDTXは500msに1回まで（keepalive用途のみ、さらに厳格化）
+                self.dtx_drop_count += 1
+                if self.dtx_drop_count % 30 == 0:  # 30回ごとにサマリ
+                    logger.info(f"[SERVER2_DTX_FILTER] DTX小パケット破棄: {self.dtx_drop_count}回 (閾値≤{dtx_threshold}B)")
+                return  # Server2と同じく完全破棄
+                
+            # 1バイトDTXは追加で500ms制限（二重防御）
+            if len(audio_data) == 1:
+                if not hasattr(self, 'last_dtx_time'):
+                    self.last_dtx_time = 0
                 if current_time - self.last_dtx_time < 500:
-                    self.dtx_drop_count += 1
-                    if self.dtx_drop_count % 20 == 0:  # 20回ごとにログ
-                        logger.info(f"[DTX_RATE_LIMIT] 1バイトDTX連射防止: {self.dtx_drop_count}回ドロップ")
                     return
                 self.last_dtx_time = current_time
-                logger.debug(f"[DTX_KEEPALIVE] 1バイトDTX keepalive送信 (ドロップ数: {self.dtx_drop_count})")
+                logger.debug(f"[DTX_KEEPALIVE] 1バイトDTX keepalive許可")
                 
-            # Server2準拠: DTX tiny packetsをドロップ
-            dtx_threshold = 3
-            if len(audio_data) <= dtx_threshold:
-                logger.debug(f"[AUDIO_TRACE] DROP_DTX pkt={len(audio_data)}B")
-                return
+            # 重複削除: 上記で既にDTXフィルタ済み
 
             # RMSベース音声検知 (server2準拠)
             is_voice = await self._detect_voice_with_rms(audio_data)
