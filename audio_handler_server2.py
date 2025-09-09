@@ -69,10 +69,17 @@ class AudioHandlerServer2:
                 self.wake_until = current_time + self.wake_guard_ms
                 logger.info(f"🔥 [WAKE_GUARD] 有音検知: current={current_time}, wake_until={self.wake_until}, guard_ms={self.wake_guard_ms}")
 
-            # TTS中は音声処理を完全に停止（割り込み無効化）
+            # TTS中は回り込み音声を無視（Server2準拠の割り込み制御）
             if self.tts_in_progress:
-                logger.debug(f"[TTS_ACTIVE] TTS中は音声処理停止 - 割り込み無効化モード")
-                return  # TTS中は一切の音声処理をスキップ
+                # Server2準拠: 100バイト以下は回り込み・DTXとして無視
+                if len(audio_data) <= 100:
+                    logger.debug(f"[TTS_FEEDBACK_FILTER] TTS中の小音声無視: {len(audio_data)}B (≤100B)")
+                    return
+                else:
+                    # 100バイト超の有意音声のみBARGE_INとして処理
+                    logger.info(f"🚨 [SIGNIFICANT_BARGE_IN] TTS中の有意音声: {len(audio_data)}B (>100B)")
+                    # TODO: 必要に応じてAbort処理を実装
+                    return
             
             # デバッグ: RMS VAD動作確認
             # logger.info(f"🔍 [VAD_DEBUG] RMS検知結果: voice={is_voice}, audio_size={len(audio_data)}B")  # レート制限対策で削除
