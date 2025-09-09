@@ -292,6 +292,8 @@ class ConnectionHandler:
     async def process_text(self, text: str):
         """Process text input through LLM and generate response"""
         try:
+            # 重複process_text検知
+            logger.info(f"🚨 [PROCESS_TEXT_CHECK] process_text called with: '{text}'")
             logger.info(f"🧠 [LLM_START] ===== Processing text input: '{text}' =====")
             self.chat_history.append({"role": "user", "content": text})
 
@@ -375,6 +377,8 @@ class ConnectionHandler:
     async def send_audio_response(self, text: str):
         """Generate and send audio response"""
         try:
+            # 重複audio_response検知
+            logger.info(f"🚨 [AUDIO_RESPONSE_CHECK] send_audio_response called with: '{text[:50]}...'")  # 50文字まで表示
             self.client_is_speaking = True
             # TTS中は音声検知一時停止
             if hasattr(self, 'audio_handler'):
