@@ -51,6 +51,15 @@ class Server2StyleConnectionHandler:
         try:
             # AI発話中は全音声を完全無視（マイクオフ状態）
             client_is_speaking = getattr(audio_handler, 'client_is_speaking', False)
+            # デバッグ: client_is_speaking状態を5フレームに1回確認
+            if hasattr(self, '_debug_counter'):
+                self._debug_counter += 1
+            else:
+                self._debug_counter = 1
+            
+            if self._debug_counter % 5 == 0:
+                logger.info(f"🔍 [MIC_DEBUG] client_is_speaking={client_is_speaking}, msg_size={len(message)}B")
+            
             if client_is_speaking:
                 # AI発話中は全ての音声フレームを無視（完全マイクオフ）
                 logger.info(f"🔇 [MIC_OFF] AI発話中マイクオフ: {len(message)}B - 全音声破棄（エコー完全防止）")
