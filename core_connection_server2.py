@@ -47,30 +47,17 @@ class Server2StyleConnectionHandler:
     async def _handle_binary_message(self, message: bytes, audio_handler):
         """Server2準拠のバイナリメッセージ処理"""
         
-        # Step 1: Server2準拠バージイン制御（最優先）
+        # Step 1: AI発言中完全ブロック（最優先・最確実）
         try:
-            # Server2の receiveAudioHandle.py:179-189 完全移植
+            # AI発言中フラグチェック（シンプル・確実）
             client_is_speaking = getattr(audio_handler, 'client_is_speaking', False)
             
             if client_is_speaking:
-                # TTS再生中: 100バイト超のみバージインとして処理（server2完全互換）
-                if len(message) > 100:
-                    logger.info(f"🚨 [BARGE_IN_S2] TTS中バージイン検知: {len(message)}B (>100B) - Abort実行")
-                    # WebSocketHandlerのabortメソッドを呼び出す
-                    if hasattr(audio_handler, 'handler') and hasattr(audio_handler.handler, 'handle_abort_message'):
-                        try:
-                            # 非同期でAbort処理を実行
-                            import asyncio
-                            asyncio.create_task(audio_handler.handler.handle_abort_message(source="barge_in_interrupt"))
-                        except Exception as abort_e:
-                            logger.error(f"🚨 [BARGE_IN_ERROR] Abort実行エラー: {abort_e}")
-                    return  # バージイン処理後は破棄
-                else:
-                    # 100バイト以下: server2では継続処理（debugログのみ）
-                    logger.debug(f"🔇 [BARGE_IN_S2] TTS中小音声: {len(message)}B (≤100B) - server2準拠で継続処理")
-                    # server2では継続処理するため、returnしない
+                # AI発言中は全音声完全ブロック（バージイン無効）
+                logger.info(f"🔇 [AI_SPEAKING_BLOCK] AI発言中全ブロック: {len(message)}B - 完全破棄（エコー根絶）")
+                return  # 全音声完全破棄
         except Exception as e:
-            logger.error(f"🚨 [BARGE_IN_ERROR] バージイン制御エラー: {e}")
+            logger.error(f"🚨 [AI_SPEAKING_ERROR] AI発言中ブロックエラー: {e}")
             pass
             
         # Step 2: Connection層DTXフィルタ (Server2 connection.py:375)

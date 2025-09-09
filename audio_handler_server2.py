@@ -89,21 +89,11 @@ class AudioHandlerServer2:
                 self.wake_until = current_time + self.wake_guard_ms
                 logger.info(f"🔥 [WAKE_GUARD] 有音検知: current={current_time}, wake_until={self.wake_until}, guard_ms={self.wake_guard_ms}")
 
-            # Server2準拠バージイン制御: receiveAudioHandle.py:179-189
-            if is_voice and self.client_is_speaking:
-                # TTS再生中に有音検知: 100バイト超のみバージインとして処理
-                if len(audio_data) > 100:
-                    logger.info(f"🚨 [BARGE_IN_AUDIO] TTS中バージイン: {len(audio_data)}B (>100B) - Abort実行")
-                    if hasattr(self, 'handler') and hasattr(self.handler, 'handle_abort_message'):
-                        try:
-                            import asyncio
-                            asyncio.create_task(self.handler.handle_abort_message(source="barge_in_interrupt"))
-                        except Exception as e:
-                            logger.error(f"🚨 [BARGE_IN_ERROR] Audio層Abort実行エラー: {e}")
-                    return
-                else:
-                    # 100バイト以下: server2では継続処理
-                    logger.debug(f"🔇 [BARGE_IN_AUDIO] TTS中小音声: {len(audio_data)}B (≤100B) - server2準拠で継続処理")
+            # AI発言中完全ブロック（Connection層で既に処理済みの場合はここに到達しない）
+            if self.client_is_speaking:
+                # AI発言中は全音声完全ブロック（2重防御）
+                logger.info(f"🔇 [AI_SPEAKING_AUDIO] AI発言中全ブロック: {len(audio_data)}B - Audio層で完全破棄")
+                return  # 全音声完全破棄
             
             # デバッグ: RMS VAD動作確認
             # logger.info(f"🔍 [VAD_DEBUG] RMS検知結果: voice={is_voice}, audio_size={len(audio_data)}B")  # レート制限対策で削除
