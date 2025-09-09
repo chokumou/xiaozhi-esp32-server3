@@ -501,11 +501,13 @@ class ConnectionHandler:
                 logger.warning(f"🔥 RID[{rid}] HANDLE_ABORT_MESSAGE: 並行TTS検知 - 前のTTSを中断")
                 await self.handle_abort_message(rid, "parallel_tts")
             
+            # 🔇 CRITICAL: TTS生成前に即座にマイクオフ（エコー予防）
             self.client_is_speaking = True
-            # Server2準拠: TTS開始時のマイク制御（エコー防止）
             if hasattr(self, 'audio_handler'):
+                self.audio_handler.client_is_speaking = True  # 最優先でマイクオフ
+                logger.info(f"🔇 [URGENT_MIC_OFF] TTS生成前にマイク完全オフ: client_is_speaking=True")
+                
                 self.audio_handler.tts_in_progress = True
-                self.audio_handler.client_is_speaking = True  # AI発話開始
                 # TTS送信中は is_processing を強制維持
                 self.audio_handler.is_processing = True
                 handler_id = id(self.audio_handler)
