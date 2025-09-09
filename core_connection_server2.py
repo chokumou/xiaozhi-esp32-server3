@@ -29,7 +29,10 @@ class Server2StyleConnectionHandler:
     async def route_message(self, message: bytes, audio_handler):
         """Server2準拠のメッセージルーティング"""
         if isinstance(message, bytes):
+            logger.info(f"🎯 [CONNECTION_ROUTE] Processing {len(message)}B message")
             return await self._handle_binary_message(message, audio_handler)
+        else:
+            logger.warning(f"⚠️ [CONNECTION_ROUTE] Non-bytes message: {type(message)}")
         
     async def _handle_binary_message(self, message: bytes, audio_handler):
         """Server2準拠のバイナリメッセージ処理"""

@@ -135,10 +135,11 @@ class ConnectionHandler:
                 # Protocol v1: raw audio data
                 audio_data = message
 
-                # Server2完全準拠: Connection Handlerを使用
+            # Server2完全準拠: Connection Handlerを使用（全プロトコル共通）
             if not hasattr(self, 'connection_handler'):
                 from core_connection_server2 import Server2StyleConnectionHandler
                 self.connection_handler = Server2StyleConnectionHandler()
+                logger.info("🎯 [CONNECTION_INIT] Server2StyleConnectionHandler initialized")
                 
             # Server2準拠のメッセージルーティング
             await self.connection_handler.route_message(audio_data, self.audio_handler)
