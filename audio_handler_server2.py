@@ -205,6 +205,13 @@ class AudioHandlerServer2:
             # 重複ASR処理検知
             logger.info(f"🚨 [ASR_DUPLICATE_CHECK] _process_with_asr called, wav_size={len(wav_data)}")
             
+            # ASR重複処理防止
+            if hasattr(self, '_asr_processing') and self._asr_processing:
+                logger.warning(f"🚨 [ASR_DUPLICATE_PREVENT] ASR already in progress, skipping")
+                return
+                
+            self._asr_processing = True
+            
             # Create file-like object for ASR
             wav_file = io.BytesIO(wav_data)
             wav_file.name = "audio.wav"
@@ -222,6 +229,8 @@ class AudioHandlerServer2:
 
         except Exception as e:
             logger.error(f"Error processing with ASR: {e}")
+        finally:
+            self._asr_processing = False
 
     async def _detect_voice_with_rms(self, audio_data: bytes) -> bool:
         """RMSベース音声検知 (server2 WebRTC VAD準拠)"""
