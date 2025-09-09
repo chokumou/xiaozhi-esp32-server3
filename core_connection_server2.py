@@ -5,10 +5,10 @@ Server2-style Connection Handler for Server3
 import os
 import time
 import asyncio
-import logging
 from typing import Dict, Any
+from utils.logger import setup_logger
 
-logger = logging.getLogger(__name__)
+logger = setup_logger()
 TAG = "Connection"
 
 
