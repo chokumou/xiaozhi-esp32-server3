@@ -78,6 +78,11 @@ class TTSService:
             # Opus エンコーダー初期化 (Server2準拠: 16kHz)
             encoder = opuslib_next.Encoder(16000, 1, opuslib_next.APPLICATION_AUDIO)
             
+            # Server2準拠: opus_encoder_utils.py の設定を適用
+            encoder.bitrate = 24000        # 24kbps bitrate
+            encoder.complexity = 10        # 最高品質
+            encoder.signal = opuslib_next.SIGNAL_VOICE  # 音声信号最適化
+            
             # 60ms フレーム設定 (Server2準拠: 16kHz)
             frame_duration = 60  # 60ms per frame
             frame_size = int(16000 * frame_duration / 1000)  # 960 samples/frame (16kHz)
