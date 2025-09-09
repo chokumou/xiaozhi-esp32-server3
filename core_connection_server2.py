@@ -28,11 +28,16 @@ class Server2StyleConnectionHandler:
         
     async def route_message(self, message: bytes, audio_handler):
         """Server2準拠のメッセージルーティング"""
+        logger.info(f"🎯 [CONNECTION_ROUTE] Start route_message: {len(message)}B, type={type(message)}")
+        
         if isinstance(message, bytes):
-            logger.info(f"🎯 [CONNECTION_ROUTE] Processing {len(message)}B message")
-            return await self._handle_binary_message(message, audio_handler)
+            logger.info(f"🎯 [CONNECTION_ROUTE] Processing {len(message)}B bytes message")
+            result = await self._handle_binary_message(message, audio_handler)
+            logger.info(f"🎯 [CONNECTION_ROUTE] _handle_binary_message completed")
+            return result
         else:
             logger.warning(f"⚠️ [CONNECTION_ROUTE] Non-bytes message: {type(message)}")
+            return None
         
     async def _handle_binary_message(self, message: bytes, audio_handler):
         """Server2準拠のバイナリメッセージ処理"""
