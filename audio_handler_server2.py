@@ -8,6 +8,7 @@ import struct
 import time
 import io
 import wave
+import uuid
 from typing import List, Optional
 from utils.logger import setup_logger
 
@@ -30,6 +31,10 @@ class AudioHandlerServer2:
         self.silence_frame_count = 0  # 連続無音フレーム数
         self.is_processing = False  # 重複処理防止フラグ
         self.tts_in_progress = False  # TTS中は音声検知一時停止
+        
+        # RID追跡システム（検索しやすいログ用）
+        self.current_request_id = None
+        self.active_tts_rid = None  # 現在再生中のTTS RID
         
         # Initialize Opus decoder
         try:
@@ -110,23 +115,21 @@ class AudioHandlerServer2:
     async def _process_voice_stop(self):
         """Process accumulated audio when voice stops (server2 style)"""
         try:
-            # 呼び出し元詳細トレース
-            import traceback
-            call_stack = traceback.format_stack()
-            caller_info = call_stack[-2].strip() if len(call_stack) >= 2 else "unknown"
+            # 新しいリクエストID生成
+            rid = str(uuid.uuid4())[:8]
+            self.current_request_id = rid
             
-            # 重複呼び出し検知
-            logger.info(f"🚨 [DUPLICATE_CHECK] _process_voice_stop called, is_processing={self.is_processing}, audio_frames={len(self.asr_audio)}")
-            logger.info(f"🔍 [CALL_TRACE] Called from: {caller_info}")
+            # 🎯 検索可能ログ: handle_voice_stop
+            logger.info(f"🔥 RID[{rid}] HANDLE_VOICE_STOP_START: frames={len(self.asr_audio)}, is_processing={self.is_processing}, tts_active={getattr(self.handler, 'tts_active', False)}")
             
             # TTS中は音声処理を完全に無視
             if self.tts_in_progress:
-                logger.warning("🚨 [TTS_PROTECTION] TTS中のため_process_voice_stopをスキップ")
+                logger.warning(f"🔥 RID[{rid}] HANDLE_VOICE_STOP_BLOCKED: TTS中のためスキップ")
                 return
             
             # Set processing flag at the start
             if self.is_processing:
-                logger.warning(f"🚨 [DUPLICATE_DETECT] Already processing, skipping duplicate call")
+                logger.warning(f"🔥 RID[{rid}] HANDLE_VOICE_STOP_DUPLICATE: 既に処理中のためスキップ")
                 return
                 
             self.is_processing = True
@@ -139,7 +142,7 @@ class AudioHandlerServer2:
             logger.info(f"[AUDIO_TRACE] Voice stop: {len(self.asr_audio)} frames, ~{estimated_pcm_bytes} PCM bytes")
             
             if estimated_pcm_bytes < min_pcm_bytes:
-                logger.info(f"[AUDIO_TRACE] Buffer too small ({estimated_pcm_bytes} < {min_pcm_bytes}), discarding")
+                logger.info(f"🔥 RID[{rid}] HANDLE_VOICE_STOP_TOO_SMALL: {estimated_pcm_bytes} < {min_pcm_bytes}, discarding")
                 self._reset_audio_state()
                 return
 
@@ -147,13 +150,16 @@ class AudioHandlerServer2:
             audio_frames = self.asr_audio.copy()
             self._reset_audio_state()
             
+            logger.info(f"🔥 RID[{rid}] HANDLE_VOICE_STOP_PROCESSING: Converting {len(audio_frames)} frames to WAV")
+            
             # Convert to WAV using server2 method
             wav_data = await self._opus_frames_to_wav(audio_frames)
             if wav_data:
                 # Send to ASR
-                await self._process_with_asr(wav_data)
+                logger.info(f"🔥 RID[{rid}] HANDLE_VOICE_STOP_ASR_START: wav_size={len(wav_data)}")
+                await self._process_with_asr(wav_data, rid)
             else:
-                logger.warning("Failed to convert Opus frames to WAV")
+                logger.warning(f"🔥 RID[{rid}] HANDLE_VOICE_STOP_FAILED: WAV変換失敗")
 
         except Exception as e:
             logger.error(f"Error processing voice stop: {e}")
@@ -206,20 +212,14 @@ class AudioHandlerServer2:
             logger.error(f"Error converting Opus to WAV: {e}")
             return None
 
-    async def _process_with_asr(self, wav_data: bytes):
+    async def _process_with_asr(self, wav_data: bytes, rid: str = None):
         """Process WAV data with ASR"""
         try:
-            # 重複ASR処理検知 + 詳細スタック追跡
-            import traceback
-            full_stack = traceback.format_stack()
-            # より詳細な呼び出し元情報
-            caller_details = []
-            for i, frame in enumerate(full_stack[-5:-1]):  # 直近4レベル
-                if 'audio_handler' in frame or 'websocket_handler' in frame:
-                    caller_details.append(f"Level{i}: {frame.strip()}")
+            if not rid:
+                rid = str(uuid.uuid4())[:8]
             
-            logger.info(f"🚨 [ASR_DUPLICATE_CHECK] _process_with_asr called, wav_size={len(wav_data)}")
-            logger.info(f"🔍 [DETAILED_CALL_STACK] {' | '.join(caller_details)}")
+            # 🎯 検索可能ログ: ASR処理開始
+            logger.info(f"🔥 RID[{rid}] ASR_START: wav_size={len(wav_data)}")
             
             # ASR重複処理防止
             if hasattr(self, '_asr_processing') and self._asr_processing:
@@ -233,20 +233,21 @@ class AudioHandlerServer2:
             wav_file.name = "audio.wav"
             
             # Call ASR service
-            logger.info(f"🎤 [ASR_START] ===== Calling OpenAI Whisper API =====")
+            logger.info(f"🔥 RID[{rid}] ASR_WHISPER_START: Calling OpenAI Whisper API")
             transcribed_text = await self.handler.asr_service.transcribe(wav_file)
-            logger.info(f"📝 [ASR_RESULT] ===== ASR Result: '{transcribed_text}' (length: {len(transcribed_text) if transcribed_text else 0}) =====")
+            logger.info(f"🔥 RID[{rid}] ASR_WHISPER_RESULT: '{transcribed_text}' (len: {len(transcribed_text) if transcribed_text else 0})")
             
             if transcribed_text and transcribed_text.strip():
-                logger.info(f"✅ [ASR] Processing transcription: {transcribed_text}")
-                await self.handler.process_text(transcribed_text)
+                logger.info(f"🔥 RID[{rid}] START_TO_CHAT_TRIGGER: Sending '{transcribed_text}' to LLM")
+                await self.handler.process_text(transcribed_text, rid)
             else:
-                logger.warning(f"❌ [ASR] No valid result for {self.handler.device_id}")
+                logger.warning(f"🔥 RID[{rid}] ASR_EMPTY: No valid transcription")
 
         except Exception as e:
-            logger.error(f"Error processing with ASR: {e}")
+            logger.error(f"🔥 RID[{rid}] ASR_ERROR: {e}")
         finally:
             self._asr_processing = False
+            logger.info(f"🔥 RID[{rid}] ASR_END: Processing complete")
 
     async def _detect_voice_with_rms(self, audio_data: bytes) -> bool:
         """RMSベース音声検知 (server2 WebRTC VAD準拠)"""

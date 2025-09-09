@@ -289,34 +289,33 @@ class ConnectionHandler:
             logger.error(f"❌ [AUDIO_ERROR] ===== Error processing accumulated audio from {self.device_id}: {e} =====")
 
 
-    async def process_text(self, text: str):
+    async def process_text(self, text: str, rid: str = None):
         """Process text input through LLM and generate response"""
         try:
-            # 呼び出し元詳細トレース
-            import traceback
-            full_stack = traceback.format_stack()
-            caller_details = []
-            for i, frame in enumerate(full_stack[-4:-1]):  # 直近3レベル
-                if 'audio_handler' in frame or 'websocket_handler' in frame:
-                    caller_details.append(f"Level{i}: {frame.strip()}")
+            if not rid:
+                import uuid
+                rid = str(uuid.uuid4())[:8]
             
-            # 重複process_text検知
-            logger.info(f"🚨 [PROCESS_TEXT_CHECK] process_text called with: '{text}'")
-            logger.info(f"🔍 [TEXT_CALL_STACK] {' | '.join(caller_details)}")
+            # 🎯 検索可能ログ: START_TO_CHAT
+            logger.info(f"🔥 RID[{rid}] START_TO_CHAT: '{text}' (tts_active={getattr(self, 'tts_active', False)})")
 
             # TTS中は新しいテキスト処理を拒否
             if hasattr(self, 'tts_active') and self.tts_active:
-                logger.warning(f"🚨 [TTS_BUSY] TTS中のため新しいテキスト処理を拒否: '{text}'")
+                logger.warning(f"🔥 RID[{rid}] START_TO_CHAT_BLOCKED: TTS中のため拒否")
                 return
 
             # 重複実行防止
             if hasattr(self, '_processing_text') and self._processing_text:
-                logger.warning(f"🚨 [PROCESS_TEXT_DUPLICATE] Already processing text, skipping: '{text}'")
+                logger.warning(f"🔥 RID[{rid}] START_TO_CHAT_DUPLICATE: 既に処理中のため拒否")
                 return
 
             self._processing_text = True
             
-            logger.info(f"🧠 [LLM_START] ===== Processing text input: '{text}' =====")
+            # アクティブTTS RIDをセット（後でAbort判定に使用）
+            if hasattr(self.audio_handler, 'active_tts_rid'):
+                self.audio_handler.active_tts_rid = rid
+            
+            logger.info(f"🔥 RID[{rid}] LLM_START: Processing '{text}'")
             self.chat_history.append({"role": "user", "content": text})
 
             # Check for memory-related keywords
@@ -346,21 +345,52 @@ class ConnectionHandler:
             llm_response = await self.llm_service.chat_completion(llm_messages)
             
             if llm_response and llm_response.strip():
-                logger.info(f"🤖 [LLM_RESULT] ===== LLM response for {self.device_id}: '{llm_response}' =====")
+                logger.info(f"🔥 RID[{rid}] LLM_RESULT: '{llm_response}'")
                 self.chat_history.append({"role": "assistant", "content": llm_response})
                 
                 # Send STT message to display user input (server2 style)
                 await self.send_stt_message(text)
                 
                 # Generate and send audio response
-                await self.send_audio_response(llm_response)
+                logger.info(f"🔥 RID[{rid}] TTS_START: Starting audio generation")
+                await self.send_audio_response(llm_response, rid)
             else:
-                logger.warning(f"No LLM response for {self.device_id}")
+                logger.warning(f"🔥 RID[{rid}] LLM_NO_RESPONSE: No response from LLM")
                 
         except Exception as e:
             logger.error(f"Error processing text from {self.device_id}: {e}")
         finally:
             self._processing_text = False
+
+    async def handle_abort_message(self, rid: str, source: str = "unknown"):
+        """Server2のhandleAbortMessage相当処理 - RID追跡対応"""
+        try:
+            logger.warning(f"🔥 RID[{rid}] HANDLE_ABORT_MESSAGE: source={source}, active_tts_rid={getattr(self.audio_handler, 'active_tts_rid', 'None')}")
+            
+            # TTS停止状態設定
+            self.tts_active = False
+            self._processing_text = False
+            
+            # ESP32にTTS停止メッセージ送信 (server2準拠)
+            abort_message = {
+                "type": "tts", 
+                "state": "stop", 
+                "session_id": getattr(self, 'session_id', 'unknown')
+            }
+            await self.websocket.send_str(json.dumps(abort_message))
+            logger.info(f"🔥 RID[{rid}] TTS_ABORT_SENT: Sent TTS stop message to ESP32")
+            
+            # 音声処理状態クリア
+            if hasattr(self.audio_handler, 'asr_audio'):
+                self.audio_handler.asr_audio.clear()
+            if hasattr(self.audio_handler, 'is_processing'):
+                logger.warning(f"🔥 RID[{rid}] IS_PROCESSING_ABORT: Setting is_processing=False")
+                self.audio_handler.is_processing = False
+                
+            logger.info(f"🔥 RID[{rid}] HANDLE_ABORT_MESSAGE_END: TTS interruption handled")
+            
+        except Exception as e:
+            logger.error(f"🔥 RID[{rid}] HANDLE_ABORT_MESSAGE_ERROR: {e}")
 
     async def handle_barge_in_abort(self):
         """Server2のhandleAbortMessage相当処理"""
@@ -436,11 +466,21 @@ class ConnectionHandler:
             
         return cleaned[start:end + 1] if start <= end else text
 
-    async def send_audio_response(self, text: str):
+    async def send_audio_response(self, text: str, rid: str = None):
         """Generate and send audio response"""
         try:
-            # 重複audio_response検知
-            logger.info(f"🚨 [AUDIO_RESPONSE_CHECK] send_audio_response called with: '{text[:50]}...'")  # 50文字まで表示
+            if not rid:
+                import uuid
+                rid = str(uuid.uuid4())[:8]
+            
+            # 🎯 検索可能ログ: TTS開始
+            logger.info(f"🔥 RID[{rid}] TTS_GENERATION_START: '{text[:50]}...'")
+            
+            # 並行TTS検知
+            if hasattr(self, 'tts_active') and self.tts_active:
+                logger.warning(f"🔥 RID[{rid}] HANDLE_ABORT_MESSAGE: 並行TTS検知 - 前のTTSを中断")
+                await self.handle_abort_message(rid, "parallel_tts")
+            
             self.client_is_speaking = True
             # TTS中は音声検知一時停止
             if hasattr(self, 'audio_handler'):
