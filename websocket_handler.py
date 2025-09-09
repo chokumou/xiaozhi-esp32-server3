@@ -294,6 +294,14 @@ class ConnectionHandler:
         try:
             # 重複process_text検知
             logger.info(f"🚨 [PROCESS_TEXT_CHECK] process_text called with: '{text}'")
+            
+            # 重複実行防止
+            if hasattr(self, '_processing_text') and self._processing_text:
+                logger.warning(f"🚨 [PROCESS_TEXT_DUPLICATE] Already processing text, skipping: '{text}'")
+                return
+                
+            self._processing_text = True
+            
             logger.info(f"🧠 [LLM_START] ===== Processing text input: '{text}' =====")
             self.chat_history.append({"role": "user", "content": text})
 
@@ -337,6 +345,8 @@ class ConnectionHandler:
                 
         except Exception as e:
             logger.error(f"Error processing text from {self.device_id}: {e}")
+        finally:
+            self._processing_text = False
 
     async def send_stt_message(self, text: str):
         """Send STT message to display user input (server2 style)"""
