@@ -31,6 +31,7 @@ class AudioHandlerServer2:
         self.silence_frame_count = 0  # 連続無音フレーム数
         self.is_processing = False  # 重複処理防止フラグ
         self.tts_in_progress = False  # TTS中は音声検知一時停止
+        self.client_is_speaking = False  # AI発話中フラグ（server2準拠エコー防止）
         
         # RID追跡システム（検索しやすいログ用）
         self.current_request_id = None
@@ -88,16 +89,17 @@ class AudioHandlerServer2:
                 self.wake_until = current_time + self.wake_guard_ms
                 logger.info(f"🔥 [WAKE_GUARD] 有音検知: current={current_time}, wake_until={self.wake_until}, guard_ms={self.wake_guard_ms}")
 
-            # TTS中は回り込み音声を無視（Server2準拠の割り込み制御）
-            if self.tts_in_progress:
-                # Server2準拠: 100バイト以下は回り込み・DTXとして無視
+            # Server2準拠: TTS中のマイク制御（エコー防止）
+            if self.client_is_speaking:
+                # AI発話中: 100バイト以下は回り込み・DTXとして完全無視
                 if len(audio_data) <= 100:
-                    logger.debug(f"[TTS_FEEDBACK_FILTER] TTS中の小音声無視: {len(audio_data)}B (≤100B)")
+                    logger.debug(f"[ECHO_FILTER] AI発話中の小音声無視: {len(audio_data)}B (≤100B) - エコー防止")
                     return
                 else:
                     # 100バイト超の有意音声のみBARGE_INとして処理
-                    logger.info(f"🚨 [SIGNIFICANT_BARGE_IN] TTS中の有意音声: {len(audio_data)}B (>100B)")
-                    # TODO: 必要に応じてAbort処理を実装
+                    logger.info(f"🚨 [BARGE_IN] AI発話中の有意音声検知: {len(audio_data)}B (>100B) - 割り込み可能")
+                    if hasattr(self, 'handler'):
+                        await self.handler.handle_abort_message(source="barge_in_interrupt")
                     return
             
             # デバッグ: RMS VAD動作確認

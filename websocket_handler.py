@@ -386,6 +386,11 @@ class ConnectionHandler:
             self.tts_active = False
             self._processing_text = False
             
+            # Server2準拠: Abort時もマイク制御リセット
+            if hasattr(self, 'audio_handler'):
+                self.audio_handler.client_is_speaking = False
+                logger.info(f"🎤 [MIC_CONTROL] Abort時AI発話停止: client_is_speaking=False")
+            
             # ESP32にTTS停止メッセージ送信 (server2準拠)
             abort_message = {
                 "type": "tts", 
@@ -497,11 +502,13 @@ class ConnectionHandler:
                 await self.handle_abort_message(rid, "parallel_tts")
             
             self.client_is_speaking = True
-            # TTS中は音声検知一時停止
+            # Server2準拠: TTS開始時のマイク制御（エコー防止）
             if hasattr(self, 'audio_handler'):
                 self.audio_handler.tts_in_progress = True
+                self.audio_handler.client_is_speaking = True  # AI発話開始
                 # TTS送信中は is_processing を強制維持
                 self.audio_handler.is_processing = True
+                logger.info(f"🎤 [MIC_CONTROL] AI発話開始: client_is_speaking=True (エコー防止)")
                 logger.info(f"🛡️ [TTS_PROTECTION] Set is_processing=True for TTS protection")
             
             # Check if websocket is still open (server2 style)
@@ -673,13 +680,15 @@ class ConnectionHandler:
             logger.error(f"Error sending audio response to {self.device_id}: {e}")
         finally:
             self.client_is_speaking = False
-            # TTS完了時の状態リセット
+            # Server2準拠: TTS完了時の状態リセット
             if hasattr(self, 'audio_handler'):
                 self.audio_handler.tts_in_progress = False
+                self.audio_handler.client_is_speaking = False  # AI発話終了
                 # TTS完了時に is_processing をリセット
                 self.audio_handler.is_processing = False
                 # TTS終了後クールダウン開始（音響回り込み防止）
                 self.audio_handler.tts_cooldown_until = time.time() * 1000 + self.audio_handler.tts_cooldown_ms
+                logger.info(f"🎤 [MIC_CONTROL] AI発話終了: client_is_speaking=False (マイク入力再開)")
                 logger.info(f"🔥 RID[{rid if 'rid' in locals() else 'unknown'}] TTS_COMPLETE: is_processing=False, cooldown={self.audio_handler.tts_cooldown_ms}ms")
 
     async def run(self):
