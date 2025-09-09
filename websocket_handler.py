@@ -115,7 +115,7 @@ class ConnectionHandler:
             
             # logger.info(f"🔧 [DEBUG] Processing binary message: {len(message)} bytes, protocol v{self.protocol_version}")  # レート制限対策で削除
             if len(message) <= 12:  # Skip very small packets (DTX/keepalive) but keep activity alive
-                logger.info(f"⏭️ [DEBUG] Skipping small packet: {len(message)} bytes (activity updated)")
+                # logger.info(f"⏭️ [DEBUG] Skipping small packet: {len(message)} bytes (activity updated)")  # ログ削減
                 return
                 
             if self.protocol_version == 2:
@@ -130,7 +130,7 @@ class ConnectionHandler:
                     return
                 msg_type, reserved, payload_size = struct.unpack('>BBH', message[:4])
                 audio_data = message[4:4+payload_size]
-                logger.info(f"📋 [PROTO] v3: type={msg_type}, payload_size={payload_size}, extracted_audio={len(audio_data)} bytes")
+                # logger.info(f"📋 [PROTO] v3: type={msg_type}, payload_size={payload_size}, extracted_audio={len(audio_data)} bytes")  # ログ削減
             else:
                 # Protocol v1: raw audio data
                 audio_data = message
@@ -543,7 +543,7 @@ class ConnectionHandler:
                 # 🚨 重要: Server2準拠のWebSocketメッセージ処理ループ
                 logger.info(f"🔍 [LOOP_MONITOR] About to enter async for msg in self.websocket")
                 async for msg in self.websocket:
-                    logger.info(f"🔍 [LOOP_MONITOR] Received message in async for loop")
+                        # logger.info(f"🔍 [LOOP_MONITOR] Received message in async for loop")  # ログ削減
                     
                     # Server2準拠: ESP32切断メッセージの事前検知
                     if msg.type in (web.WSMsgType.CLOSE, web.WSMsgType.CLOSED, web.WSMsgType.ERROR):
@@ -559,10 +559,10 @@ class ConnectionHandler:
                     if time_since_last > 1.0:  # 1秒以上の間隔
                         logger.info(f"🔍 [DEBUG_LOOP] Long gap detected: {time_since_last:.1f}s since last message")
                     
-                    logger.info(f"🔍 [DEBUG_LOOP] Message {msg_count}: type={msg.type}({msg.type.value}), closed={self.websocket.closed}, data_len={len(msg.data) if hasattr(msg, 'data') and msg.data else 'None'}, gap={time_since_last:.1f}s")
+                    # logger.info(f"🔍 [DEBUG_LOOP] Message {msg_count}: type={msg.type}({msg.type.value}), closed={self.websocket.closed}, data_len={len(msg.data) if hasattr(msg, 'data') and msg.data else 'None'}, gap={time_since_last:.1f}s")  # ログ削減
                     
                     # 🚨 処理前のWebSocket状態を記録
-                    logger.info(f"🔍 [LOOP_MONITOR] Before message processing: websocket.closed={self.websocket.closed}")
+                    # logger.info(f"🔍 [LOOP_MONITOR] Before message processing: websocket.closed={self.websocket.closed}")  # ログ削減
                     
                     # Server2準拠: メッセージタイプ別処理
                     if msg.type == web.WSMsgType.TEXT:
@@ -570,14 +570,14 @@ class ConnectionHandler:
                         await self.handle_message(msg.data)
                         logger.info(f"🔍 [DEBUG_LOOP] TEXT message processed, continuing loop, closed={self.websocket.closed}")
                     elif msg.type == web.WSMsgType.BINARY:
-                        logger.info(f"🔍 [DEBUG_LOOP] Processing BINARY message: {len(msg.data)} bytes")
+                        # logger.info(f"🔍 [DEBUG_LOOP] Processing BINARY message: {len(msg.data)} bytes")  # ログ削減
                         await self.handle_message(msg.data)
-                        logger.info(f"🔍 [DEBUG_LOOP] BINARY message processed, continuing loop, closed={self.websocket.closed}")
+                        # logger.info(f"🔍 [DEBUG_LOOP] BINARY message processed, continuing loop, closed={self.websocket.closed}")  # ログ削減
                     else:
                         logger.warning(f"🔍 [DEBUG_LOOP] Unknown message type: {msg.type}({msg.type.value}), ignoring and continuing")
                     
                     # 🚨 処理後のWebSocket状態を記録
-                    logger.info(f"🔍 [LOOP_MONITOR] After message processing: websocket.closed={self.websocket.closed}")
+                    # logger.info(f"🔍 [LOOP_MONITOR] After message processing: websocket.closed={self.websocket.closed}")  # ログ削減
                     
                     # ループ継続確認
                     logger.debug(f"🔍 [DEBUG_LOOP] Loop iteration {msg_count} complete, about to continue async for")
