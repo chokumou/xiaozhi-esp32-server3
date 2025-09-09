@@ -247,7 +247,13 @@ class AudioHandlerServer2:
             logger.error(f"🔥 RID[{rid}] ASR_ERROR: {e}")
         finally:
             self._asr_processing = False
-            logger.info(f"🔥 RID[{rid}] ASR_END: Processing complete")
+            
+            # TTS中は is_processing を維持（TTS中断防止）
+            if not self.tts_in_progress:
+                self.is_processing = False
+                logger.info(f"🔥 RID[{rid}] ASR_END: Processing complete, is_processing=False")
+            else:
+                logger.warning(f"🔥 RID[{rid}] ASR_END_TTS_PROTECTION: TTS中のためis_processing維持")
 
     async def _detect_voice_with_rms(self, audio_data: bytes) -> bool:
         """RMSベース音声検知 (server2 WebRTC VAD準拠)"""
