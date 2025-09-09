@@ -113,10 +113,13 @@ class ConnectionHandler:
             # Server2準拠: 小パケットでも活動時間を更新（ESP32からの継続通信を認識）
             self.last_activity_time = time.time()
             
-            # logger.info(f"🔧 [DEBUG] Processing binary message: {len(message)} bytes, protocol v{self.protocol_version}")  # レート制限対策で削除
-            if len(message) <= 12:  # Skip very small packets (DTX/keepalive) but keep activity alive
-                # logger.info(f"⏭️ [DEBUG] Skipping small packet: {len(message)} bytes (activity updated)")  # ログ削減
-                return
+            # デバッグ: 全パケットサイズをログ
+            logger.info(f"🔧 [PACKET_DEBUG] Binary message: {len(message)} bytes, protocol v{self.protocol_version}")
+            
+            # 旧来の小パケットスキップを一時無効化（Server2 Connection Handlerで処理）
+            # if len(message) <= 12:  # Skip very small packets (DTX/keepalive) but keep activity alive
+            #     logger.info(f"⏭️ [DEBUG] Skipping small packet: {len(message)} bytes (activity updated)")
+            #     return
                 
             if self.protocol_version == 2:
                 # Protocol v2: version(2) + type(2) + reserved(2) + timestamp(4) + payload_size(4) + payload
