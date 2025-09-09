@@ -455,9 +455,10 @@ class ConnectionHandler:
                     
                     # ESP32準拠: BinaryProtocol3ヘッダー追加
                     import struct
-                    type_field = 0  # ESP32期待値：type=0（ESP32コード line 52参照）
+                    type_field = 0  # ESP32期待値：type=0
+                    reserved = 0    # ESP32必須：reserved=0
                     payload_size = len(audios)
-                    header = struct.pack('>BH', type_field, payload_size)  # type(0) + size(2) big-endian
+                    header = struct.pack('>BBH', type_field, reserved, payload_size)  # type(1) + reserved(1) + size(2) big-endian
                     v3_data = header + audios
                     
                     logger.info(f"🎵 [V3_PROTOCOL] BinaryProtocol3: type={type_field}, size={payload_size}, total={len(v3_data)} bytes")
@@ -475,7 +476,7 @@ class ConnectionHandler:
                         
                         for i, opus_frame in enumerate(opus_frames_list):
                             # 各フレームに個別のBinaryProtocol3ヘッダーを追加
-                            frame_header = struct.pack('>BH', 0, len(opus_frame))  # type=0固定
+                            frame_header = struct.pack('>BBH', 0, 0, len(opus_frame))  # type=0, reserved=0, size
                             frame_data = frame_header + opus_frame
                             
                             # ログ削減：10フレームごとまたは最初/最後のみ
