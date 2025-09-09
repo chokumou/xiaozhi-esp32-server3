@@ -135,7 +135,22 @@ class ConnectionHandler:
                 # Protocol v1: raw audio data
                 audio_data = message
 
-                # logger.info(f"🚀 [DEBUG] Calling server2-style audio handler with {len(audio_data)} bytes")  # レート制限対策で削除
+                # Server2準拠: WebSocket層での第1段階DTXフィルタ
+            import os
+            try:
+                dtx_threshold = int(os.getenv("DTX_THRESHOLD", "12"))
+            except:
+                dtx_threshold = 12
+                
+            if len(audio_data) <= dtx_threshold:
+                if not hasattr(self, 'ws_dtx_drop_count'):
+                    self.ws_dtx_drop_count = 0
+                self.ws_dtx_drop_count += 1
+                if self.ws_dtx_drop_count % 50 == 0:  # 50回ごとにログ
+                    logger.info(f"🛡️ [WS_DTX_FILTER] WebSocket層DTX破棄: {self.ws_dtx_drop_count}回 (≤{dtx_threshold}B)")
+                return  # 完全破棄
+                
+            # logger.info(f"🚀 [DEBUG] Calling server2-style audio handler with {len(audio_data)} bytes")  # レート制限対策で削除
             await self.audio_handler.handle_audio_frame(audio_data)
             # logger.info(f"✅ [DEBUG] server2-style audio processing completed")  # レート制限対策で削除
             

@@ -67,17 +67,33 @@ class AudioHandlerServer2:
             # Server2準拠: 環境変数ベースDTXフィルタ + 強化制御
             import os
             try:
-                dtx_threshold = int(os.getenv("DTX_THRESHOLD", "12"))
+                dtx_threshold = int(os.getenv("DTX_THRESHOLD", "8"))  # より厳格に
             except:
-                dtx_threshold = 12
+                dtx_threshold = 8
                 
             if len(audio_data) <= dtx_threshold:
                 if not hasattr(self, 'dtx_drop_count'):
                     self.dtx_drop_count = 0
                 self.dtx_drop_count += 1
-                if self.dtx_drop_count % 30 == 0:  # 30回ごとにサマリ
-                    logger.info(f"[SERVER2_DTX_FILTER] DTX小パケット破棄: {self.dtx_drop_count}回 (閾値≤{dtx_threshold}B)")
+                if self.dtx_drop_count % 20 == 0:  # 20回ごとにサマリ
+                    logger.info(f"🚫 [STRICT_DTX_FILTER] 小パケット破棄: {self.dtx_drop_count}回 (閾値≤{dtx_threshold}B)")
                 return  # Server2と同じく完全破棄
+                
+            # 追加制御: 異常に多いフレーム連射を制限
+            if not hasattr(self, 'last_frame_time'):
+                self.last_frame_time = 0
+            if not hasattr(self, 'frame_rate_count'):
+                self.frame_rate_count = 0
+                
+            # 10ms未満の連射を制限
+            if current_time - self.last_frame_time < 10:
+                self.frame_rate_count += 1
+                if self.frame_rate_count > 5:  # 連続5回以上は制限
+                    logger.debug(f"⚡ [RATE_LIMIT] フレーム連射制限: {self.frame_rate_count}回")
+                    return
+            else:
+                self.frame_rate_count = 0
+            self.last_frame_time = current_time
                 
             # 1バイトDTXは追加で500ms制限（二重防御）
             if len(audio_data) == 1:
