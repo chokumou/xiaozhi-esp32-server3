@@ -312,5 +312,10 @@ class AudioHandlerServer2:
         self.voice_frame_count = 0
         self.silence_frame_count = 0
         self.last_voice_activity_time = time.time() * 1000
-        self.is_processing = False  # 重複処理防止フラグもリセット
-        logger.info("[AUDIO_TRACE] Audio state reset (RMS VAD+処理フラグリセット)")
+        
+        # TTS中は is_processing をリセットしない（TTS中断防止）
+        if not self.tts_in_progress:
+            self.is_processing = False
+            logger.info("[AUDIO_TRACE] Audio state reset (is_processingもリセット)")
+        else:
+            logger.info("[AUDIO_TRACE] Audio state reset (TTS中のためis_processing維持)")
