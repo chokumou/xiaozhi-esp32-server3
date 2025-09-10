@@ -462,6 +462,24 @@ class ConnectionHandler:
             await self.websocket.send_str(json.dumps(abort_message))
             logger.info(f"🔥 RID[{rid}] TTS_ABORT_SENT: Sent TTS stop message to ESP32")
             
+            # Abort後の録音再開制御（重要！）
+            mic_on_message = {
+                "type": "audio_control", 
+                "action": "mic_on", 
+                "reason": "abort_recovery"
+            }
+            listen_start_message = {
+                "type": "listen", 
+                "state": "start", 
+                "mode": "continuous"
+            }
+            try:
+                await self.websocket.send_str(json.dumps(mic_on_message))
+                await self.websocket.send_str(json.dumps(listen_start_message))
+                logger.info(f"🔥 RID[{rid}] ABORT_RECOVERY: マイクON+録音再開指示送信完了")
+            except Exception as e:
+                logger.warning(f"🔥 RID[{rid}] ABORT_RECOVERY_FAILED: {e}")
+            
             # 音声処理状態クリア
             if hasattr(self.audio_handler, 'asr_audio'):
                 self.audio_handler.asr_audio.clear()
@@ -836,11 +854,24 @@ class ConnectionHandler:
                             "reason": "tts_finished"
                         }
                         try:
+                            # 1. TTS停止メッセージ（Server2準拠）
                             await self.websocket.send(json.dumps(tts_stop_message))
+                            
+                            # 2. マイクオン指示（拡張）
                             await self.websocket.send(json.dumps(mic_on_message))
-                            logger.info(f"📡 [DEVICE_CONTROL] 端末にTTS終了+マイクオン指示送信: {tts_stop_message}, {mic_on_message}")
+                            
+                            # 3. 録音再開指示（重要！ESP32が自動再開しない場合の保険）
+                            listen_start_message = {
+                                "type": "listen", 
+                                "state": "start", 
+                                "mode": "continuous"
+                            }
+                            await self.websocket.send(json.dumps(listen_start_message))
+                            
+                            logger.info(f"📡 [DEVICE_CONTROL] 端末制御送信完了: TTS停止→マイクON→録音再開")
+                            logger.info(f"📡 [DEVICE_CONTROL] Messages: {tts_stop_message}, {mic_on_message}, {listen_start_message}")
                         except Exception as e:
-                            logger.warning(f"📡 [DEVICE_CONTROL] TTS終了指示送信失敗: {e}")
+                            logger.warning(f"📡 [DEVICE_CONTROL] 端末制御送信失敗: {e}")
                         
                         # D. 可視化（デバッグ）- TTS区間統計出力
                         ws_blocked = getattr(self, '_ws_block_count', 0)
