@@ -505,6 +505,14 @@ class ConnectionHandler:
             self.client_is_speaking = True
             if hasattr(self, 'audio_handler'):
                 self.audio_handler.client_is_speaking = True  # 最優先でマイクオフ
+                
+                # TTS開始時に録音バッファをクリア（溜まったフレーム一斉処理防止）
+                if hasattr(self.audio_handler, 'audio_frames'):
+                    cleared_frames = len(self.audio_handler.audio_frames)
+                    self.audio_handler.audio_frames.clear()
+                    if cleared_frames > 0:
+                        logger.info(f"🗑️ [BUFFER_CLEAR] TTS開始時バッファクリア: {cleared_frames}フレーム破棄")
+                
                 logger.info(f"🎯 [CRITICAL_TEST] TTS開始: AI発言フラグON - エコーブロック開始")
                 
                 self.audio_handler.tts_in_progress = True
@@ -658,10 +666,10 @@ class ConnectionHandler:
                     logger.info(f"🔍 [DEBUG_SEND] WebSocket state after audio send: closed={self.websocket.closed}")
 
                     # Send TTS stop message with cooldown info (server2 style + 回り込み防止)
-                    tts_stop_msg = {"type": "tts", "state": "stop", "session_id": self.session_id, "cooldown_ms": 800}  # エコー完全安定化のため800msに延長
+                    tts_stop_msg = {"type": "tts", "state": "stop", "session_id": self.session_id, "cooldown_ms": 1200}  # 残響も含めた完全エコー除去のため1200msに延長
                     logger.info(f"🔍 [DEBUG_SEND] About to send TTS stop message: {tts_stop_msg}")
                     await self.websocket.send_str(json.dumps(tts_stop_msg))
-                    logger.info(f"🟡XIAOZHI_TTS_STOP🟡 ※ここを送ってver2_TTS_STOP※ 📢 [TTS] Sent TTS stop message with cooldown=800ms")
+                    logger.info(f"🟡XIAOZHI_TTS_STOP🟡 ※ここを送ってver2_TTS_STOP※ 📢 [TTS] Sent TTS stop message with cooldown=1200ms")
                     logger.info(f"🔍 [DEBUG_SEND] WebSocket state after TTS stop: closed={self.websocket.closed}")
                     
                     # Server2準拠: TTS完了後の接続制御

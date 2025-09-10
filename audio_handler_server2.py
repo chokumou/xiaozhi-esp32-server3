@@ -43,7 +43,7 @@ class AudioHandlerServer2:
         
         # TTS終了後クールダウン（音響回り込み防止）
         self.tts_cooldown_until = 0  # この時間まで音声処理をスキップ
-        self.tts_cooldown_ms = 800  # TTS終了後800msクールダウン（エコー完全安定化）
+        self.tts_cooldown_ms = 1200  # TTS終了後1200msクールダウン（残響も含めたエコー完全除去）
         
         # Initialize Opus decoder
         try:
@@ -57,12 +57,23 @@ class AudioHandlerServer2:
     async def handle_audio_frame(self, audio_data: bytes):
         """Handle single audio frame with RMS-based silence detection (server2準拠)"""
         try:
-            # Drop tiny DTX packets (server2 style)
+            # "入口"で即return（最優先）: AI発言中とクールダウン中のチェック
             current_time = time.time() * 1000
             
-            # TTS終了後クールダウン期間のチェック（最優先）
+            # 1. AI発言中完全ブロック（バッファに積まない）
+            if self.client_is_speaking:
+                # AI発言中は全音声完全ブロック（入口で即破棄）
+                return
+                
+            # 2. TTS冷却期間中ブロック（残響エコー破棄）
             if current_time < self.tts_cooldown_until:
-                logger.debug(f"[TTS_COOLDOWN] 音声処理スキップ: 残り{self.tts_cooldown_until - current_time:.0f}ms")
+                remaining_ms = int(self.tts_cooldown_until - current_time)
+                # ログ頻度制限
+                if not hasattr(self, '_cooldown_log_count'):
+                    self._cooldown_log_count = 0
+                self._cooldown_log_count += 1
+                if self._cooldown_log_count % 10 == 0:
+                    logger.info(f"❄️ [COOLDOWN] TTS残響期間中: 残り{remaining_ms}ms (過去10フレーム破棄)")
                 return
             
             # 注意: DTXフィルタはConnection Handlerで既に処理済み
@@ -89,11 +100,7 @@ class AudioHandlerServer2:
                 self.wake_until = current_time + self.wake_guard_ms
                 logger.info(f"🔥 [WAKE_GUARD] 有音検知: current={current_time}, wake_until={self.wake_until}, guard_ms={self.wake_guard_ms}")
 
-            # AI発言中完全ブロック（Connection層で既に処理済みの場合はここに到達しない）
-            if self.client_is_speaking:
-                # AI発言中は全音声完全ブロック（2重防御）
-                logger.info(f"🔇 [AI_SPEAKING_AUDIO] AI発言中全ブロック: {len(audio_data)}B - Audio層で完全破棄")
-                return  # 全音声完全破棄
+            # AI発言中ブロックは"入口"で既に処理済み
             
             # デバッグ: RMS VAD動作確認
             # logger.info(f"🔍 [VAD_DEBUG] RMS検知結果: voice={is_voice}, audio_size={len(audio_data)}B")  # レート制限対策で削除
