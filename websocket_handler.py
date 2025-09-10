@@ -874,12 +874,20 @@ class ConnectionHandler:
                             logger.info(f"🔬 [OPUS_DEBUG] First frame: size={len(first_frame)}bytes, hex_header={first_frame[:8].hex() if len(first_frame)>=8 else first_frame.hex()}")
                         
                         # 🎯 [REALTIME_PACING] リアルタイムペース送信（バッファアンダーフロー対策）
-                        # フレーム単位の間隔を厳密に保ち、先頭500msは倍速で先詰めしてウォームアップ
+                        # フレーム単位の間隔を厳密に保ち、アダプティブウォームアップで確実な再生開始
                         frame_duration_ms = 20  # 20msフレーム想定（40msにしたい場合はここを変更）
                         frame_interval_sec = frame_duration_ms / 1000.0
-                        warmup_ms = 500  # 先頭500msに延長 (300ms→500ms) - より確実なバッファ水位確保
-                        warmup_frames = max(1, int((warmup_ms + frame_duration_ms - 1) // frame_duration_ms))
-                        max_interval_limit_ms = 40  # 🚨 [STABILITY] 最大間隔制限: 40ms超過時は強制調整
+                        
+                        # 🚀 [ADAPTIVE_WARMUP] フレーム数に応じたウォームアップ調整
+                        total_frames = len(opus_frames_list)
+                        if total_frames < 50:  # 短い発話（1秒未満）
+                            warmup_frames = min(10, total_frames // 2)  # 半分まで
+                        elif total_frames < 150:  # 中程度発話（3秒未満）
+                            warmup_frames = 25  # 500ms
+                        else:  # 長い発話
+                            warmup_frames = 35  # 700ms - より確実
+                        
+                        max_interval_limit_ms = 25  # 🚨 [STABILITY] 最大間隔制限: 25ms以下に強化（40ms→25ms）
 
                         send_start_time = time.monotonic()
                         intervals = []
@@ -931,9 +939,12 @@ class ConnectionHandler:
                             sleep_time = target_time - current_time
 
                             # 🚨 [STABILITY] 間隔上限制限: 異常に長い間隔を防ぐ
-                            if target_interval > (max_interval_limit_ms / 1000.0):
-                                logger.warning(f"🚨 [INTERVAL_LIMIT] 間隔異常検出: {target_interval*1000:.1f}ms > {max_interval_limit_ms}ms, 制限適用")
-                                target_interval = max_interval_limit_ms / 1000.0
+                            actual_interval = target_time - current_time
+                            if actual_interval > (max_interval_limit_ms / 1000.0):
+                                logger.warning(f"🚨 [INTERVAL_LIMIT] 間隔異常検出: {actual_interval*1000:.1f}ms > {max_interval_limit_ms}ms, 制限適用")
+                                # 強制的に制限時間内に調整
+                                target_time = current_time + (max_interval_limit_ms / 1000.0)
+                                sleep_time = target_time - current_time
                             
                             # If in warmup, allow slightly faster pacing by sleeping a fraction
                             if sleep_time > 0:
@@ -979,16 +990,21 @@ class ConnectionHandler:
                                 jitter = max_interval - min_interval
                                 logger.info(f"📊 [SEND_STATS] 送信間隔統計: min={min_interval:.1f}ms avg={avg_interval:.1f}ms max={max_interval:.1f}ms jitter={jitter:.1f}ms")
                                 
-                                # バースト検出
-                                burst_count = sum(1 for interval in intervals if interval < frame_duration_ms * 0.5)
+                                # 🚀 [ENHANCED_BURST] より厳格なバースト検出（10ms以下を問題視）
+                                burst_count = sum(1 for interval in intervals if interval < 10.0)  # 10ms以下はバースト
+                                gap_count = sum(1 for interval in intervals if interval > max_interval_limit_ms)  # 制限超過
+                                
                                 if burst_count > 0:
-                                    logger.warning(f"🚨 [BURST_DETECT] バースト送信検出: {burst_count}/{len(intervals)}フレーム (バッファ満杯リスク)")
+                                    logger.warning(f"🚨 [BURST_DETECT] バースト送信検出: {burst_count}/{len(intervals)}フレーム (<10ms間隔)")
                                     # 累積カウンタ更新
                                     try:
                                         self._tts_burst_total += burst_count
                                     except Exception:
                                         self._tts_burst_total = burst_count
                                     logger.info(f"📈 [BURST_TOTAL] 累積バースト検出合計: {self._tts_burst_total}")
+                                
+                                if gap_count > 0:
+                                    logger.warning(f"🚨 [GAP_DETECT] 長間隔検出: {gap_count}/{len(intervals)}フレーム (>{max_interval_limit_ms}ms)")
 
                                 # デバッグ: per-frame Δt 詳細ログ (オフがデフォルト)
                                 if getattr(self, 'debug_tts_timing', False):
