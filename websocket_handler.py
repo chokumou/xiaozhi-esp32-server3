@@ -799,9 +799,14 @@ class ConnectionHandler:
                             
                             await self.websocket.send_bytes(frame_data)
                             
-                            # 🎯 [SMOOTH_SEND] 平滑化送信: 10フレーム毎に8ms休憩
-                            if (i + 1) % 10 == 0:
-                                await asyncio.sleep(0.008)  # 8ms delay every 10 frames for smoothing
+                            # 🔍 [1006_PREVENTION] 毎フレーム後接続確認
+                            if self.websocket.closed:
+                                logger.error(f"💀 [1006_DETECTED] Connection closed at frame {i+1}/{frame_count}, close_code={getattr(self.websocket, 'close_code', 'None')}")
+                                break
+                            
+                            # 🎯 [SMOOTH_SEND] 平滑化送信: 5フレーム毎に15ms休憩（1006対策）
+                            if (i + 1) % 5 == 0:
+                                await asyncio.sleep(0.015)  # 15ms delay every 5 frames for stability
                             
                             # 🔍 [CRITICAL_GUARD] フレーム送信前後のWebSocket状態確認
                             if self.websocket.closed or getattr(self.websocket, '_writer', None) is None:
