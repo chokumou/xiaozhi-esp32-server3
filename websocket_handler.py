@@ -710,14 +710,14 @@ class ConnectionHandler:
                     await self.websocket.send_str(json.dumps(mic_control_message))
                     logger.info(f"📡 [DEVICE_CONTROL] 端末にマイクオフ指示送信: {mic_control_message}")
                     
-                    # 🎯 [VAD_CONTROL] ESP32のVAD停止指示（根本的解決）
+                    # 🎯 [VAD_CONTROL] ESP32のVADバイパス指示（常時送信モード）
                     vad_control_message = {
                         "type": "vad_control", 
-                        "action": "disable",
-                        "reason": "ai_speaking"
+                        "action": "disable",  # disable = VADバイパス（常時送信）
+                        "reason": "ai_speaking_preroll"  # プリロール対応
                     }
                     await self.websocket.send_str(json.dumps(vad_control_message))
-                    logger.info(f"📡 [VAD_CONTROL] 端末にVAD停止指示送信: {vad_control_message}")
+                    logger.info(f"📡 [VAD_CONTROL] 端末にVADバイパス指示送信: {vad_control_message} (常時送信モード)")
                     
                     # 🎯 [ACK_WAIT] ACK待機（100ms短縮）またはフォールバック
                     ack_received = False
@@ -1005,11 +1005,11 @@ class ConnectionHandler:
                             # 2. マイクオン指示（拡張）
                             await self.websocket.send_str(json.dumps(mic_on_message))
                             
-                            # 3. VAD再開指示（根本的解決）
+                            # 3. VAD判定復帰指示（ハングオーバ対応）
                             vad_enable_message = {
                                 "type": "vad_control",
-                                "action": "enable", 
-                                "reason": "ai_finished"
+                                "action": "enable",  # enable = VAD判定復帰
+                                "reason": "ai_finished_hangover"  # ハングオーバー対応
                             }
                             await self.websocket.send_str(json.dumps(vad_enable_message))
                             
@@ -1021,8 +1021,9 @@ class ConnectionHandler:
                             }
                             await self.websocket.send_str(json.dumps(listen_start_message))
                             
-                            logger.info(f"📡 [DEVICE_CONTROL] 端末制御送信完了: TTS停止→マイクON→VAD再開→録音再開")
+                            logger.info(f"📡 [DEVICE_CONTROL] 端末制御送信完了: TTS停止→マイクON→VAD判定復帰→録音再開")
                             logger.info(f"📡 [DEVICE_CONTROL] Messages: {tts_stop_message}, {mic_on_message}, {vad_enable_message}, {listen_start_message}")
+                            logger.info(f"🎯 [VAD_STRATEGY] VADバイパス→通常判定復帰でプリロール/ハングオーバー対応")
                         except Exception as e:
                             logger.warning(f"📡 [DEVICE_CONTROL] 端末制御送信失敗: {e}")
                             logger.error(f"💀 [WEBSOCKET_ERROR] WebSocket状態: closed={getattr(self.websocket, 'closed', 'unknown')}, writer={getattr(self.websocket, '_writer', 'unknown')}")
