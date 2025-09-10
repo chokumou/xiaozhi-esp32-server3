@@ -31,7 +31,8 @@ class ConnectionHandler:
         self.device_id = headers.get("device-id") or "unknown"
         self.client_id = headers.get("client-id") or str(uuid.uuid4())
         self.protocol_version = int(headers.get("protocol-version", "1"))
-        self.session_id = f"session_{int(time.time())}"  # Server2準拠のセッションID
+        import time as time_module  # スコープエラー回避
+        self.session_id = f"session_{int(time_module.time())}"  # Server2準拠のセッションID
         
         self.asr_service = ASRService()
         self.tts_service = TTSService()
@@ -50,7 +51,6 @@ class ConnectionHandler:
         self.asr_audio = []  # List of Opus frames (server2 style)
         self.client_have_voice = False
         self.client_voice_stop = False
-        import time
         self.last_activity_time = time.time()
         
         # Server2準拠: タイムアウト監視（元の180秒に戻して詳細調査）
