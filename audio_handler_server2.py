@@ -294,6 +294,10 @@ class AudioHandlerServer2:
             logger.info(f"🔥 RID[{rid}] ASR_WHISPER_RESULT: '{transcribed_text}' (len: {len(transcribed_text) if transcribed_text else 0})")
             
             if transcribed_text and transcribed_text.strip():
+                # 🚀 [FAST_DISPLAY] ASR完了時点で即座にユーザー発言を表示（LLMを待たない）
+                await self.handler.send_stt_message(transcribed_text)
+                logger.info(f"🚀 [FAST_DISPLAY] User text displayed immediately: '{transcribed_text}'")
+                
                 logger.info(f"🔥 RID[{rid}] START_TO_CHAT_TRIGGER: Sending '{transcribed_text}' to LLM")
                 await self.handler.process_text(transcribed_text, rid)
             else:

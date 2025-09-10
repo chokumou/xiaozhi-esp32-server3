@@ -538,8 +538,8 @@ class ConnectionHandler:
                 logger.info(f"🔥 RID[{rid}] LLM_RESULT: '{llm_response}'")
                 self.chat_history.append({"role": "assistant", "content": llm_response})
                 
-                # Send STT message to display user input (server2 style)
-                await self.send_stt_message(text)
+                # STT message already sent at ASR completion for fast display
+                # (LLM完了後の重複送信を避けるためコメントアウト)
                 
                 # Generate and send audio response
                 logger.info(f"🔥 RID[{rid}] TTS_START: Starting audio generation")
