@@ -873,13 +873,17 @@ class ConnectionHandler:
                             logger.info(f"🔬 [OPUS_DEBUG] First frame: size={len(first_frame)}bytes, hex_header={first_frame[:8].hex() if len(first_frame)>=8 else first_frame.hex()}")
                         
                         # 🚀 [SERVER2_CONCAT] 全フレームを連結してbytes一括送信（Server2と同じ方式）
+                        # Protocol v1: 生のOpusバイトのみ送信（ヘッダー無し）
                         concatenated_audio = b''.join(opus_frames_list)
                         total_bytes = len(concatenated_audio)
+                        
+                        logger.info(f"🎯 [PROTOCOL_V1] Sending raw Opus bytes (no BinaryProtocol3 header for v1 compatibility)")
                         
                         logger.info(f"🎵 [SERVER2_SEND] Sending {frame_count} frames as single bytes payload ({total_bytes} total bytes)")
                         
                         # 🚀 [SERVER2_SINGLE_SEND] Server2方式: 一括送信で完全安定化
                         try:
+                            send_start_time = time.monotonic()  # 送信開始時刻を記録
                             await self.websocket.send_bytes(concatenated_audio)
                             send_end_time = time.monotonic()
                             total_send_time = (send_end_time - send_start_time) * 1000  # ms
