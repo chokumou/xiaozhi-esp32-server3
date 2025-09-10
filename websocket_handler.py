@@ -118,6 +118,15 @@ class ConnectionHandler:
             # 📊 [DATA_TRACKER] 受信データ完全追跡
             msg_size = len(message)
             current_time = time.monotonic()
+
+            # 🛑 [DTX_ABSOLUTE_DROP_EARLY] 1-5ByteのDTXフレームを入口で即座に破棄（サーバ負荷軽減）
+            if msg_size <= 5:
+                if not hasattr(self, '_dtx_drop_count'):
+                    self._dtx_drop_count = 0
+                self._dtx_drop_count += 1
+                if self._dtx_drop_count % 50 == 0:
+                    logger.info(f"🛑 [DTX_ABSOLUTE_DROP] Early entrance DTX drop: {self._dtx_drop_count} total")
+                return  # 入口で完全破棄
             
             # 🔍 [FLOOD_DETECTION] 大量送信検知
             if not hasattr(self, '_last_msg_time'):
@@ -200,14 +209,7 @@ class ConnectionHandler:
                 self._packet_log_count = 0
             self._packet_log_count += 1
             
-            # 🛑 [DTX_ABSOLUTE_DROP] 1-5ByteのDTXフレームを絶対破棄（ジッタ対策）
-            if msg_size <= 5:
-                if not hasattr(self, '_dtx_drop_count'):
-                    self._dtx_drop_count = 0
-                self._dtx_drop_count += 1
-                if self._dtx_drop_count % 50 == 0:
-                    logger.info(f"🛑 [DTX_ABSOLUTE_DROP] DTX絶対破棄: {self._dtx_drop_count}個累計 (TLS/WS負荷軽減)")
-                return  # DTXフレームを完全破棄
+            # (DTX は入口で既に破棄済み)
             
             # 🚨 [ESP32_DEBUG] ESP32修正後のフレーム詳細分析
             logger.info(f"📊 [FRAME_DETAIL] ★Server受信★ {size_category}({msg_size}B) hex={message[:min(8, len(message))].hex()} count/sec={self._msg_count_1sec} bytes/sec={self._total_bytes_1sec} protocol=v{self.protocol_version}")
@@ -868,69 +870,81 @@ class ConnectionHandler:
                             logger.info(f"🔬 [OPUS_DEBUG] First frame: size={len(first_frame)}bytes, hex_header={first_frame[:8].hex() if len(first_frame)>=8 else first_frame.hex()}")
                         
                         # 🎯 [REALTIME_PACING] リアルタイムペース送信（バッファアンダーフロー対策）
-                        frame_duration_ms = 20  # 20msフレーム想定
+                        # フレーム単位の間隔を厳密に保ち、先頭300msは倍速で先詰めしてウォームアップ
+                        frame_duration_ms = 20  # 20msフレーム想定（40msにしたい場合はここを変更）
                         frame_interval_sec = frame_duration_ms / 1000.0
+                        warmup_ms = 300  # 先頭200〜300msを推奨 -> 300msに設定
+                        warmup_frames = max(1, int((warmup_ms + frame_duration_ms - 1) // frame_duration_ms))
+
                         send_start_time = time.monotonic()
                         intervals = []
                         last_frame_time = send_start_time
-                        
+
                         for i, opus_frame in enumerate(opus_frames_list):
                             # 極小フレーム（音質劣化の原因）をスキップ
                             if len(opus_frame) < 10:
                                 logger.warning(f"🚨 [FRAME_SKIP] Skipping tiny frame {i+1}: {len(opus_frame)}bytes")
                                 continue
-                            
+
                             # 送信タイミング計測
                             frame_send_start = time.monotonic()
-                            
+
                             # Server2準拠: ヘッダー無し、直接OPUSバイナリ送信
                             frame_data = opus_frame
-                            
-                            # TTS送信中の中断検知
-                            if i % 50 == 0:  # 50フレームごとにチェック
-                                logger.info(f"🎵 [FRAME_PROGRESS] Frame {i+1}/{frame_count}: opus={len(opus_frame)}bytes, connection_ok={not self.websocket.closed}")
-                                
-                            # TTS中断要因チェック
+
+                            # TTS送信中の中断検知 / 状態保護
                             if hasattr(self, '_processing_text') and not self._processing_text:
                                 logger.warning(f"🚨 [TTS_INTERRUPT] _processing_text became False during TTS at frame {i+1}")
                             if hasattr(self.audio_handler, 'is_processing') and not self.audio_handler.is_processing:
                                 logger.warning(f"🚨 [TTS_INTERRUPT] audio_handler.is_processing became False during TTS at frame {i+1}")
-                                # TTS送信中は強制的に is_processing を維持
                                 self.audio_handler.is_processing = True
                                 logger.warning(f"🛡️ [TTS_PROTECTION] Forcing is_processing=True during TTS frame {i+1}")
-                            
-                            # ログ削減：10フレームごとまたは最初/最後のみ  
+
+                            # 進捗ログ
+                            if i % 50 == 0:
+                                logger.info(f"🎵 [FRAME_PROGRESS] Frame {i+1}/{frame_count}: opus={len(opus_frame)}bytes, connection_ok={not self.websocket.closed}")
                             elif i == 0 or i == frame_count-1 or (i+1) % 10 == 0:
                                 logger.info(f"🎵 [FRAME_SEND] Frame {i+1}/{frame_count}: opus={len(opus_frame)}bytes")
-                            
+
                             await self.websocket.send_bytes(frame_data)
-                            
+
                             # 送信間隔統計
                             if i > 0:
                                 interval = frame_send_start - last_frame_time
                                 intervals.append(interval * 1000)  # ms変換
                             last_frame_time = frame_send_start
-                            
-                            # 🎯 [REALTIME_PACING] 厳密なリアルタイム間隔制御
+
+                            # ウォームアップ期間は倍速送信（間隔半分） -> 先詰めで再生開始時のバッファ水位を確保
+                            if i < warmup_frames:
+                                target_interval = frame_interval_sec / 2.0
+                            else:
+                                target_interval = frame_interval_sec
+
+                            # 厳密なリアルタイム間隔制御
                             target_time = send_start_time + ((i + 1) * frame_interval_sec)
                             current_time = time.monotonic()
                             sleep_time = target_time - current_time
-                            
+
+                            # If in warmup, allow slightly faster pacing by sleeping a fraction
                             if sleep_time > 0:
-                                await asyncio.sleep(sleep_time)
+                                # For warmup frames we permit half-interval sleeps to pack them earlier
+                                if i < warmup_frames:
+                                    await asyncio.sleep(max(0.0, target_interval / 2.0))
+                                else:
+                                    await asyncio.sleep(sleep_time)
                             elif sleep_time < -0.01:  # 10ms以上の遅延検出
                                 logger.warning(f"⚠️ [TIMING_LAG] Frame {i+1}: {abs(sleep_time)*1000:.1f}ms behind schedule")
-                            
-                            # 🔍 [1006_PREVENTION] 毎フレーム後接続確認
+
+                            # 毎フレーム後接続確認
                             if self.websocket.closed:
                                 logger.error(f"💀 [1006_DETECTED] Connection closed at frame {i+1}/{frame_count}, close_code={getattr(self.websocket, 'close_code', 'None')}")
                                 break
-                            
-                            # 🎯 [SMOOTH_SEND] 平滑化送信: 5フレーム毎に15ms休憩（1006対策）
+
+                            # 平滑化: 5フレーム毎に小休止（安定化目的）
                             if (i + 1) % 5 == 0:
-                                await asyncio.sleep(0.015)  # 15ms delay every 5 frames for stability
-                            
-                            # 🔍 [CRITICAL_GUARD] フレーム送信前後のWebSocket状態確認
+                                await asyncio.sleep(0.015)
+
+                            # フレーム送信前後のWebSocket状態確認
                             if self.websocket.closed or getattr(self.websocket, '_writer', None) is None:
                                 logger.error(f"💀 [WEBSOCKET_DEAD] Connection dead at frame {i+1}, aborting TTS")
                                 logger.error(f"💀 [DEAD_STATE] closed={self.websocket.closed}, writer={getattr(self.websocket, '_writer', 'None')}, close_code={getattr(self.websocket, 'close_code', 'None')}")
