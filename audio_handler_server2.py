@@ -57,8 +57,9 @@ class AudioHandlerServer2:
     async def handle_audio_frame(self, audio_data: bytes):
         """Handle single audio frame with RMS-based silence detection (server2準拠)"""
         try:
-            # "入口"で即return（最優先）: AI発言中とクールダウン中のチェック
-            current_time = time.time() * 1000
+        # "入口"で即return（最優先）: AI発言中とクールダウン中のチェック
+        # 🎯 [MONOTONIC_TIME] 単一時基統一
+        current_time = time.monotonic() * 1000
             
             # 1. AI発言中完全ブロック（バッファに積まない）
             if self.client_is_speaking:

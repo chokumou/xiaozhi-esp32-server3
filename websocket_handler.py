@@ -101,6 +101,9 @@ class ConnectionHandler:
                 text_input = msg_json.get("data", "")
                 if text_input:
                     await self.process_text(text_input)
+            elif msg_type == "ack":
+                # 🎯 [ACK_HANDLER] ESP32からのACK受信処理
+                await self.handle_ack_message(msg_json)
             else:
                 logger.warning(f"Unknown message type from {self.device_id}: {msg_type}")
 
@@ -112,10 +115,11 @@ class ConnectionHandler:
     async def handle_binary_message(self, message: bytes):
         """Handle binary audio data based on protocol version"""
         try:
-            # A. 入口で落とす（最重要）- AI発話中+クールダウン中完全ブロック
-            now_ms = time.time() * 1000
-            is_ai_speaking = hasattr(self, 'audio_handler') and getattr(self.audio_handler, 'client_is_speaking', False)
-            is_cooldown = hasattr(self, 'audio_handler') and now_ms < getattr(self.audio_handler, 'tts_cooldown_until', 0)
+        # A. 入口で落とす（最重要）- AI発話中+クールダウン中完全ブロック
+        # 🎯 [MONOTONIC_TIME] 単一時基統一: monotonic使用でシステム時刻変更に耐性
+        now_ms = time.monotonic() * 1000
+        is_ai_speaking = hasattr(self, 'audio_handler') and getattr(self.audio_handler, 'client_is_speaking', False)
+        is_cooldown = hasattr(self, 'audio_handler') and now_ms < getattr(self.audio_handler, 'tts_cooldown_until', 0)
             
             if is_ai_speaking or is_cooldown:
                 # B. WebSocket入口で必ず落とす（最重要）
@@ -229,7 +233,8 @@ class ConnectionHandler:
         
         if state == "start":
             # 3) 「listen:start」も無視（TTS中/クールダウン中）
-            now_ms = time.time() * 1000
+            # 🎯 [MONOTONIC_TIME] 単一時基統一
+            now_ms = time.monotonic() * 1000
             is_ai_speaking = hasattr(self, 'audio_handler') and getattr(self.audio_handler, 'client_is_speaking', False)
             is_cooldown = hasattr(self, 'audio_handler') and now_ms < getattr(self.audio_handler, 'tts_cooldown_until', 0)
             
@@ -261,6 +266,19 @@ class ConnectionHandler:
                     self.audio_handler.wake_until = 0
                     
             logger.info(f"Client {self.device_id} started listening")
+
+    async def handle_ack_message(self, msg_json: dict):
+        """🎯 [ACK_HANDLER] ESP32からのACK受信処理"""
+        original_type = msg_json.get("original_type")
+        action = msg_json.get("action")
+        
+        if original_type == "audio_control" and action == "mic_off":
+            self._mic_ack_received = True
+            logger.info(f"✅ [ACK_RECEIVED] ESP32 confirmed mic_off: {msg_json}")
+        elif original_type == "audio_control" and action == "mic_on":
+            logger.info(f"✅ [ACK_RECEIVED] ESP32 confirmed mic_on: {msg_json}")
+        else:
+            logger.info(f"✅ [ACK_RECEIVED] Unknown ACK: {msg_json}")
         elif state == "stop":
             logger.info(f"Client {self.device_id} stopped listening")
             
@@ -593,7 +611,7 @@ class ConnectionHandler:
                 self.audio_handler.speak_lock_until = time.time() * 1000 + tts_lock_ms
                 logger.info(f"🛡️ [TTS_PROTECTION] TTS開始保護期間設定: {tts_lock_ms}ms")
                 
-                # Server2準拠: 端末にマイクオフ指示（フルデュプレックス衝突防止）
+                # 🎯 [HALF_DUPLEX] ハーフデュプレックス制御: mic_mute → ACK受領 → TTS送信
                 mic_control_message = {
                     "type": "audio_control", 
                     "action": "mic_off", 
@@ -602,6 +620,23 @@ class ConnectionHandler:
                 try:
                     await self.websocket.send_str(json.dumps(mic_control_message))
                     logger.info(f"📡 [DEVICE_CONTROL] 端末にマイクオフ指示送信: {mic_control_message}")
+                    
+                    # 🎯 [ACK_WAIT] ACK待機（500ms）またはフォールバック
+                    ack_received = False
+                    wait_start = time.monotonic()
+                    while time.monotonic() - wait_start < 0.5:  # 500ms待機
+                        await asyncio.sleep(0.01)  # 10ms間隔でチェック
+                        # ACKはhandle_text_messageで処理される
+                        if hasattr(self, '_mic_ack_received') and self._mic_ack_received:
+                            ack_received = True
+                            self._mic_ack_received = False  # リセット
+                            break
+                    
+                    if ack_received:
+                        logger.info(f"✅ [ACK_RECEIVED] MIC_OFF ACK received, starting TTS")
+                    else:
+                        logger.warning(f"⏱️ [ACK_TIMEOUT] MIC_OFF ACK timeout (500ms), proceeding with TTS")
+                        
                 except Exception as e:
                     logger.warning(f"📡 [DEVICE_CONTROL] マイクオフ指示送信失敗: {e}")
                 
@@ -699,25 +734,14 @@ class ConnectionHandler:
                         logger.error(f"🚨 [CONNECTION_ERROR] WebSocket already closed before audio send")
                         return
                     
-                    # Server2準拠: audios = 全フレーム結合bytes
-                    audios = b''.join(opus_frames_list)
+                    # 🎯 [CRITICAL_FIX] 二重送信防止: 個別フレーム送信のみに統一
                     total_frames = len(opus_frames_list)
-                    
-                    # ESP32準拠: BinaryProtocol3ヘッダー追加
-                    import struct
-                    type_field = 0  # ESP32期待値：type=0
-                    reserved = 0    # ESP32必須：reserved=0
-                    payload_size = len(audios)
-                    header = struct.pack('>BBH', type_field, reserved, payload_size)  # type(1) + reserved(1) + size(2) big-endian
-                    v3_data = header + audios
-                    
-                    logger.info(f"🎵 [V3_PROTOCOL] BinaryProtocol3: type={type_field}, size={payload_size}, total={len(v3_data)} bytes")
-                    logger.info(f"🔍 [CONNECTION_CHECK] Just before send_bytes: closed={self.websocket.closed}")
+                    logger.info(f"🎵 [UNIFIED_SEND] Unified individual frame sending: {total_frames} frames")
                     
                     if hasattr(self, 'websocket') and self.websocket and not self.websocket.closed:
-                        # ESP32のOpusDecoder対応: 個別フレーム送信 (server2準拠)
+                        # ESP32のOpusDecoder対応: 個別フレーム送信のみ (二重送信防止)
                         frame_count = len(opus_frames_list)
-                        logger.info(f"🎵 [INDIVIDUAL_FRAMES] Sending {frame_count} individual Opus frames")
+                        logger.info(f"🎵 [INDIVIDUAL_FRAMES] Sending {frame_count} individual Opus frames (SINGLE PATH)")
                         
                         # デバッグ：最初のフレーム詳細解析
                         if frame_count > 0:
@@ -752,7 +776,10 @@ class ConnectionHandler:
                                 logger.info(f"🎵 [FRAME_SEND] Frame {i+1}/{frame_count}: opus={len(opus_frame)}bytes")
                             
                             await self.websocket.send_bytes(frame_data)
-                            await asyncio.sleep(0.010)  # 10ms delay - 音質とTLS負荷のバランス
+                            
+                            # 🎯 [SMOOTH_SEND] 平滑化送信: 10フレーム毎に8ms休憩
+                            if (i + 1) % 10 == 0:
+                                await asyncio.sleep(0.008)  # 8ms delay every 10 frames for smoothing
                             
                             # TLS接続状態詳細チェック
                             if self.websocket.closed:
@@ -804,7 +831,8 @@ class ConnectionHandler:
             async def delayed_flag_off():
                 try:
                     cooldown_ms = 1200  # ユーザー指摘の通り
-                    cooldown_until = time.time() * 1000 + cooldown_ms
+                    # 🎯 [MONOTONIC_TIME] 単一時基統一
+                    cooldown_until = time.monotonic() * 1000 + cooldown_ms
                     
                     # TTS終了直後にクールダウン期間設定（★フラグは維持★）
                     if hasattr(self, 'audio_handler'):
