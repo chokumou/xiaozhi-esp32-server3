@@ -279,11 +279,6 @@ class ConnectionHandler:
             logger.info(f"✅ [ACK_RECEIVED] ESP32 confirmed mic_on: {msg_json}")
         else:
             logger.info(f"✅ [ACK_RECEIVED] Unknown ACK: {msg_json}")
-        elif state == "stop":
-            logger.info(f"Client {self.device_id} stopped listening")
-            
-        if mode:
-            logger.debug(f"Client listen mode: {mode}")
 
 
     async def process_accumulated_audio(self):
