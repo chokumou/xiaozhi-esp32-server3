@@ -777,9 +777,8 @@ class ConnectionHandler:
                                 logger.warning(f"🚨 [FRAME_SKIP] Skipping tiny frame {i+1}: {len(opus_frame)}bytes")
                                 continue
                                 
-                            # 各フレームに個別のBinaryProtocol3ヘッダーを追加
-                            frame_header = struct.pack('>BBH', 1, 0, len(opus_frame))  # type=1 (AUDIO), reserved=0, size
-                            frame_data = frame_header + opus_frame
+                            # Server2準拠: ヘッダー無し、直接OPUSバイナリ送信
+                            frame_data = opus_frame
                             
                             # TTS送信中の中断検知
                             if i % 50 == 0:  # 50フレームごとにチェック
