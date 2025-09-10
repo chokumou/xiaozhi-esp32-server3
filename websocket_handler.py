@@ -147,6 +147,26 @@ class ConnectionHandler:
             else:
                 size_category = "LARGE"
             
+            # 🔍 [SOURCE_TRACE] 送信元プログラム推定
+            if not hasattr(self, '_size_stats'):
+                self._size_stats = {"DTX": 0, "SMALL": 0, "NORMAL": 0, "LARGE": 0}
+            self._size_stats[size_category] += 1
+            
+            # 🎯 [ROOT_CAUSE] 根本原因推定ログ
+            total_frames = sum(self._size_stats.values())
+            if total_frames % 50 == 0:  # 50フレーム毎に分析
+                dtx_ratio = self._size_stats["DTX"] / total_frames * 100
+                normal_ratio = self._size_stats["NORMAL"] / total_frames * 100
+                logger.info(f"🔍 [ROOT_CAUSE] フレーム構成分析: DTX={dtx_ratio:.1f}% NORMAL={normal_ratio:.1f}% (total={total_frames})")
+                
+                # 根本原因推定
+                if dtx_ratio > 60:
+                    logger.warning(f"🎯 [CAUSE_DTX] DTX大量送信: おそらく無音検知の誤動作またはマイク感度過敏")
+                elif normal_ratio > 50:
+                    logger.warning(f"🎯 [CAUSE_VOICE] 音声フレーム大量送信: おそらくVAD異常またはマイク回り込み")
+                else:
+                    logger.warning(f"🎯 [CAUSE_MIXED] 混合送信: マイク制御異常の可能性")
+            
             # A. 入口で落とす（最重要）- AI発話中+クールダウン中完全ブロック
             # 🎯 [MONOTONIC_TIME] 単一時基統一: monotonic使用でシステム時刻変更に耐性
             now_ms = time.monotonic() * 1000
@@ -186,11 +206,19 @@ class ConnectionHandler:
             
             # 🚨 [IMMEDIATE_FLOOD] リアルタイム洪水警告 + 緊急遮断
             if self._msg_count_1sec > 30:  # 30フレーム/秒超過時の緊急対策
-                logger.error(f"🚨 [CRITICAL_FLOOD] ESP32からの異常大量送信: {self._msg_count_1sec}フレーム/秒, {self._total_bytes_1sec}bytes/秒 → WebSocket切断リスク")
+                avg_size = self._total_bytes_1sec / self._msg_count_1sec if self._msg_count_1sec > 0 else 0
+                logger.error(f"🚨 [CRITICAL_FLOOD] ESP32からの異常大量送信: {self._msg_count_1sec}フレーム/秒, {self._total_bytes_1sec}bytes/秒 (平均{avg_size:.1f}B/フレーム) → WebSocket切断リスク")
                 
                 # 緊急遮断: 高頻度フレームを強制破棄
-                if self._msg_count_1sec > 40:  # 40フレーム/秒超過で強制破棄
-                    logger.error(f"🛑 [EMERGENCY_DROP] 緊急フレーム破棄: {self._msg_count_1sec}フレーム/秒 → 接続保護のため破棄")
+                if self._msg_count_1sec > 35:  # 35フレーム/秒超過で強制破棄（閾値下げ）
+                    logger.error(f"🛑 [EMERGENCY_DROP] 緊急フレーム破棄: {self._msg_count_1sec}フレーム/秒, {size_category}({msg_size}B) → 接続保護のため破棄")
+                    
+                    # 🔍 [DROP_ANALYSIS] 破棄理由分析
+                    if not hasattr(self, '_drop_stats'):
+                        self._drop_stats = {"DTX": 0, "SMALL": 0, "NORMAL": 0, "LARGE": 0}
+                    self._drop_stats[size_category] += 1
+                    logger.error(f"🔍 [DROP_STATS] 破棄統計: DTX={self._drop_stats['DTX']} NORMAL={self._drop_stats['NORMAL']} SMALL={self._drop_stats['SMALL']}")
+                    
                     return  # 強制破棄して接続を保護
             
             # 旧来の小パケットスキップを一時無効化（Server2 Connection Handlerで処理）
