@@ -200,6 +200,18 @@ class ConnectionHandler:
                 self._packet_log_count = 0
             self._packet_log_count += 1
             
+            # 🛑 [DTX_ABSOLUTE_DROP] 1-5ByteのDTXフレームを絶対破棄（ジッタ対策）
+            if msg_size <= 5:
+                if not hasattr(self, '_dtx_drop_count'):
+                    self._dtx_drop_count = 0
+                self._dtx_drop_count += 1
+                if self._dtx_drop_count % 50 == 0:
+                    logger.info(f"🛑 [DTX_ABSOLUTE_DROP] DTX絶対破棄: {self._dtx_drop_count}個累計 (TLS/WS負荷軽減)")
+                return  # DTXフレームを完全破棄
+            
+            # 🚨 [ESP32_DEBUG] ESP32修正後のフレーム詳細分析
+            logger.info(f"📊 [FRAME_DETAIL] ★Server受信★ {size_category}({msg_size}B) hex={message[:min(8, len(message))].hex()} count/sec={self._msg_count_1sec} bytes/sec={self._total_bytes_1sec} protocol=v{self.protocol_version}")
+            
             # 通常時も10フレームに1回に制限（より詳細に）
             if self._packet_log_count % 10 == 0:
                 logger.info(f"📊 [TRAFFIC_DETAIL] ★入口ガード通過★ {size_category}({msg_size}B) count/sec={self._msg_count_1sec} bytes/sec={self._total_bytes_1sec} protocol=v{self.protocol_version}")
@@ -213,7 +225,7 @@ class ConnectionHandler:
                 logger.error(f"🔍 [THRESHOLD_DEBUG] 現在: {self._msg_count_1sec}フレーム/秒, 閾値: 25フレーム/秒, 超過: {self._msg_count_1sec > 25}")
                 
                 # 緊急遮断: 高頻度フレームを強制破棄
-                if self._msg_count_1sec > 25:  # 25フレーム/秒超過で強制破棄（更に下げ）
+                if self._msg_count_1sec > 10:  # 10フレーム/秒超過で強制破棄（ESP32ファームウェア未更新対策）
                     logger.error(f"🛑 [EMERGENCY_DROP] 緊急フレーム破棄: {self._msg_count_1sec}フレーム/秒, {size_category}({msg_size}B) → 接続保護のため破棄")
                     
                     # 🔍 [DROP_ANALYSIS] 破棄理由分析
@@ -224,7 +236,7 @@ class ConnectionHandler:
                     
                     return  # 強制破棄して接続を保護
                 else:
-                    logger.error(f"🔍 [NO_DROP] 破棄条件未満: {self._msg_count_1sec}フレーム/秒 <= 25 → 処理継続")
+                    logger.error(f"🔍 [NO_DROP] 破棄条件未満: {self._msg_count_1sec}フレーム/秒 <= 10 → 処理継続")
             
             # 旧来の小パケットスキップを一時無効化（Server2 Connection Handlerで処理）
             # if len(message) <= 12:  # Skip very small packets (DTX/keepalive) but keep activity alive
@@ -855,12 +867,22 @@ class ConnectionHandler:
                             first_frame = opus_frames_list[0]
                             logger.info(f"🔬 [OPUS_DEBUG] First frame: size={len(first_frame)}bytes, hex_header={first_frame[:8].hex() if len(first_frame)>=8 else first_frame.hex()}")
                         
+                        # 🎯 [REALTIME_PACING] リアルタイムペース送信（バッファアンダーフロー対策）
+                        frame_duration_ms = 20  # 20msフレーム想定
+                        frame_interval_sec = frame_duration_ms / 1000.0
+                        send_start_time = time.monotonic()
+                        intervals = []
+                        last_frame_time = send_start_time
+                        
                         for i, opus_frame in enumerate(opus_frames_list):
                             # 極小フレーム（音質劣化の原因）をスキップ
                             if len(opus_frame) < 10:
                                 logger.warning(f"🚨 [FRAME_SKIP] Skipping tiny frame {i+1}: {len(opus_frame)}bytes")
                                 continue
-                                
+                            
+                            # 送信タイミング計測
+                            frame_send_start = time.monotonic()
+                            
                             # Server2準拠: ヘッダー無し、直接OPUSバイナリ送信
                             frame_data = opus_frame
                             
@@ -883,6 +905,22 @@ class ConnectionHandler:
                             
                             await self.websocket.send_bytes(frame_data)
                             
+                            # 送信間隔統計
+                            if i > 0:
+                                interval = frame_send_start - last_frame_time
+                                intervals.append(interval * 1000)  # ms変換
+                            last_frame_time = frame_send_start
+                            
+                            # 🎯 [REALTIME_PACING] 厳密なリアルタイム間隔制御
+                            target_time = send_start_time + ((i + 1) * frame_interval_sec)
+                            current_time = time.monotonic()
+                            sleep_time = target_time - current_time
+                            
+                            if sleep_time > 0:
+                                await asyncio.sleep(sleep_time)
+                            elif sleep_time < -0.01:  # 10ms以上の遅延検出
+                                logger.warning(f"⚠️ [TIMING_LAG] Frame {i+1}: {abs(sleep_time)*1000:.1f}ms behind schedule")
+                            
                             # 🔍 [1006_PREVENTION] 毎フレーム後接続確認
                             if self.websocket.closed:
                                 logger.error(f"💀 [1006_DETECTED] Connection closed at frame {i+1}/{frame_count}, close_code={getattr(self.websocket, 'close_code', 'None')}")
@@ -899,6 +937,19 @@ class ConnectionHandler:
                                 break
                                 
                         if not self.websocket.closed:
+                            # 🎯 [SEND_STATISTICS] 送信統計ログ（ジッタ分析）
+                            if intervals:
+                                min_interval = min(intervals)
+                                avg_interval = sum(intervals) / len(intervals)
+                                max_interval = max(intervals)
+                                jitter = max_interval - min_interval
+                                logger.info(f"📊 [SEND_STATS] 送信間隔統計: min={min_interval:.1f}ms avg={avg_interval:.1f}ms max={max_interval:.1f}ms jitter={jitter:.1f}ms")
+                                
+                                # バースト検出
+                                burst_count = sum(1 for interval in intervals if interval < frame_duration_ms * 0.5)
+                                if burst_count > 0:
+                                    logger.warning(f"🚨 [BURST_DETECT] バースト送信検出: {burst_count}/{len(intervals)}フレーム (バッファ満杯リスク)")
+                            
                             logger.info(f"✅ [INDIVIDUAL_FRAMES] All {frame_count} frames sent successfully")
                     else:
                         logger.error(f"❌ [V3_PROTOCOL] WebSocket disconnected before send")
