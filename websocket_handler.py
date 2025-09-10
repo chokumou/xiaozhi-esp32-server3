@@ -59,6 +59,10 @@ class ConnectionHandler:
         
         # Initialize server2-style audio handler
         self.audio_handler = AudioHandlerServer2(self)
+        # デバッグ用: per-frame Δt ログ出力を制御するフラグ（False: 無効）
+        self.debug_tts_timing = False
+        # 累積バースト検出カウンタ
+        self._tts_burst_total = 0
         
         # Welcome message compatible with ESP32 (Server2準拠)
         self.welcome_msg = {
@@ -963,6 +967,17 @@ class ConnectionHandler:
                                 burst_count = sum(1 for interval in intervals if interval < frame_duration_ms * 0.5)
                                 if burst_count > 0:
                                     logger.warning(f"🚨 [BURST_DETECT] バースト送信検出: {burst_count}/{len(intervals)}フレーム (バッファ満杯リスク)")
+                                    # 累積カウンタ更新
+                                    try:
+                                        self._tts_burst_total += burst_count
+                                    except Exception:
+                                        self._tts_burst_total = burst_count
+                                    logger.info(f"📈 [BURST_TOTAL] 累積バースト検出合計: {self._tts_burst_total}")
+
+                                # デバッグ: per-frame Δt 詳細ログ (オフがデフォルト)
+                                if getattr(self, 'debug_tts_timing', False):
+                                    for idx, val in enumerate(intervals, start=1):
+                                        logger.debug(f"🔬 [PER_FRAME_DT] frame={idx} dt={val:.2f}ms")
                             
                             logger.info(f"✅ [INDIVIDUAL_FRAMES] All {frame_count} frames sent successfully")
                     else:
