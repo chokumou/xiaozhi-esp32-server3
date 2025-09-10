@@ -600,7 +600,7 @@ class ConnectionHandler:
                     "reason": "tts_speaking"
                 }
                 try:
-                    await self.websocket.send(json.dumps(mic_control_message))
+                    await self.websocket.send_str(json.dumps(mic_control_message))
                     logger.info(f"📡 [DEVICE_CONTROL] 端末にマイクオフ指示送信: {mic_control_message}")
                 except Exception as e:
                     logger.warning(f"📡 [DEVICE_CONTROL] マイクオフ指示送信失敗: {e}")
@@ -620,7 +620,7 @@ class ConnectionHandler:
                     "state": "start", 
                     "session_id": getattr(self, 'session_id', 'default')
                 }
-                await self.websocket.send(json.dumps(tts_start_message))
+                await self.websocket.send_str(json.dumps(tts_start_message))
                 logger.info(f"📡 [DEVICE_CONTROL] 端末にTTS開始指示送信: {tts_start_message}")
                 
                 self.audio_handler.tts_in_progress = True
@@ -857,10 +857,10 @@ class ConnectionHandler:
                         }
                         try:
                             # 1. TTS停止メッセージ（Server2準拠）
-                            await self.websocket.send(json.dumps(tts_stop_message))
+                            await self.websocket.send_str(json.dumps(tts_stop_message))
                             
                             # 2. マイクオン指示（拡張）
-                            await self.websocket.send(json.dumps(mic_on_message))
+                            await self.websocket.send_str(json.dumps(mic_on_message))
                             
                             # 3. 録音再開指示（重要！ESP32が自動再開しない場合の保険）
                             listen_start_message = {
@@ -868,7 +868,7 @@ class ConnectionHandler:
                                 "state": "start", 
                                 "mode": "continuous"
                             }
-                            await self.websocket.send(json.dumps(listen_start_message))
+                            await self.websocket.send_str(json.dumps(listen_start_message))
                             
                             logger.info(f"📡 [DEVICE_CONTROL] 端末制御送信完了: TTS停止→マイクON→録音再開")
                             logger.info(f"📡 [DEVICE_CONTROL] Messages: {tts_stop_message}, {mic_on_message}, {listen_start_message}")
