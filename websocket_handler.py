@@ -115,11 +115,11 @@ class ConnectionHandler:
     async def handle_binary_message(self, message: bytes):
         """Handle binary audio data based on protocol version"""
         try:
-        # A. 入口で落とす（最重要）- AI発話中+クールダウン中完全ブロック
-        # 🎯 [MONOTONIC_TIME] 単一時基統一: monotonic使用でシステム時刻変更に耐性
-        now_ms = time.monotonic() * 1000
-        is_ai_speaking = hasattr(self, 'audio_handler') and getattr(self.audio_handler, 'client_is_speaking', False)
-        is_cooldown = hasattr(self, 'audio_handler') and now_ms < getattr(self.audio_handler, 'tts_cooldown_until', 0)
+            # A. 入口で落とす（最重要）- AI発話中+クールダウン中完全ブロック
+            # 🎯 [MONOTONIC_TIME] 単一時基統一: monotonic使用でシステム時刻変更に耐性
+            now_ms = time.monotonic() * 1000
+            is_ai_speaking = hasattr(self, 'audio_handler') and getattr(self.audio_handler, 'client_is_speaking', False)
+            is_cooldown = hasattr(self, 'audio_handler') and now_ms < getattr(self.audio_handler, 'tts_cooldown_until', 0)
             
             if is_ai_speaking or is_cooldown:
                 # B. WebSocket入口で必ず落とす（最重要）
