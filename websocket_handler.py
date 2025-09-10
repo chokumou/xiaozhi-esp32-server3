@@ -31,6 +31,7 @@ class ConnectionHandler:
         self.device_id = headers.get("device-id") or "unknown"
         self.client_id = headers.get("client-id") or str(uuid.uuid4())
         self.protocol_version = int(headers.get("protocol-version", "1"))
+        self.session_id = f"session_{int(time.time())}"  # Server2準拠のセッションID
         
         self.asr_service = ASRService()
         self.tts_service = TTSService()
@@ -572,6 +573,18 @@ class ConnectionHandler:
                 self.audio_handler.speak_lock_until = time.time() * 1000 + tts_lock_ms
                 logger.info(f"🛡️ [TTS_PROTECTION] TTS開始保護期間設定: {tts_lock_ms}ms")
                 
+                # Server2準拠: 端末にマイクオフ指示（フルデュプレックス衝突防止）
+                mic_control_message = {
+                    "type": "audio_control", 
+                    "action": "mic_off", 
+                    "reason": "tts_speaking"
+                }
+                try:
+                    await self.websocket.send(json.dumps(mic_control_message))
+                    logger.info(f"📡 [DEVICE_CONTROL] 端末にマイクオフ指示送信: {mic_control_message}")
+                except Exception as e:
+                    logger.warning(f"📡 [DEVICE_CONTROL] マイクオフ指示送信失敗: {e}")
+                
                 # TTS開始時に録音バッファをクリア（溜まったフレーム一斉処理防止）
                 if hasattr(self.audio_handler, 'audio_frames'):
                     cleared_frames = len(self.audio_handler.audio_frames)
@@ -580,6 +593,15 @@ class ConnectionHandler:
                         logger.info(f"🗑️ [BUFFER_CLEAR] TTS開始時バッファクリア: {cleared_frames}フレーム破棄")
                 
                 logger.info(f"🎯 [CRITICAL_TEST] TTS開始: AI発言フラグON - エコーブロック開始")
+                
+                # Server2準拠: 端末にTTS開始メッセージ送信（重要！）
+                tts_start_message = {
+                    "type": "tts", 
+                    "state": "start", 
+                    "session_id": getattr(self, 'session_id', 'default')
+                }
+                await self.websocket.send(json.dumps(tts_start_message))
+                logger.info(f"📡 [DEVICE_CONTROL] 端末にTTS開始指示送信: {tts_start_message}")
                 
                 self.audio_handler.tts_in_progress = True
                 # TTS送信中は is_processing を強制維持
@@ -801,6 +823,24 @@ class ConnectionHandler:
                     self.client_is_speaking = False
                     if hasattr(self, 'audio_handler'):
                         self.audio_handler.client_is_speaking = False  # AI発話確実終了
+                        
+                        # Server2準拠: 端末にTTS終了 + マイクオン指示送信
+                        tts_stop_message = {
+                            "type": "tts", 
+                            "state": "stop", 
+                            "session_id": getattr(self, 'session_id', 'default')
+                        }
+                        mic_on_message = {
+                            "type": "audio_control", 
+                            "action": "mic_on", 
+                            "reason": "tts_finished"
+                        }
+                        try:
+                            await self.websocket.send(json.dumps(tts_stop_message))
+                            await self.websocket.send(json.dumps(mic_on_message))
+                            logger.info(f"📡 [DEVICE_CONTROL] 端末にTTS終了+マイクオン指示送信: {tts_stop_message}, {mic_on_message}")
+                        except Exception as e:
+                            logger.warning(f"📡 [DEVICE_CONTROL] TTS終了指示送信失敗: {e}")
                         
                         # D. 可視化（デバッグ）- TTS区間統計出力
                         ws_blocked = getattr(self, '_ws_block_count', 0)
