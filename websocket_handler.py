@@ -110,11 +110,27 @@ class ConnectionHandler:
     async def handle_binary_message(self, message: bytes):
         """Handle binary audio data based on protocol version"""
         try:
+            # A. 入口で落とす（最重要）- AI発話中完全ブロック
+            if hasattr(self, 'audio_handler') and getattr(self.audio_handler, 'client_is_speaking', False):
+                # AI発話中は全バイナリメッセージ完全ブロック（DTX含む）
+                if not hasattr(self, '_ws_block_count'):
+                    self._ws_block_count = 0
+                self._ws_block_count += 1
+                # ログは100フレームに1回のみ（負荷軽減）
+                if self._ws_block_count % 100 == 0:
+                    logger.info(f"🚪 [WS_ENTRANCE_BLOCK] AI発話中入口ブロック: 過去100フレーム完全破棄")
+                return  # 即座に破棄
+            
             # Server2準拠: 小パケットでも活動時間を更新（ESP32からの継続通信を認識）
             self.last_activity_time = time.time()
             
-            # デバッグ: 全パケットサイズをログ
-            logger.info(f"🔧 [PACKET_DEBUG] Binary message: {len(message)} bytes, protocol v{self.protocol_version}")
+            # デバッグ: パケットサイズをログ（AI発話時は入口でブロック済みのためここには来ない）
+            if not hasattr(self, '_packet_log_count'):
+                self._packet_log_count = 0
+            self._packet_log_count += 1
+            # 通常時も10フレームに1回に制限（ログ軽減）
+            if self._packet_log_count % 10 == 0:
+                logger.info(f"🔧 [PACKET_DEBUG] Binary通常処理: 過去10フレーム (最新: {len(message)}B), protocol v{self.protocol_version}")
             
             # 旧来の小パケットスキップを一時無効化（Server2 Connection Handlerで処理）
             # if len(message) <= 12:  # Skip very small packets (DTX/keepalive) but keep activity alive
@@ -690,17 +706,45 @@ class ConnectionHandler:
         except Exception as e:
             logger.error(f"Error sending audio response to {self.device_id}: {e}")
         finally:
-            self.client_is_speaking = False
-            # Server2準拠: TTS完了時の状態リセット
+            # B. フラグの保持期間を確実にする
+            # 最後のフレーム送信完了 → TTS_STOP送信 → 400ms後にフラグOFF
+            
+            async def delayed_flag_off():
+                try:
+                    # 端末スピーカーの残響やバッファ吐き切り対策で400ms待機
+                    await asyncio.sleep(0.4)
+                    
+                    # フラグOFF（確実実行）
+                    self.client_is_speaking = False
+                    if hasattr(self, 'audio_handler'):
+                        self.audio_handler.client_is_speaking = False  # AI発話確実終了
+                        # TTS終了後クールダウン開始（音響回り込み防止）
+                        self.audio_handler.tts_cooldown_until = time.time() * 1000 + self.audio_handler.tts_cooldown_ms
+                        
+                        # D. 可視化（デバッグ）- TTS区間統計出力
+                        ws_blocked = getattr(self, '_ws_block_count', 0)
+                        audio_blocked = getattr(self.audio_handler.handler if hasattr(self.audio_handler, 'handler') else None, 'blocked_frames', 0) if hasattr(self, 'audio_handler') else 0
+                        cooldown_blocked = getattr(self.audio_handler, '_cooldown_log_count', 0) if hasattr(self, 'audio_handler') else 0
+                        
+                        logger.info(f"🎯 [CRITICAL_TEST] TTS終了: AI発言フラグOFF(400ms遅延) - エコーブロック解除")
+                        logger.info(f"📊 [TTS_GUARD] WS入口blocked={ws_blocked} Audio層blocked={audio_blocked} Cooldown期間blocked={cooldown_blocked}")
+                        
+                        # カウンターリセット
+                        if hasattr(self, '_ws_block_count'):
+                            self._ws_block_count = 0
+                            
+                except Exception as e:
+                    logger.error(f"🚨 [FLAG_OFF_ERROR] 遅延フラグOFFエラー: {e}")
+            
+            # 即座に状態リセット（例外対策）
             if hasattr(self, 'audio_handler'):
                 self.audio_handler.tts_in_progress = False
-                self.audio_handler.client_is_speaking = False  # AI発話終了
-                # TTS完了時に is_processing をリセット
                 self.audio_handler.is_processing = False
-                # TTS終了後クールダウン開始（音響回り込み防止）
-                self.audio_handler.tts_cooldown_until = time.time() * 1000 + self.audio_handler.tts_cooldown_ms
-                logger.info(f"🎯 [CRITICAL_TEST] TTS終了: AI発言フラグOFF - エコーブロック解除")
-                logger.info(f"🔥 RID[{rid if 'rid' in locals() else 'unknown'}] TTS_COMPLETE: is_processing=False, cooldown={self.audio_handler.tts_cooldown_ms}ms")
+                
+            # 非同期で遅延フラグOFF実行
+            asyncio.create_task(delayed_flag_off())
+            
+            logger.info(f"🔥 RID[{rid if 'rid' in locals() else 'unknown'}] TTS_COMPLETE: is_processing=False, 400ms後にフラグOFF")
 
     async def run(self):
         """Main connection loop - Server2 style with audio sync"""

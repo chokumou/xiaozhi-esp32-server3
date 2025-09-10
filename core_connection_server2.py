@@ -65,8 +65,9 @@ class Server2StyleConnectionHandler:
                 if not hasattr(self, '_block_counter'):
                     self._block_counter = 0
                 self._block_counter += 1
-                if self._block_counter % 5 == 0:
-                    logger.info(f"🔇 [AI_SPEAKING_BLOCK] AI発言中全ブロック: 計{self.blocked_frames}フレーム({self.blocked_bytes}B)破棄 - エコー根絶中")
+                # C. DTXは"見ない" - DTXログも負荷軽減
+                if self._block_counter % 20 == 0:  # DTX含む大量フレーム対策で間隔延長
+                    logger.info(f"🔇 [AI_SPEAKING_BLOCK] AI発話中全ブロック: 計{self.blocked_frames}フレーム({self.blocked_bytes}B)破棄 - DTX含む全エコー根絶中")
                 return  # 全音声完全破棄
         except Exception as e:
             logger.error(f"🚨 [AI_SPEAKING_ERROR] AI発言中ブロックエラー: {e}")
