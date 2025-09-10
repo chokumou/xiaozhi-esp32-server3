@@ -209,8 +209,11 @@ class ConnectionHandler:
                 avg_size = self._total_bytes_1sec / self._msg_count_1sec if self._msg_count_1sec > 0 else 0
                 logger.error(f"🚨 [CRITICAL_FLOOD] ESP32からの異常大量送信: {self._msg_count_1sec}フレーム/秒, {self._total_bytes_1sec}bytes/秒 (平均{avg_size:.1f}B/フレーム) → WebSocket切断リスク")
                 
+                # 🔍 [DEBUG_THRESHOLD] 閾値デバッグ
+                logger.error(f"🔍 [THRESHOLD_DEBUG] 現在: {self._msg_count_1sec}フレーム/秒, 閾値: 25フレーム/秒, 超過: {self._msg_count_1sec > 25}")
+                
                 # 緊急遮断: 高頻度フレームを強制破棄
-                if self._msg_count_1sec > 35:  # 35フレーム/秒超過で強制破棄（閾値下げ）
+                if self._msg_count_1sec > 25:  # 25フレーム/秒超過で強制破棄（更に下げ）
                     logger.error(f"🛑 [EMERGENCY_DROP] 緊急フレーム破棄: {self._msg_count_1sec}フレーム/秒, {size_category}({msg_size}B) → 接続保護のため破棄")
                     
                     # 🔍 [DROP_ANALYSIS] 破棄理由分析
@@ -220,6 +223,8 @@ class ConnectionHandler:
                     logger.error(f"🔍 [DROP_STATS] 破棄統計: DTX={self._drop_stats['DTX']} NORMAL={self._drop_stats['NORMAL']} SMALL={self._drop_stats['SMALL']}")
                     
                     return  # 強制破棄して接続を保護
+                else:
+                    logger.error(f"🔍 [NO_DROP] 破棄条件未満: {self._msg_count_1sec}フレーム/秒 <= 25 → 処理継続")
             
             # 旧来の小パケットスキップを一時無効化（Server2 Connection Handlerで処理）
             # if len(message) <= 12:  # Skip very small packets (DTX/keepalive) but keep activity alive
