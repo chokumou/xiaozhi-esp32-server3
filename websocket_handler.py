@@ -615,6 +615,11 @@ class ConnectionHandler:
                     "reason": "tts_speaking"
                 }
                 try:
+                    # 🔍 [CONNECTION_GUARD] 送信前WebSocket状態確認
+                    if self.websocket.closed or getattr(self.websocket, '_writer', None) is None:
+                        logger.error(f"💀 [WEBSOCKET_DEAD] Cannot send mic_off control - connection dead")
+                        return
+                        
                     await self.websocket.send_str(json.dumps(mic_control_message))
                     logger.info(f"📡 [DEVICE_CONTROL] 端末にマイクオフ指示送信: {mic_control_message}")
                     
@@ -778,15 +783,10 @@ class ConnectionHandler:
                             if (i + 1) % 10 == 0:
                                 await asyncio.sleep(0.008)  # 8ms delay every 10 frames for smoothing
                             
-                            # TLS接続状態詳細チェック
-                            if self.websocket.closed:
-                                logger.error(f"🚨 [TLS_ERROR] WebSocket closed during frame {i+1}, close_code={getattr(self.websocket, 'close_code', 'None')}")
-                            elif getattr(self.websocket, '_writer', None) is None:
-                                logger.error(f"🚨 [TLS_ERROR] Writer lost during frame {i+1}")
-                                break
-                            
-                            if self.websocket.closed:
-                                logger.error(f"🚨 [FRAME_SEND] Connection closed after frame {i+1}, stopping transmission")
+                            # 🔍 [CRITICAL_GUARD] フレーム送信前後のWebSocket状態確認
+                            if self.websocket.closed or getattr(self.websocket, '_writer', None) is None:
+                                logger.error(f"💀 [WEBSOCKET_DEAD] Connection dead at frame {i+1}, aborting TTS")
+                                logger.error(f"💀 [DEAD_STATE] closed={self.websocket.closed}, writer={getattr(self.websocket, '_writer', 'None')}, close_code={getattr(self.websocket, 'close_code', 'None')}")
                                 break
                                 
                         if not self.websocket.closed:
@@ -882,6 +882,11 @@ class ConnectionHandler:
                             "reason": "tts_finished"
                         }
                         try:
+                            # 🔍 [CONNECTION_GUARD] WebSocket状態確認（最重要）
+                            if self.websocket.closed or getattr(self.websocket, '_writer', None) is None:
+                                logger.error(f"💀 [WEBSOCKET_DEAD] Connection closed during cooldown, cannot send control messages")
+                                return
+                                
                             # 1. TTS停止メッセージ（Server2準拠）
                             await self.websocket.send_str(json.dumps(tts_stop_message))
                             
@@ -900,6 +905,7 @@ class ConnectionHandler:
                             logger.info(f"📡 [DEVICE_CONTROL] Messages: {tts_stop_message}, {mic_on_message}, {listen_start_message}")
                         except Exception as e:
                             logger.warning(f"📡 [DEVICE_CONTROL] 端末制御送信失敗: {e}")
+                            logger.error(f"💀 [WEBSOCKET_ERROR] WebSocket状態: closed={getattr(self.websocket, 'closed', 'unknown')}, writer={getattr(self.websocket, '_writer', 'unknown')}")
                         
                         # D. 可視化（デバッグ）- TTS区間統計出力
                         ws_blocked = getattr(self, '_ws_block_count', 0)
