@@ -184,9 +184,14 @@ class ConnectionHandler:
             if self._packet_log_count % 10 == 0:
                 logger.info(f"📊 [TRAFFIC_DETAIL] ★入口ガード通過★ {size_category}({msg_size}B) count/sec={self._msg_count_1sec} bytes/sec={self._total_bytes_1sec} protocol=v{self.protocol_version}")
             
-            # 🚨 [IMMEDIATE_FLOOD] リアルタイム洪水警告
-            if self._msg_count_1sec > 50:  # 50フレーム/秒超過時の緊急警告
+            # 🚨 [IMMEDIATE_FLOOD] リアルタイム洪水警告 + 緊急遮断
+            if self._msg_count_1sec > 30:  # 30フレーム/秒超過時の緊急対策
                 logger.error(f"🚨 [CRITICAL_FLOOD] ESP32からの異常大量送信: {self._msg_count_1sec}フレーム/秒, {self._total_bytes_1sec}bytes/秒 → WebSocket切断リスク")
+                
+                # 緊急遮断: 高頻度フレームを強制破棄
+                if self._msg_count_1sec > 40:  # 40フレーム/秒超過で強制破棄
+                    logger.error(f"🛑 [EMERGENCY_DROP] 緊急フレーム破棄: {self._msg_count_1sec}フレーム/秒 → 接続保護のため破棄")
+                    return  # 強制破棄して接続を保護
             
             # 旧来の小パケットスキップを一時無効化（Server2 Connection Handlerで処理）
             # if len(message) <= 12:  # Skip very small packets (DTX/keepalive) but keep activity alive
