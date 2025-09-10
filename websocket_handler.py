@@ -778,7 +778,7 @@ class ConnectionHandler:
                                 continue
                                 
                             # 各フレームに個別のBinaryProtocol3ヘッダーを追加
-                            frame_header = struct.pack('>BBH', 0, 0, len(opus_frame))  # type=0, reserved=0, size
+                            frame_header = struct.pack('>BBH', 1, 0, len(opus_frame))  # type=1 (AUDIO), reserved=0, size
                             frame_data = frame_header + opus_frame
                             
                             # TTS送信中の中断検知
