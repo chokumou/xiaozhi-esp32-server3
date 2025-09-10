@@ -864,154 +864,32 @@ class ConnectionHandler:
                     logger.info(f"🎵 [UNIFIED_SEND] Unified individual frame sending: {total_frames} frames")
                     
                     if hasattr(self, 'websocket') and self.websocket and not self.websocket.closed:
-                        # ESP32のOpusDecoder対応: 個別フレーム送信のみ (二重送信防止)
+                        # 🎯 [SERVER2_METHOD] Server2方式: bytes一括送信で安定化
                         frame_count = len(opus_frames_list)
-                        logger.info(f"🎵 [INDIVIDUAL_FRAMES] Sending {frame_count} individual Opus frames (SINGLE PATH)")
                         
                         # デバッグ：最初のフレーム詳細解析
                         if frame_count > 0:
                             first_frame = opus_frames_list[0]
                             logger.info(f"🔬 [OPUS_DEBUG] First frame: size={len(first_frame)}bytes, hex_header={first_frame[:8].hex() if len(first_frame)>=8 else first_frame.hex()}")
                         
-                        # 🎯 [REALTIME_PACING] リアルタイムペース送信（バッファアンダーフロー対策）
-                        # フレーム単位の間隔を厳密に保ち、アダプティブウォームアップで確実な再生開始
-                        frame_duration_ms = 20  # 20msフレーム想定（40msにしたい場合はここを変更）
-                        frame_interval_sec = frame_duration_ms / 1000.0
+                        # 🚀 [SERVER2_CONCAT] 全フレームを連結してbytes一括送信（Server2と同じ方式）
+                        concatenated_audio = b''.join(opus_frames_list)
+                        total_bytes = len(concatenated_audio)
                         
-                        # 🚀 [ADAPTIVE_WARMUP] フレーム数に応じたウォームアップ調整
-                        total_frames = len(opus_frames_list)
-                        if total_frames < 50:  # 短い発話（1秒未満）
-                            warmup_frames = min(10, total_frames // 2)  # 半分まで
-                        elif total_frames < 150:  # 中程度発話（3秒未満）
-                            warmup_frames = 25  # 500ms
-                        else:  # 長い発話
-                            warmup_frames = 35  # 700ms - より確実
+                        logger.info(f"🎵 [SERVER2_SEND] Sending {frame_count} frames as single bytes payload ({total_bytes} total bytes)")
                         
-                        max_interval_limit_ms = 25  # 🚨 [STABILITY] 最大間隔制限: 25ms以下に強化（40ms→25ms）
-
-                        send_start_time = time.monotonic()
-                        intervals = []
-                        last_frame_time = send_start_time
-
-                        for i, opus_frame in enumerate(opus_frames_list):
-                            # 極小フレーム（音質劣化の原因）をスキップ
-                            if len(opus_frame) < 10:
-                                logger.warning(f"🚨 [FRAME_SKIP] Skipping tiny frame {i+1}: {len(opus_frame)}bytes")
-                                continue
-
-                            # 送信タイミング計測
-                            frame_send_start = time.monotonic()
-
-                            # Server2準拠: ヘッダー無し、直接OPUSバイナリ送信
-                            frame_data = opus_frame
-
-                            # TTS送信中の中断検知 / 状態保護
-                            if hasattr(self, '_processing_text') and not self._processing_text:
-                                logger.warning(f"🚨 [TTS_INTERRUPT] _processing_text became False during TTS at frame {i+1}")
-                            if hasattr(self.audio_handler, 'is_processing') and not self.audio_handler.is_processing:
-                                logger.warning(f"🚨 [TTS_INTERRUPT] audio_handler.is_processing became False during TTS at frame {i+1}")
-                                self.audio_handler.is_processing = True
-                                logger.warning(f"🛡️ [TTS_PROTECTION] Forcing is_processing=True during TTS frame {i+1}")
-
-                            # 進捗ログ
-                            if i % 50 == 0:
-                                logger.info(f"🎵 [FRAME_PROGRESS] Frame {i+1}/{frame_count}: opus={len(opus_frame)}bytes, connection_ok={not self.websocket.closed}")
-                            elif i == 0 or i == frame_count-1 or (i+1) % 10 == 0:
-                                logger.info(f"🎵 [FRAME_SEND] Frame {i+1}/{frame_count}: opus={len(opus_frame)}bytes")
-
-                            await self.websocket.send_bytes(frame_data)
-
-                            # 送信間隔統計
-                            if i > 0:
-                                interval = frame_send_start - last_frame_time
-                                intervals.append(interval * 1000)  # ms変換
-                            last_frame_time = frame_send_start
-
-                            # ウォームアップ期間は倍速送信（間隔半分） -> 先詰めで再生開始時のバッファ水位を確保
-                            if i < warmup_frames:
-                                target_interval = frame_interval_sec / 2.0
-                            else:
-                                target_interval = frame_interval_sec
-
-                            # 厳密なリアルタイム間隔制御
-                            target_time = send_start_time + ((i + 1) * frame_interval_sec)
-                            current_time = time.monotonic()
-                            sleep_time = target_time - current_time
-
-                            # 🚨 [STABILITY] 間隔上限制限: 異常に長い間隔を防ぐ
-                            actual_interval = target_time - current_time
-                            if actual_interval > (max_interval_limit_ms / 1000.0):
-                                logger.warning(f"🚨 [INTERVAL_LIMIT] 間隔異常検出: {actual_interval*1000:.1f}ms > {max_interval_limit_ms}ms, 制限適用")
-                                # 強制的に制限時間内に調整
-                                target_time = current_time + (max_interval_limit_ms / 1000.0)
-                                sleep_time = target_time - current_time
+                        # 🚀 [SERVER2_SINGLE_SEND] Server2方式: 一括送信で完全安定化
+                        try:
+                            await self.websocket.send_bytes(concatenated_audio)
+                            send_end_time = time.monotonic()
+                            total_send_time = (send_end_time - send_start_time) * 1000  # ms
                             
-                            # If in warmup, allow slightly faster pacing by sleeping a fraction
-                            if sleep_time > 0:
-                                # For warmup frames we permit half-interval sleeps to pack them earlier
-                                if i < warmup_frames:
-                                    await asyncio.sleep(max(0.0, target_interval / 2.0))
-                                else:
-                                    await asyncio.sleep(sleep_time)
-                            elif sleep_time < -0.01:  # 10ms以上の遅延検出
-                                logger.warning(f"⚠️ [TIMING_LAG] Frame {i+1}: {abs(sleep_time)*1000:.1f}ms behind schedule")
-
-                            # 毎フレーム後接続確認
-                            if self.websocket.closed:
-                                close_code = getattr(self.websocket, 'close_code', 'None')
-                                logger.error(f"💀 [1006_DETECTED] Connection closed at frame {i+1}/{frame_count}, close_code={close_code}")
-                                
-                                # 🚨 [1006_RECOVERY] 1006切断の詳細解析と対策
-                                if str(close_code) == '1006':
-                                    logger.error(f"🚨 [1006_ANALYSIS] 予期しない切断検出 - フレーム{i+1}で発生")
-                                    logger.error(f"🚨 [1006_CONTEXT] 送信状況: total_frames={frame_count}, warmup_frames={warmup_frames}, interval_ms={frame_duration_ms}")
-                                    if intervals:
-                                        recent_intervals = intervals[-5:] if len(intervals) >= 5 else intervals
-                                        logger.error(f"🚨 [1006_TIMING] 直近送信間隔: {recent_intervals}")
-                                
-                                break
-
-                            # 平滑化: 5フレーム毎に小休止（安定化目的）
-                            if (i + 1) % 5 == 0:
-                                await asyncio.sleep(0.015)
-
-                            # フレーム送信前後のWebSocket状態確認
-                            if self.websocket.closed or getattr(self.websocket, '_writer', None) is None:
-                                logger.error(f"💀 [WEBSOCKET_DEAD] Connection dead at frame {i+1}, aborting TTS")
-                                logger.error(f"💀 [DEAD_STATE] closed={self.websocket.closed}, writer={getattr(self.websocket, '_writer', 'None')}, close_code={getattr(self.websocket, 'close_code', 'None')}")
-                                break
-                                
-                        if not self.websocket.closed:
-                            # 🎯 [SEND_STATISTICS] 送信統計ログ（ジッタ分析）
-                            if intervals:
-                                min_interval = min(intervals)
-                                avg_interval = sum(intervals) / len(intervals)
-                                max_interval = max(intervals)
-                                jitter = max_interval - min_interval
-                                logger.info(f"📊 [SEND_STATS] 送信間隔統計: min={min_interval:.1f}ms avg={avg_interval:.1f}ms max={max_interval:.1f}ms jitter={jitter:.1f}ms")
-                                
-                                # 🚀 [ENHANCED_BURST] より厳格なバースト検出（10ms以下を問題視）
-                                burst_count = sum(1 for interval in intervals if interval < 10.0)  # 10ms以下はバースト
-                                gap_count = sum(1 for interval in intervals if interval > max_interval_limit_ms)  # 制限超過
-                                
-                                if burst_count > 0:
-                                    logger.warning(f"🚨 [BURST_DETECT] バースト送信検出: {burst_count}/{len(intervals)}フレーム (<10ms間隔)")
-                                    # 累積カウンタ更新
-                                    try:
-                                        self._tts_burst_total += burst_count
-                                    except Exception:
-                                        self._tts_burst_total = burst_count
-                                    logger.info(f"📈 [BURST_TOTAL] 累積バースト検出合計: {self._tts_burst_total}")
-                                
-                                if gap_count > 0:
-                                    logger.warning(f"🚨 [GAP_DETECT] 長間隔検出: {gap_count}/{len(intervals)}フレーム (>{max_interval_limit_ms}ms)")
-
-                                # デバッグ: per-frame Δt 詳細ログ (オフがデフォルト)
-                                if getattr(self, 'debug_tts_timing', False):
-                                    for idx, val in enumerate(intervals, start=1):
-                                        logger.debug(f"🔬 [PER_FRAME_DT] frame={idx} dt={val:.2f}ms")
+                            logger.info(f"✅ [SERVER2_SUCCESS] Sent {frame_count} frames in single payload: {total_send_time:.1f}ms total")
+                            logger.info(f"📊 [SERVER2_STATS] Throughput: {total_bytes / total_send_time * 1000:.0f} bytes/sec, {frame_count / total_send_time * 1000:.1f} frames/sec")
                             
-                            logger.info(f"✅ [INDIVIDUAL_FRAMES] All {frame_count} frames sent successfully")
+                        except Exception as send_error:
+                            logger.error(f"❌ [SERVER2_SEND_ERROR] Failed to send concatenated audio: {send_error}")
+                            raise
                     else:
                         logger.error(f"❌ [V3_PROTOCOL] WebSocket disconnected before send")
                     
