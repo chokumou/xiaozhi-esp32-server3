@@ -68,7 +68,7 @@ class ConnectionHandler:
             "session_id": self.session_id,
             "audio_params": {
                 "format": "opus",
-                "sample_rate": 24000,
+                "sample_rate": 16000,
                 "channels": 1,
                 "frame_duration": 60  # Server2準拠の60ms
             }
