@@ -238,7 +238,25 @@ class ConnectionHandler:
                 block_reason = "AI発話中" if is_ai_speaking else f"クールダウン中"
                 logger.info(f"🎤 [LISTEN_IGNORE] {block_reason}のlisten:start無視 (計{self._ignored_listen_count}回)")
                 return  # listen:start を無視
+            
+            # Server2準拠: listen start時の完全バッファクリア
+            logger.info(f"🧹 [LISTEN_START_CLEAR] Listen開始: バッファ完全クリア実行")
+            if hasattr(self, 'audio_handler'):
+                # ASRバッファクリア
+                if hasattr(self.audio_handler, 'audio_frames'):
+                    cleared_frames = len(self.audio_handler.audio_frames)
+                    self.audio_handler.audio_frames.clear()
+                    if cleared_frames > 0:
+                        logger.info(f"🧹 [LISTEN_ASR_CLEAR] Listen開始時ASRバッファクリア: {cleared_frames}フレーム")
                 
+                # VAD状態リセット
+                if hasattr(self.audio_handler, 'silence_count'):
+                    self.audio_handler.silence_count = 0
+                if hasattr(self.audio_handler, 'last_voice_time'):
+                    self.audio_handler.last_voice_time = 0
+                if hasattr(self.audio_handler, 'wake_until'):
+                    self.audio_handler.wake_until = 0
+                    
             logger.info(f"Client {self.device_id} started listening")
         elif state == "stop":
             logger.info(f"Client {self.device_id} stopped listening")
@@ -549,6 +567,11 @@ class ConnectionHandler:
             if hasattr(self, 'audio_handler'):
                 self.audio_handler.client_is_speaking = True  # 最優先でマイクオフ
                 
+                # Server2準拠: TTS開始保護期間設定（1200ms）
+                tts_lock_ms = 1200
+                self.audio_handler.speak_lock_until = time.time() * 1000 + tts_lock_ms
+                logger.info(f"🛡️ [TTS_PROTECTION] TTS開始保護期間設定: {tts_lock_ms}ms")
+                
                 # TTS開始時に録音バッファをクリア（溜まったフレーム一斉処理防止）
                 if hasattr(self.audio_handler, 'audio_frames'):
                     cleared_frames = len(self.audio_handler.audio_frames)
@@ -744,8 +767,31 @@ class ConnectionHandler:
                     # TTS終了直後にクールダウン期間設定（★フラグは維持★）
                     if hasattr(self, 'audio_handler'):
                         self.audio_handler.tts_cooldown_until = cooldown_until
+                        
+                        # Server2準拠: TTS終了時の完全バッファクリア（重要）
+                        logger.info(f"🧹 [BUFFER_CLEAR_TTS_END] TTS終了時バッファクリア開始")
+                        
+                        # 1. ASR音声バッファクリア（クールダウン明けの流入防止）
+                        if hasattr(self.audio_handler, 'audio_frames'):
+                            cleared_frames = len(self.audio_handler.audio_frames)
+                            self.audio_handler.audio_frames.clear()
+                            logger.info(f"🧹 [ASR_BUFFER_CLEAR] ASRフレームバッファクリア: {cleared_frames}フレーム")
+                        
+                        # 2. VAD状態リセット（server2のreset_vad_states準拠）
+                        if hasattr(self.audio_handler, 'silence_count'):
+                            self.audio_handler.silence_count = 0
+                        if hasattr(self.audio_handler, 'last_voice_time'):
+                            self.audio_handler.last_voice_time = 0
+                        if hasattr(self.audio_handler, 'wake_until'):
+                            self.audio_handler.wake_until = 0
+                        logger.info(f"🧹 [VAD_RESET] VAD状態リセット完了")
+                        
+                        # 3. RMSアキュムレータクリア
+                        if hasattr(self.audio_handler, '_rms_buffer'):
+                            self.audio_handler._rms_buffer = []
+                        logger.info(f"🧹 [RMS_RESET] RMSバッファリセット完了")
                     
-                    logger.info(f"🎯 [CRITICAL_TEST] TTS送信完了: フラグ維持中、クールダウン{cooldown_ms}ms開始")
+                    logger.info(f"🎯 [CRITICAL_TEST] TTS送信完了: フラグ維持中、クールダウン{cooldown_ms}ms開始、バッファ完全クリア")
                     
                     # クールダウン期間中はフラグ維持（WebSocket入口ガード維持）
                     cooldown_seconds = cooldown_ms / 1000.0
