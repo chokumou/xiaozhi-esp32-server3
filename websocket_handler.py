@@ -710,6 +710,15 @@ class ConnectionHandler:
                     await self.websocket.send_str(json.dumps(mic_control_message))
                     logger.info(f"📡 [DEVICE_CONTROL] 端末にマイクオフ指示送信: {mic_control_message}")
                     
+                    # 🎯 [VAD_CONTROL] ESP32のVAD停止指示（根本的解決）
+                    vad_control_message = {
+                        "type": "vad_control", 
+                        "action": "disable",
+                        "reason": "ai_speaking"
+                    }
+                    await self.websocket.send_str(json.dumps(vad_control_message))
+                    logger.info(f"📡 [VAD_CONTROL] 端末にVAD停止指示送信: {vad_control_message}")
+                    
                     # 🎯 [ACK_WAIT] ACK待機（100ms短縮）またはフォールバック
                     ack_received = False
                     wait_start = time.monotonic()
@@ -996,7 +1005,15 @@ class ConnectionHandler:
                             # 2. マイクオン指示（拡張）
                             await self.websocket.send_str(json.dumps(mic_on_message))
                             
-                            # 3. 録音再開指示（重要！ESP32が自動再開しない場合の保険）
+                            # 3. VAD再開指示（根本的解決）
+                            vad_enable_message = {
+                                "type": "vad_control",
+                                "action": "enable", 
+                                "reason": "ai_finished"
+                            }
+                            await self.websocket.send_str(json.dumps(vad_enable_message))
+                            
+                            # 4. 録音再開指示（重要！ESP32が自動再開しない場合の保険）
                             listen_start_message = {
                                 "type": "listen", 
                                 "state": "start", 
@@ -1004,8 +1021,8 @@ class ConnectionHandler:
                             }
                             await self.websocket.send_str(json.dumps(listen_start_message))
                             
-                            logger.info(f"📡 [DEVICE_CONTROL] 端末制御送信完了: TTS停止→マイクON→録音再開")
-                            logger.info(f"📡 [DEVICE_CONTROL] Messages: {tts_stop_message}, {mic_on_message}, {listen_start_message}")
+                            logger.info(f"📡 [DEVICE_CONTROL] 端末制御送信完了: TTS停止→マイクON→VAD再開→録音再開")
+                            logger.info(f"📡 [DEVICE_CONTROL] Messages: {tts_stop_message}, {mic_on_message}, {vad_enable_message}, {listen_start_message}")
                         except Exception as e:
                             logger.warning(f"📡 [DEVICE_CONTROL] 端末制御送信失敗: {e}")
                             logger.error(f"💀 [WEBSOCKET_ERROR] WebSocket状態: closed={getattr(self.websocket, 'closed', 'unknown')}, writer={getattr(self.websocket, '_writer', 'unknown')}")
