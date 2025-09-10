@@ -218,6 +218,9 @@ class ConnectionHandler:
             logger.info(f"Client features: {features}")
             
         # Send welcome response
+        if self.websocket.closed or getattr(self.websocket, '_writer', None) is None:
+            logger.error(f"💀 [WEBSOCKET_DEAD] Cannot send welcome message - connection dead")
+            return
         await self.websocket.send_str(json.dumps(self.welcome_msg))
         logger.info(f"✅ [HELLO_RESPONSE] Sent welcome message to {self.device_id}: {self.welcome_msg}")
         logger.info(f"🤝 [HANDSHAKE] WebSocket handshake completed successfully for {self.device_id}")
@@ -476,6 +479,9 @@ class ConnectionHandler:
                 "state": "stop", 
                 "session_id": getattr(self, 'session_id', 'unknown')
             }
+            if self.websocket.closed or getattr(self.websocket, '_writer', None) is None:
+                logger.error(f"💀 [WEBSOCKET_DEAD] Cannot send abort message - connection dead")
+                return
             await self.websocket.send_str(json.dumps(abort_message))
             logger.info(f"🔥 RID[{rid}] TTS_ABORT_SENT: Sent TTS stop message to ESP32")
             
@@ -491,6 +497,9 @@ class ConnectionHandler:
                 "mode": "continuous"
             }
             try:
+                if self.websocket.closed or getattr(self.websocket, '_writer', None) is None:
+                    logger.error(f"💀 [WEBSOCKET_DEAD] Cannot send recovery messages - connection dead")
+                    return
                 await self.websocket.send_str(json.dumps(mic_on_message))
                 await self.websocket.send_str(json.dumps(listen_start_message))
                 logger.info(f"🔥 RID[{rid}] ABORT_RECOVERY: マイクON+録音再開指示送信完了")
@@ -558,6 +567,9 @@ class ConnectionHandler:
             # Send STT message (server2 style) - テキストから句読点・絵文字除去
             cleaned_text = self._clean_text_for_display(text)
             stt_message = {"type": "stt", "text": cleaned_text, "session_id": self.session_id}
+            if self.websocket.closed or getattr(self.websocket, '_writer', None) is None:
+                logger.error(f"💀 [WEBSOCKET_DEAD] Cannot send STT message - connection dead")
+                return
             await self.websocket.send_str(json.dumps(stt_message))
             logger.info(f"🟢XIAOZHI_STT_SENT🟢 📱 [STT] Sent user text to display: '{text}'")
         except Exception as e:
@@ -657,6 +669,9 @@ class ConnectionHandler:
                     "state": "start", 
                     "session_id": getattr(self, 'session_id', 'default')
                 }
+                if self.websocket.closed or getattr(self.websocket, '_writer', None) is None:
+                    logger.error(f"💀 [WEBSOCKET_DEAD] Cannot send TTS start message - connection dead")
+                    return
                 await self.websocket.send_str(json.dumps(tts_start_message))
                 logger.info(f"📡 [DEVICE_CONTROL] 端末にTTS開始指示送信: {tts_start_message}")
                 
@@ -688,6 +703,9 @@ class ConnectionHandler:
                     "state": "start", 
                     "session_id": self.session_id
                 }
+                if self.websocket.closed or getattr(self.websocket, '_writer', None) is None:
+                    logger.error(f"💀 [WEBSOCKET_DEAD] Cannot send TTS start - connection dead")
+                    return
                 await self.websocket.send_str(json.dumps(tts_start_msg))
                 logger.info(f"📢 [TTS] Sent TTS start message")
                 
@@ -706,6 +724,9 @@ class ConnectionHandler:
                     "text": text,
                     "session_id": self.session_id
                 }
+                if self.websocket.closed or getattr(self.websocket, '_writer', None) is None:
+                    logger.error(f"💀 [WEBSOCKET_DEAD] Cannot send TTS display - connection dead")
+                    return
                 await self.websocket.send_str(json.dumps(sentence_msg))
                 logger.info(f"🟢XIAOZHI_TTS_DISPLAY_SENT🟢 📱 [TTS_DISPLAY] Sent AI text to display: '{text}'")
             except Exception as sentence_error:
@@ -801,6 +822,9 @@ class ConnectionHandler:
                     # Send TTS stop message with cooldown info (server2 style + 回り込み防止)
                     tts_stop_msg = {"type": "tts", "state": "stop", "session_id": self.session_id, "cooldown_ms": 1200}  # 残響も含めた完全エコー除去のため1200msに延長
                     logger.info(f"🔍 [DEBUG_SEND] About to send TTS stop message: {tts_stop_msg}")
+                    if self.websocket.closed or getattr(self.websocket, '_writer', None) is None:
+                        logger.error(f"💀 [WEBSOCKET_DEAD] Cannot send TTS stop - connection dead")
+                        return
                     await self.websocket.send_str(json.dumps(tts_stop_msg))
                     logger.info(f"🟡XIAOZHI_TTS_STOP🟡 ※ここを送ってver2_TTS_STOP※ 📢 [TTS] Sent TTS stop message with cooldown=1200ms")
                     logger.info(f"🔍 [DEBUG_SEND] WebSocket state after TTS stop: closed={self.websocket.closed}")
