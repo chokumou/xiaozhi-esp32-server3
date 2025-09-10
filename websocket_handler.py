@@ -60,16 +60,17 @@ class ConnectionHandler:
         # Initialize server2-style audio handler
         self.audio_handler = AudioHandlerServer2(self)
         
-        # Welcome message compatible with ESP32
+        # Welcome message compatible with ESP32 (Server2準拠)
         self.welcome_msg = {
             "type": "hello",
+            "version": 1,  # ★重要★ESP32が期待するversionフィールド
             "transport": "websocket", 
             "session_id": self.session_id,
             "audio_params": {
                 "format": "opus",
                 "sample_rate": 16000,
                 "channels": 1,
-                "frame_duration": 20
+                "frame_duration": 60  # Server2準拠の60ms
             }
         }
 
@@ -214,7 +215,8 @@ class ConnectionHandler:
             
         # Send welcome response
         await self.websocket.send_str(json.dumps(self.welcome_msg))
-        logger.info(f"Sent welcome message to {self.device_id}")
+        logger.info(f"✅ [HELLO_RESPONSE] Sent welcome message to {self.device_id}: {self.welcome_msg}")
+        logger.info(f"🤝 [HANDSHAKE] WebSocket handshake completed successfully for {self.device_id}")
         
         # Server2準拠: タイムアウト監視タスク起動
         self.timeout_task = asyncio.create_task(self._check_timeout())
