@@ -874,11 +874,12 @@ class ConnectionHandler:
                             logger.info(f"🔬 [OPUS_DEBUG] First frame: size={len(first_frame)}bytes, hex_header={first_frame[:8].hex() if len(first_frame)>=8 else first_frame.hex()}")
                         
                         # 🎯 [REALTIME_PACING] リアルタイムペース送信（バッファアンダーフロー対策）
-                        # フレーム単位の間隔を厳密に保ち、先頭300msは倍速で先詰めしてウォームアップ
+                        # フレーム単位の間隔を厳密に保ち、先頭500msは倍速で先詰めしてウォームアップ
                         frame_duration_ms = 20  # 20msフレーム想定（40msにしたい場合はここを変更）
                         frame_interval_sec = frame_duration_ms / 1000.0
-                        warmup_ms = 300  # 先頭200〜300msを推奨 -> 300msに設定
+                        warmup_ms = 500  # 先頭500msに延長 (300ms→500ms) - より確実なバッファ水位確保
                         warmup_frames = max(1, int((warmup_ms + frame_duration_ms - 1) // frame_duration_ms))
+                        max_interval_limit_ms = 40  # 🚨 [STABILITY] 最大間隔制限: 40ms超過時は強制調整
 
                         send_start_time = time.monotonic()
                         intervals = []
@@ -929,6 +930,11 @@ class ConnectionHandler:
                             current_time = time.monotonic()
                             sleep_time = target_time - current_time
 
+                            # 🚨 [STABILITY] 間隔上限制限: 異常に長い間隔を防ぐ
+                            if target_interval > (max_interval_limit_ms / 1000.0):
+                                logger.warning(f"🚨 [INTERVAL_LIMIT] 間隔異常検出: {target_interval*1000:.1f}ms > {max_interval_limit_ms}ms, 制限適用")
+                                target_interval = max_interval_limit_ms / 1000.0
+                            
                             # If in warmup, allow slightly faster pacing by sleeping a fraction
                             if sleep_time > 0:
                                 # For warmup frames we permit half-interval sleeps to pack them earlier
@@ -941,7 +947,17 @@ class ConnectionHandler:
 
                             # 毎フレーム後接続確認
                             if self.websocket.closed:
-                                logger.error(f"💀 [1006_DETECTED] Connection closed at frame {i+1}/{frame_count}, close_code={getattr(self.websocket, 'close_code', 'None')}")
+                                close_code = getattr(self.websocket, 'close_code', 'None')
+                                logger.error(f"💀 [1006_DETECTED] Connection closed at frame {i+1}/{frame_count}, close_code={close_code}")
+                                
+                                # 🚨 [1006_RECOVERY] 1006切断の詳細解析と対策
+                                if str(close_code) == '1006':
+                                    logger.error(f"🚨 [1006_ANALYSIS] 予期しない切断検出 - フレーム{i+1}で発生")
+                                    logger.error(f"🚨 [1006_CONTEXT] 送信状況: total_frames={frame_count}, warmup_frames={warmup_frames}, interval_ms={frame_duration_ms}")
+                                    if intervals:
+                                        recent_intervals = intervals[-5:] if len(intervals) >= 5 else intervals
+                                        logger.error(f"🚨 [1006_TIMING] 直近送信間隔: {recent_intervals}")
+                                
                                 break
 
                             # 平滑化: 5フレーム毎に小休止（安定化目的）
