@@ -792,7 +792,8 @@ class ConnectionHandler:
                     else:
                         logger.error(f"❌ [V3_PROTOCOL] WebSocket disconnected before send")
                     
-                    logger.info(f"🔵XIAOZHI_AUDIO_SENT🔵 ※ここを送ってver2_AUDIO※ 🎵 [AUDIO_SENT] ===== Sent {total_frames} Opus frames to {self.device_id} ({len(audios)} total bytes) =====")
+                    total_bytes = sum(len(frame) for frame in opus_frames_list)
+                    logger.info(f"🔵XIAOZHI_AUDIO_SENT🔵 ※ここを送ってver2_AUDIO※ 🎵 [AUDIO_SENT] ===== Sent {total_frames} Opus frames to {self.device_id} ({total_bytes} total bytes) =====")
                     logger.info(f"🔍 [DEBUG_SEND] WebSocket state after audio send: closed={self.websocket.closed}")
 
                     # Send TTS stop message with cooldown info (server2 style + 回り込み防止)
