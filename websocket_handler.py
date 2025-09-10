@@ -110,15 +110,23 @@ class ConnectionHandler:
     async def handle_binary_message(self, message: bytes):
         """Handle binary audio data based on protocol version"""
         try:
-            # A. 入口で落とす（最重要）- AI発話中完全ブロック
-            if hasattr(self, 'audio_handler') and getattr(self.audio_handler, 'client_is_speaking', False):
-                # AI発話中は全バイナリメッセージ完全ブロック（DTX含む）
+            # A. 入口で落とす（最重要）- AI発話中+クールダウン中完全ブロック
+            now_ms = time.time() * 1000
+            is_ai_speaking = hasattr(self, 'audio_handler') and getattr(self.audio_handler, 'client_is_speaking', False)
+            is_cooldown = hasattr(self, 'audio_handler') and now_ms < getattr(self.audio_handler, 'tts_cooldown_until', 0)
+            
+            if is_ai_speaking or is_cooldown:
+                # AI発話中またはクールダウン中は全バイナリメッセージ完全ブロック（DTX含む）
                 if not hasattr(self, '_ws_block_count'):
                     self._ws_block_count = 0
                 self._ws_block_count += 1
-                # ログは100フレームに1回のみ（負荷軽減）
-                if self._ws_block_count % 100 == 0:
-                    logger.info(f"🚪 [WS_ENTRANCE_BLOCK] AI発話中入口ブロック: 過去100フレーム完全破棄")
+                
+                # 統計・デバッグ情報
+                block_reason = "AI発話中" if is_ai_speaking else f"クールダウン中(残り{int(getattr(self.audio_handler, 'tts_cooldown_until', 0) - now_ms)}ms)"
+                
+                # ログは50フレームに1回（洪水対策で頻度上げ）
+                if self._ws_block_count % 50 == 0:
+                    logger.info(f"🚪 [WS_ENTRANCE_BLOCK] {block_reason}入口ブロック: 過去50フレーム完全破棄")
                 return  # 即座に破棄
             
             # Server2準拠: 小パケットでも活動時間を更新（ESP32からの継続通信を認識）
@@ -212,6 +220,20 @@ class ConnectionHandler:
         mode = msg_json.get("mode")
         
         if state == "start":
+            # 3) 「listen:start」も無視（TTS中/クールダウン中）
+            now_ms = time.time() * 1000
+            is_ai_speaking = hasattr(self, 'audio_handler') and getattr(self.audio_handler, 'client_is_speaking', False)
+            is_cooldown = hasattr(self, 'audio_handler') and now_ms < getattr(self.audio_handler, 'tts_cooldown_until', 0)
+            
+            if is_ai_speaking or is_cooldown:
+                if not hasattr(self, '_ignored_listen_count'):
+                    self._ignored_listen_count = 0
+                self._ignored_listen_count += 1
+                
+                block_reason = "AI発話中" if is_ai_speaking else f"クールダウン中"
+                logger.info(f"🎤 [LISTEN_IGNORE] {block_reason}のlisten:start無視 (計{self._ignored_listen_count}回)")
+                return  # listen:start を無視
+                
             logger.info(f"Client {self.device_id} started listening")
         elif state == "stop":
             logger.info(f"Client {self.device_id} stopped listening")
@@ -711,22 +733,29 @@ class ConnectionHandler:
             
             async def delayed_flag_off():
                 try:
-                    # 端末スピーカーの残響やバッファ吐き切り対策で400ms待機
-                    await asyncio.sleep(0.4)
+                    # 1) フラグを「クールダウンが終わるまで」下ろさない
+                    cooldown_ms = 1200  # ユーザー指摘の通り
+                    cooldown_until = time.time() * 1000 + cooldown_ms
                     
-                    # フラグOFF（確実実行）
+                    # TTS終了直後にクールダウン期間設定（フラグは維持）
+                    if hasattr(self, 'audio_handler'):
+                        self.audio_handler.tts_cooldown_until = cooldown_until
+                    
+                    # クールダウン期間中はフラグ維持（残響・エコー完全ブロック）
+                    cooldown_seconds = cooldown_ms / 1000.0
+                    await asyncio.sleep(cooldown_seconds)
+                    
+                    # クールダウン満了後にフラグOFF（確実実行）
                     self.client_is_speaking = False
                     if hasattr(self, 'audio_handler'):
                         self.audio_handler.client_is_speaking = False  # AI発話確実終了
-                        # TTS終了後クールダウン開始（音響回り込み防止）
-                        self.audio_handler.tts_cooldown_until = time.time() * 1000 + self.audio_handler.tts_cooldown_ms
                         
                         # D. 可視化（デバッグ）- TTS区間統計出力
                         ws_blocked = getattr(self, '_ws_block_count', 0)
                         audio_blocked = getattr(self.audio_handler.handler if hasattr(self.audio_handler, 'handler') else None, 'blocked_frames', 0) if hasattr(self, 'audio_handler') else 0
                         cooldown_blocked = getattr(self.audio_handler, '_cooldown_log_count', 0) if hasattr(self, 'audio_handler') else 0
                         
-                        logger.info(f"🎯 [CRITICAL_TEST] TTS終了: AI発言フラグOFF(400ms遅延) - エコーブロック解除")
+                        logger.info(f"🎯 [CRITICAL_TEST] TTS終了: AI発言フラグOFF(1200ms遅延完了) - エコーブロック解除")
                         logger.info(f"📊 [TTS_GUARD] WS入口blocked={ws_blocked} Audio層blocked={audio_blocked} Cooldown期間blocked={cooldown_blocked}")
                         
                         # カウンターリセット
