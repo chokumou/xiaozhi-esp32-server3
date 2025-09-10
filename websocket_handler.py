@@ -272,6 +272,8 @@ class ConnectionHandler:
         original_type = msg_json.get("original_type")
         action = msg_json.get("action")
         
+        logger.info(f"🔍 [ACK_DEBUG] Received ACK: original_type={original_type}, action={action}, full_json={msg_json}")
+        
         if original_type == "audio_control" and action == "mic_off":
             self._mic_ack_received = True
             logger.info(f"✅ [ACK_RECEIVED] ESP32 confirmed mic_off: {msg_json}")
@@ -616,10 +618,10 @@ class ConnectionHandler:
                     await self.websocket.send_str(json.dumps(mic_control_message))
                     logger.info(f"📡 [DEVICE_CONTROL] 端末にマイクオフ指示送信: {mic_control_message}")
                     
-                    # 🎯 [ACK_WAIT] ACK待機（500ms）またはフォールバック
+                    # 🎯 [ACK_WAIT] ACK待機（100ms短縮）またはフォールバック
                     ack_received = False
                     wait_start = time.monotonic()
-                    while time.monotonic() - wait_start < 0.5:  # 500ms待機
+                    while time.monotonic() - wait_start < 0.1:  # 100ms短縮待機
                         await asyncio.sleep(0.01)  # 10ms間隔でチェック
                         # ACKはhandle_text_messageで処理される
                         if hasattr(self, '_mic_ack_received') and self._mic_ack_received:
@@ -630,7 +632,7 @@ class ConnectionHandler:
                     if ack_received:
                         logger.info(f"✅ [ACK_RECEIVED] MIC_OFF ACK received, starting TTS")
                     else:
-                        logger.warning(f"⏱️ [ACK_TIMEOUT] MIC_OFF ACK timeout (500ms), proceeding with TTS")
+                        logger.info(f"⏱️ [ACK_TIMEOUT] MIC_OFF ACK timeout (100ms), but ESP32 firmware has mic control - proceeding with TTS")
                         
                 except Exception as e:
                     logger.warning(f"📡 [DEVICE_CONTROL] マイクオフ指示送信失敗: {e}")
