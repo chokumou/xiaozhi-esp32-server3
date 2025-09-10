@@ -115,6 +115,38 @@ class ConnectionHandler:
     async def handle_binary_message(self, message: bytes):
         """Handle binary audio data based on protocol version"""
         try:
+            # 📊 [DATA_TRACKER] 受信データ完全追跡
+            msg_size = len(message)
+            current_time = time.monotonic()
+            
+            # 🔍 [FLOOD_DETECTION] 大量送信検知
+            if not hasattr(self, '_last_msg_time'):
+                self._last_msg_time = current_time
+                self._msg_count_1sec = 0
+                self._total_bytes_1sec = 0
+            
+            time_diff = current_time - self._last_msg_time
+            if time_diff < 1.0:  # 1秒以内
+                self._msg_count_1sec += 1
+                self._total_bytes_1sec += msg_size
+            else:
+                # 1秒経過: 統計リセット
+                if self._msg_count_1sec > 20:  # 1秒に20フレーム以上
+                    logger.warning(f"🚨 [FLOOD_ALERT] ESP32大量送信検知: {self._msg_count_1sec}フレーム/秒, {self._total_bytes_1sec}bytes/秒")
+                self._last_msg_time = current_time
+                self._msg_count_1sec = 1
+                self._total_bytes_1sec = msg_size
+            
+            # 📈 [SIZE_HISTOGRAM] サイズ別分類
+            if msg_size == 1:
+                size_category = "DTX"
+            elif msg_size < 50:
+                size_category = "SMALL"
+            elif msg_size < 150:
+                size_category = "NORMAL"
+            else:
+                size_category = "LARGE"
+            
             # A. 入口で落とす（最重要）- AI発話中+クールダウン中完全ブロック
             # 🎯 [MONOTONIC_TIME] 単一時基統一: monotonic使用でシステム時刻変更に耐性
             now_ms = time.monotonic() * 1000
@@ -137,19 +169,24 @@ class ConnectionHandler:
                 
                 # ログは30フレームに1回（詳細確認のため頻度上げ）
                 if self._ws_block_count % 30 == 0:
-                    logger.info(f"🚪 [WS_ENTRANCE_BLOCK] {block_reason}入口ブロック: 過去30フレーム完全破棄 (累計={self.ws_gate_drops})")
+                    logger.info(f"🚪 [WS_ENTRANCE_BLOCK] {block_reason}入口ブロック: {size_category}({msg_size}B) 過去30フレーム完全破棄 (累計={self.ws_gate_drops})")
                 return  # 即座に破棄
             
             # Server2準拠: 小パケットでも活動時間を更新（ESP32からの継続通信を認識）
             self.last_activity_time = time.time()
             
-            # デバッグ: パケットサイズをログ（★入口ガード通過★ - AI非発話＆クールダウン外）
+            # 📊 [TRAFFIC_LOG] 送信データ詳細ログ（★入口ガード通過★ - AI非発話＆クールダウン外）
             if not hasattr(self, '_packet_log_count'):
                 self._packet_log_count = 0
             self._packet_log_count += 1
-            # 通常時も20フレームに1回に制限（ログ軽減）
-            if self._packet_log_count % 20 == 0:
-                logger.info(f"🔧 [PACKET_DEBUG] ★入口ガード通過★ 通常処理: 過去20フレーム (最新: {len(message)}B), protocol v{self.protocol_version}")
+            
+            # 通常時も10フレームに1回に制限（より詳細に）
+            if self._packet_log_count % 10 == 0:
+                logger.info(f"📊 [TRAFFIC_DETAIL] ★入口ガード通過★ {size_category}({msg_size}B) count/sec={self._msg_count_1sec} bytes/sec={self._total_bytes_1sec} protocol=v{self.protocol_version}")
+            
+            # 🚨 [IMMEDIATE_FLOOD] リアルタイム洪水警告
+            if self._msg_count_1sec > 50:  # 50フレーム/秒超過時の緊急警告
+                logger.error(f"🚨 [CRITICAL_FLOOD] ESP32からの異常大量送信: {self._msg_count_1sec}フレーム/秒, {self._total_bytes_1sec}bytes/秒 → WebSocket切断リスク")
             
             # 旧来の小パケットスキップを一時無効化（Server2 Connection Handlerで処理）
             # if len(message) <= 12:  # Skip very small packets (DTX/keepalive) but keep activity alive
