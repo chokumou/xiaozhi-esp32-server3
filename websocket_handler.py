@@ -916,17 +916,17 @@ class ConnectionHandler:
             seconds_until_alarm = int((target_datetime - now).total_seconds())
             
             alarm_msg = {
-                "type": "power_management",
-                "action": "disable_auto_shutdown", 
-                "duration_seconds": seconds_until_alarm,
+                "type": "power_wakeup",
+                "reason": "alarm_scheduled",
+                "seconds_until_alarm": seconds_until_alarm,
                 "alarm_time": f"{hour:02d}:{minute:02d}",
                 "alarm_date": date.strftime("%Y-%m-%d"),
-                "message": f"アラーム設定: {seconds_until_alarm}秒後まで電源OFF無効化"
+                "message": f"アラーム設定: PowerSaveTimer WakeUp() - {seconds_until_alarm}秒後にアラーム"
             }
             
             import json
             await self.websocket.send_str(json.dumps(alarm_msg))
-            logger.info(f"⏰ [POWER_MGMT] Sent power management to ESP32: disable auto-shutdown for {seconds_until_alarm}s")
+            logger.info(f"⚡ [POWER_WAKEUP] Sent power_wakeup to ESP32: WakeUp() for alarm in {seconds_until_alarm}s")
             
             # サーバー側のタイムアウトも延長
             if seconds_until_alarm > 0:
