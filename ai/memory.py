@@ -16,7 +16,7 @@ class MemoryService:
             headers={
                 "User-Agent": "XiaozhiESP32Server3/1.0",
                 "Accept": "application/json",
-                "X-API-Secret": self.api_secret,  # manager-api uses X-API-Secret header
+                "Authorization": f"Bearer {self.api_secret}",  # Server2方式: Bearer認証
             },
             timeout=30
         )
