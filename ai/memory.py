@@ -24,9 +24,9 @@ class MemoryService:
     
     async def save_memory(self, device_id: str, text: str) -> bool:
         try:
-            response = await self.client.put(
-                f"/agent/saveMemory/{device_id}",
-                json={"summaryMemory": text}
+            response = await self.client.post(
+                "/api/memory/",
+                json={"text": text, "device_id": device_id}
             )
             response.raise_for_status()
             logger.info(f"Memory saved for device {device_id}: {text[:50]}...")
