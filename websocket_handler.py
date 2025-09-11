@@ -1490,13 +1490,18 @@ class ConnectionHandler:
         try:
             # JWTトークンが必要
             if not hasattr(self, 'user_id') or not self.user_id:
+                logger.debug(f"⏰ [ALARM_CHECK] Skipping - no user_id for {self.device_id}")
                 return
+            
+            logger.debug(f"⏰ [ALARM_CHECK] Checking alarms for user_id={self.user_id}, device={self.device_id}")
             
             # 現在時刻（JST）
             jst = pytz.timezone('Asia/Tokyo')
             now_jst = datetime.now(jst)
             current_date = now_jst.strftime('%Y-%m-%d')
             current_time = now_jst.strftime('%H:%M')
+            
+            logger.info(f"⏰ [ALARM_CHECK] Current time: {current_date} {current_time} (JST)")
             
             # アラームAPIでチェック
             import httpx
