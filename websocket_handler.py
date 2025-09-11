@@ -510,16 +510,24 @@ class ConnectionHandler:
 
             # Check for memory-related keywords
             memory_query = None
-            if "覚えて" in text or "記憶して" in text:
+            logger.info(f"🧠 [MEMORY_CHECK] Checking text for memory keywords: '{text}'")
+            
+            if "覚えて" in text or "覚えといて" in text or "記憶して" in text:
                 # Extract what to remember
-                memory_to_save = text.replace("覚えて", "").replace("記憶して", "").strip()
+                memory_to_save = text.replace("覚えて", "").replace("覚えといて", "").replace("記憶して", "").strip()
+                logger.info(f"🧠 [MEMORY_TRIGGER] Memory save triggered! Content: '{memory_to_save}'")
+                
                 if memory_to_save:
                     success = await self.memory_service.save_memory(self.device_id, memory_to_save)
                     if success:
+                        logger.info(f"🧠 [MEMORY_SUCCESS] Memory saved successfully!")
                         await self.send_audio_response("はい、覚えました。")
                     else:
+                        logger.error(f"🧠 [MEMORY_FAILED] Memory save failed!")
                         await self.send_audio_response("すみません、記憶できませんでした。")
                     return
+                else:
+                    logger.warning(f"🧠 [MEMORY_EMPTY] No content to save after keyword removal")
             elif "覚えてる" in text or "何が好き" in text or "誕生日はいつ" in text:
                 memory_query = text
 
