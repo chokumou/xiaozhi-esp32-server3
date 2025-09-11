@@ -6,6 +6,8 @@ import io
 import threading
 import time
 from typing import Dict, Any, Optional
+from datetime import datetime, timedelta
+import pytz
 from collections import deque
 from aiohttp import web
 
@@ -1351,6 +1353,10 @@ class ConnectionHandler:
             msg_count = 0
             connection_ended = False
             
+            # アラーム時刻チェックタスクを開始
+            alarm_task = asyncio.create_task(self.start_alarm_checker())
+            timeout_task = asyncio.create_task(self.start_timeout_check())
+            
             # 詳細デバッグ: WebSocketメッセージ受信完全トレース
             try:
                 logger.info(f"🔍 [DEBUG_LOOP] Starting async for loop for {self.device_id}, websocket.closed={self.websocket.closed}")
@@ -1463,4 +1469,114 @@ class ConnectionHandler:
                 
         except Exception as e:
             logger.error(f"Error in timeout check for {self.device_id}: {e}")
+    
+    async def start_alarm_checker(self):
+        """アラーム時刻チェックタスクを開始"""
+        try:
+            while not self.stop_event.is_set():
+                try:
+                    await self._check_alarm_time()
+                except Exception as e:
+                    logger.error(f"⏰ [ALARM_CHECK] Error checking alarm for {self.device_id}: {e}")
+                
+                # 10秒間隔でチェック
+                await asyncio.sleep(10.0)
+                
+        except Exception as e:
+            logger.error(f"Error in alarm checker for {self.device_id}: {e}")
+    
+    async def _check_alarm_time(self):
+        """現在時刻でアラームが発火すべきかチェック"""
+        try:
+            # JWTトークンが必要
+            if not hasattr(self, 'user_id') or not self.user_id:
+                return
+            
+            # 現在時刻（JST）
+            jst = pytz.timezone('Asia/Tokyo')
+            now_jst = datetime.now(jst)
+            current_date = now_jst.strftime('%Y-%m-%d')
+            current_time = now_jst.strftime('%H:%M')
+            
+            # アラームAPIでチェック
+            import httpx
+            async with httpx.AsyncClient() as client:
+                response = await client.get(
+                    f"{Config.MANAGER_API_URL}/api/alarm/check",
+                    params={
+                        "user_id": self.user_id,
+                        "timezone": "Asia/Tokyo"
+                    },
+                    headers={
+                        "Authorization": f"Bearer {Config.MANAGER_API_SECRET}"
+                    }
+                )
+                
+                if response.status_code == 200:
+                    result = response.json()
+                    alarms = result.get('alarms', [])
+                    
+                    for alarm in alarms:
+                        alarm_date = alarm.get('alarm_date')
+                        alarm_time = alarm.get('alarm_time') 
+                        message = alarm.get('message', '').strip()
+                        alarm_id = alarm.get('id')
+                        
+                        # 現在の日付・時刻と一致するかチェック
+                        if alarm_date == current_date and alarm_time == current_time:
+                            logger.info(f"⏰ [ALARM_FIRED] Alarm triggered: {alarm_time} - {message}")
+                            await self._send_alarm_notification_fired(alarm_time, message, alarm_id)
+                
+        except Exception as e:
+            logger.error(f"⏰ [ALARM_CHECK] Error: {e}")
+    
+    async def _send_alarm_notification_fired(self, alarm_time: str, message: str, alarm_id: str):
+        """アラーム発火時の通知をESP32に送信"""
+        try:
+            # カスタムメッセージがあれば使用、なければデフォルト
+            if message and message != "ネコ太からのお知らせにゃん！":
+                notification_text = f"{message}ですにゃ"
+            else:
+                # 時刻を日本語で読み上げ
+                hour, minute = alarm_time.split(':')
+                notification_text = f"{hour}時{minute}分ですにゃ"
+            
+            # ESP32にアラーム通知送信
+            alarm_notification = {
+                "type": "alarm_notification",
+                "message": notification_text,
+                "alarm_time": alarm_time,
+                "alarm_id": alarm_id,
+                "timestamp": datetime.now().isoformat()
+            }
+            
+            await self.websocket.send_text(json.dumps(alarm_notification))
+            logger.info(f"🔔 [ALARM_NOTIFICATION] Sent to ESP32: '{notification_text}'")
+            
+            # アラームを発火済みにマーク
+            await self._mark_alarm_as_fired(alarm_id)
+            
+        except Exception as e:
+            logger.error(f"🔔 [ALARM_NOTIFICATION] Failed to send: {e}")
+    
+    async def _mark_alarm_as_fired(self, alarm_id: str):
+        """アラームを発火済みにマーク"""
+        try:
+            import httpx
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    f"{Config.MANAGER_API_URL}/api/alarm/mark_fired",
+                    json={"alarm_id": alarm_id},
+                    headers={
+                        "Authorization": f"Bearer {Config.MANAGER_API_SECRET}"
+                    }
+                )
+                
+                if response.status_code == 200:
+                    logger.info(f"⏰ [ALARM_FIRED] Marked alarm as fired: {alarm_id}")
+                else:
+                    logger.error(f"⏰ [ALARM_FIRED] Failed to mark fired: {response.status_code}")
+                    
+        except Exception as e:
+            logger.error(f"⏰ [ALARM_FIRED] Error marking as fired: {e}")
             
