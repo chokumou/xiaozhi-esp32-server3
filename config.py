@@ -30,7 +30,7 @@ class Config:
     AUDIO_CHUNK_SIZE: int = 1024
     
     # TTS設定（Server2互換）
-    USE_EDGE_TTS: bool = os.getenv("USE_EDGE_TTS", "false").lower() == "true"  # 緊急時OpenAI TTSに切り替え
+    USE_EDGE_TTS: bool = os.getenv("USE_EDGE_TTS", "true").lower() == "true"  # 緊急時OpenAI TTSに切り替え
     EDGE_TTS_VOICE: str = os.getenv("EDGE_TTS_VOICE", "ja-JP-NanamiNeural")  # 日本語女性音声（ネコ太用）
     
     # VOICEVOX設定（可愛い日本語音声）
