@@ -25,9 +25,10 @@ class MemoryService:
         logger.info(f"MemoryService initialized with nekota-server URL: {self.api_url}")
     
     def _generate_device_jwt(self, device_id: str) -> str:
-        """デバイス用のJWTトークンを生成"""
+        """デバイス用のJWTトークンを生成（nekota-server互換）"""
         payload = {
-            "user_id": device_id,
+            "sub": device_id,  # nekota-serverはsubフィールドを期待
+            "user_id": device_id,  # 互換性のため両方設定
             "device_id": device_id,
             "iat": int(time.time()),
             "exp": int(time.time()) + 3600,  # 1時間有効
