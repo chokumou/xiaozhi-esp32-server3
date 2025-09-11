@@ -855,17 +855,17 @@ class ConnectionHandler:
             # Generate audio using TTS
             logger.info(f"🔊 [TTS_START] ===== Generating TTS for: '{text}' =====")
             
-        # TTS用の発音修正
-        tts_text = self._fix_pronunciation_for_tts(text)
-        
-        # 発音辞書の状態をログ出力
-        pronunciation_dict = getattr(self, '_pronunciation_dict', {})
-        logger.info(f"🗣️ [PRONUNCIATION_STATUS] Dict entries: {len(pronunciation_dict)}, Keys: {list(pronunciation_dict.keys())}")
-        
-        if tts_text != text:
-            logger.info(f"🗣️ [PRONUNCIATION_FIX] '{text}' → '{tts_text}'")
-        else:
-            logger.info(f"🗣️ [PRONUNCIATION_NO_CHANGE] Text unchanged: '{text}'")
+            # TTS用の発音修正
+            tts_text = self._fix_pronunciation_for_tts(text)
+            
+            # 発音辞書の状態をログ出力
+            pronunciation_dict = getattr(self, '_pronunciation_dict', {})
+            logger.info(f"🗣️ [PRONUNCIATION_STATUS] Dict entries: {len(pronunciation_dict)}, Keys: {list(pronunciation_dict.keys())}")
+            
+            if tts_text != text:
+                logger.info(f"🗣️ [PRONUNCIATION_FIX] '{text}' → '{tts_text}'")
+            else:
+                logger.info(f"🗣️ [PRONUNCIATION_NO_CHANGE] Text unchanged: '{text}'")
             
             # Send TTS start message (server2 style)
             try:
