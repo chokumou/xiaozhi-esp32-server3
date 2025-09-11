@@ -56,8 +56,6 @@ class ConnectionHandler:
         # Server2準拠: タイムアウト監視（環境変数で調整可能）
         self.timeout_seconds = Config.WEBSOCKET_TIMEOUT_SECONDS
         
-        # 発音辞書をロード
-        asyncio.create_task(self.load_pronunciation_dict())
         self.timeout_task = None
         
         # Initialize server2-style audio handler
@@ -710,13 +708,19 @@ class ConnectionHandler:
         if not text:
             return text
         
-        # 基本的な発音修正辞書（フォールバック）- テスト用に縮小
-        default_fixes = {
-            "テスト": "てすと"  # DB未接続時のみ使用される最小限の辞書
+        # 発音修正辞書（ハードコード）
+        pronunciation_fixes = {
+            "ネコ太": "ネコタ",
+            "君": "きみ",
+            "君は": "きみは", 
+            "君が": "きみが",
+            "君の": "きみの",
+            "君を": "きみを",
+            "君と": "きみと",
+            "君に": "きみに",
+            "君で": "きみで",
+            "君も": "きみも"
         }
-        
-        # 動的な発音辞書を取得（キャッシュ済み）
-        pronunciation_fixes = getattr(self, '_pronunciation_dict', default_fixes)
         
         fixed_text = text
         for wrong, correct in pronunciation_fixes.items():
@@ -724,26 +728,6 @@ class ConnectionHandler:
         
         return fixed_text
     
-    async def load_pronunciation_dict(self):
-        """発音辞書をnekota-serverから取得してキャッシュ（デバイス固有+全端末共通）"""
-        try:
-            import httpx
-            # デバイス固有の辞書を優先取得（device_numberを使用）
-            device_number = "327546"  # 登録済みデバイス番号（実際のdevice_idを使用）
-            
-            async with httpx.AsyncClient(timeout=10) as client:
-                response = await client.get(f"{Config.MANAGER_API_URL}/api/pronunciation/dict", 
-                                         params={"device_id": device_number})
-                if response.status_code == 200:
-                    self._pronunciation_dict = response.json()
-                    logger.info(f"🗣️ [PRONUNCIATION_DICT] Loaded {len(self._pronunciation_dict)} entries for device {device_number}")
-                else:
-                    logger.warning(f"🗣️ [PRONUNCIATION_DICT] Failed to load from API: {response.status_code}")
-        except Exception as e:
-            logger.error(f"🗣️ [PRONUNCIATION_DICT] Error loading from API: {e}")
-            # フォールバック：エラー時は空の辞書を使用（ハードコード無効化）
-            logger.error(f"🗣️ [PRONUNCIATION_DICT] Using empty fallback dict due to API error")
-            self._pronunciation_dict = {}
 
     async def send_audio_response(self, text: str, rid: str = None):
         """Generate and send audio response"""
@@ -857,15 +841,8 @@ class ConnectionHandler:
             
             # TTS用の発音修正
             tts_text = self._fix_pronunciation_for_tts(text)
-            
-            # 発音辞書の状態をログ出力
-            pronunciation_dict = getattr(self, '_pronunciation_dict', {})
-            logger.info(f"🗣️ [PRONUNCIATION_STATUS] Dict entries: {len(pronunciation_dict)}, Keys: {list(pronunciation_dict.keys())}")
-            
             if tts_text != text:
                 logger.info(f"🗣️ [PRONUNCIATION_FIX] '{text}' → '{tts_text}'")
-            else:
-                logger.info(f"🗣️ [PRONUNCIATION_NO_CHANGE] Text unchanged: '{text}'")
             
             # Send TTS start message (server2 style)
             try:
