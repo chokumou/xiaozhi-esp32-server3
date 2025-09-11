@@ -1355,7 +1355,7 @@ class ConnectionHandler:
             
             # アラーム時刻チェックタスクを開始
             alarm_task = asyncio.create_task(self.start_alarm_checker())
-            timeout_task = asyncio.create_task(self.start_timeout_check())
+            timeout_task = asyncio.create_task(self._check_timeout())
             
             # 詳細デバッグ: WebSocketメッセージ受信完全トレース
             try:
