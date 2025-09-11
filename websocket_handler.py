@@ -55,6 +55,7 @@ class ConnectionHandler:
         
         # Server2準拠: タイムアウト監視（環境変数で調整可能）
         self.timeout_seconds = Config.WEBSOCKET_TIMEOUT_SECONDS
+        logger.info(f"🕐 [TIMEOUT_CONFIG] WebSocket timeout set to: {self.timeout_seconds} seconds")
         
         self.timeout_task = None
         
@@ -855,7 +856,7 @@ class ConnectionHandler:
                 # ESP32にアラーム設定通知を送信
                 await self._send_alarm_notification(target_date, hour, minute)
                 
-                return f"はい！{date_str}の{hour}時{minute:02d}分にアラームを設定しましたにゃん！アラーム時刻の1分前に画面をタッチして起こしてくださいにゃん！そうすれば確実にアラームが鳴りますよ！"
+                return f"はい！{date_str}の{hour}時{minute:02d}分にアラームを設定しましたにゃん！電源管理を調整するので、アラーム時刻になったら自動で起こしますよ！"
             else:
                 logger.error(f"⏰ [ALARM_FAILED] Failed to create alarm")
                 return None
@@ -906,25 +907,34 @@ class ConnectionHandler:
             return False
     
     async def _send_alarm_notification(self, date, hour, minute):
-        """ESP32にアラーム設定を通知＋キープアライブ開始"""
+        """ESP32にアラーム設定を通知＋電源管理制御"""
         try:
+            # アラーム時刻までの秒数を計算
+            import datetime
+            target_datetime = datetime.datetime.combine(date, datetime.time(hour, minute))
+            now = datetime.datetime.now()
+            seconds_until_alarm = int((target_datetime - now).total_seconds())
+            
             alarm_msg = {
-                "type": "alarm_set", 
-                "date": date.strftime("%Y-%m-%d"),
-                "time": f"{hour:02d}:{minute:02d}",
-                "keep_awake": True,
-                "message": "アラームが設定されました。キープアライブを開始します。"
+                "type": "power_management",
+                "action": "disable_auto_shutdown", 
+                "duration_seconds": seconds_until_alarm,
+                "alarm_time": f"{hour:02d}:{minute:02d}",
+                "alarm_date": date.strftime("%Y-%m-%d"),
+                "message": f"アラーム設定: {seconds_until_alarm}秒後まで電源OFF無効化"
             }
             
             import json
             await self.websocket.send_str(json.dumps(alarm_msg))
-            logger.info(f"⏰ [ALARM_NOTIFY] Sent alarm notification to ESP32: {alarm_msg}")
+            logger.info(f"⏰ [POWER_MGMT] Sent power management to ESP32: disable auto-shutdown for {seconds_until_alarm}s")
             
-            # キープアライブは電力消費とトランスポート問題のため無効化
-            # self._start_keepalive_for_alarm(date, hour, minute)
+            # サーバー側のタイムアウトも延長
+            if seconds_until_alarm > 0:
+                self.timeout_seconds = max(self.timeout_seconds, seconds_until_alarm + 60)  # アラーム時刻+1分
+                logger.info(f"⏰ [SERVER_TIMEOUT] Extended server timeout to {self.timeout_seconds}s for alarm")
             
         except Exception as e:
-            logger.error(f"⏰ [ALARM_NOTIFY] Failed to send alarm notification: {e}")
+            logger.error(f"⏰ [POWER_MGMT] Failed to send power management: {e}")
     
     def _start_keepalive_for_alarm(self, date, hour, minute):
         """アラーム時刻までキープアライブを送信"""
