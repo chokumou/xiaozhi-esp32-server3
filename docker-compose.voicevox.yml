@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  voicevox-engine:
+    image: voicevox/voicevox_engine:cpu-ubuntu20.04-latest
+    container_name: voicevox-engine
+    ports:
+      - "50021:50021"
+    environment:
+      - VOICEVOX_CPU_NUM_THREADS=2
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:50021/speakers"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Railway用にVOICEVOX ENGINEの代替サービス（将来的にクラウド版を追加可能）
+  # voicevox-cloud:
+  #   image: your-voicevox-cloud-image
+  #   ports:
+  #     - "50022:50021"
+  #   environment:
+  #     - VOICEVOX_API_KEY=${VOICEVOX_API_KEY}

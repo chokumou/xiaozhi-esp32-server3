@@ -5,36 +5,48 @@ from io import BytesIO
 from config import Config
 from utils.logger import setup_logger
 from .edge_tts import EdgeTTSService
+from .voicevox_tts import VoicevoxTTSService
 
 logger = setup_logger()
 
 class TTSService:
     def __init__(self):
+        # 3段階フォールバック準備
+        if Config.USE_VOICEVOX:
+            self.voicevox = VoicevoxTTSService()
+            logger.info(f"TTSService initialized with VOICEVOX speaker_id: {Config.VOICEVOX_SPEAKER_ID}")
+        
         if Config.USE_EDGE_TTS:
             self.edge_tts = EdgeTTSService()
-            self.voice = Config.EDGE_TTS_VOICE
-            logger.info(f"TTSService initialized with EdgeTTS voice: {self.voice}")
-        else:
-            self.client = openai.OpenAI(api_key=Config.OPENAI_API_KEY)
-            self.voice = Config.OPENAI_TTS_VOICE
-            logger.info(f"TTSService initialized with OpenAI voice: {self.voice}")
+            logger.info(f"TTSService EdgeTTS backup prepared: {Config.EDGE_TTS_VOICE}")
+        
+        # OpenAI TTS（最終フォールバック）
+        self.client = openai.OpenAI(api_key=Config.OPENAI_API_KEY)
+        self.openai_voice = Config.OPENAI_TTS_VOICE
+        logger.info(f"TTSService OpenAI TTS fallback prepared: {self.openai_voice}")
 
     async def generate_speech(self, text: str) -> bytes:
+        """3段階フォールバック: VOICEVOX → EdgeTTS → OpenAI TTS"""
         try:
-            if Config.USE_EDGE_TTS:
-                # EdgeTTSを使用（Server2互換）
-                logger.info(f"🎵 [EDGE_TTS] Using EdgeTTS for text: {text[:50]}...")
+            # 1st Try: VOICEVOX（可愛い日本語音声）
+            if Config.USE_VOICEVOX:
                 try:
+                    logger.info(f"🎵 [VOICEVOX] Using VOICEVOX for text: {text[:50]}...")
+                    return await self.voicevox.generate_speech(text)
+                except Exception as voicevox_error:
+                    logger.error(f"⚠️ [VOICEVOX_FAILED] VOICEVOX failed: {voicevox_error}")
+            
+            # 2nd Try: EdgeTTS（日本語音声）
+            if Config.USE_EDGE_TTS:
+                try:
+                    logger.info(f"🔄 [FALLBACK_EDGE] Switching to EdgeTTS...")
                     return await self.edge_tts.generate_speech(text)
                 except Exception as edge_error:
-                    logger.error(f"⚠️ [EDGE_TTS_FAILED] EdgeTTS failed: {edge_error}")
-                    logger.info(f"🔄 [FALLBACK] Switching to OpenAI TTS as fallback...")
-                    # EdgeTTS失敗時はOpenAI TTSにフォールバック
-                    return await self._generate_openai_speech(text)
-            else:
-                # OpenAI TTSを使用（従来通り）
-                logger.info(f"🎵 [OPENAI_TTS] Using OpenAI TTS for text: {text[:50]}...")
-                return await self._generate_openai_speech(text)
+                    logger.error(f"⚠️ [EDGE_TTS_FAILED] EdgeTTS fallback failed: {edge_error}")
+            
+            # 3rd Try: OpenAI TTS（最終フォールバック）
+            logger.info(f"🔄 [FALLBACK_OPENAI] Switching to OpenAI TTS as final fallback...")
+            return await self._generate_openai_speech(text)
             
         except Exception as e:
             logger.error(f"TTS generation completely failed: {e}")

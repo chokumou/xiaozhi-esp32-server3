@@ -33,6 +33,11 @@ class Config:
     USE_EDGE_TTS: bool = os.getenv("USE_EDGE_TTS", "false").lower() == "true"  # 緊急時OpenAI TTSに切り替え
     EDGE_TTS_VOICE: str = os.getenv("EDGE_TTS_VOICE", "ja-JP-NanamiNeural")  # 日本語女性音声（ネコ太用）
     
+    # VOICEVOX設定（可愛い日本語音声）
+    USE_VOICEVOX: bool = os.getenv("USE_VOICEVOX", "true").lower() == "true"  # VOICEVOXをメインに
+    VOICEVOX_API_URL: str = os.getenv("VOICEVOX_API_URL", "http://localhost:50021")  # VOICEVOX ENGINE
+    VOICEVOX_SPEAKER_ID: int = int(os.getenv("VOICEVOX_SPEAKER_ID", "1"))  # 四国めたん(ノーマル)
+    
     # キャラクター設定
     CHARACTER_NAME: str = os.getenv("CHARACTER_NAME", "ネコ太")
     CHARACTER_PROMPT: str = os.getenv("CHARACTER_PROMPT", 
