@@ -1,4 +1,6 @@
 import httpx
+import jwt
+import time
 from typing import Optional, Dict
 from config import Config
 from utils.logger import setup_logger
@@ -6,27 +8,44 @@ from utils.logger import setup_logger
 logger = setup_logger()
 
 class MemoryService:
-    """manager-api連携メモリー管理"""
+    """nekota-server連携メモリー管理"""
     
     def __init__(self):
         self.api_url = Config.MANAGER_API_URL
         self.api_secret = Config.MANAGER_API_SECRET
+        self.jwt_secret = Config.JWT_SECRET_KEY
         self.client = httpx.AsyncClient(
             base_url=self.api_url,
             headers={
                 "User-Agent": "XiaozhiESP32Server3/1.0",
                 "Accept": "application/json",
-                "Authorization": f"Bearer {self.api_secret}",  # Server2方式: Bearer認証
             },
             timeout=30
         )
-        logger.info(f"MemoryService initialized with manager-api URL: {self.api_url}")
+        logger.info(f"MemoryService initialized with nekota-server URL: {self.api_url}")
+    
+    def _generate_device_jwt(self, device_id: str) -> str:
+        """デバイス用のJWTトークンを生成"""
+        payload = {
+            "user_id": device_id,
+            "device_id": device_id,
+            "iat": int(time.time()),
+            "exp": int(time.time()) + 3600,  # 1時間有効
+        }
+        return jwt.encode(payload, self.jwt_secret, algorithm="HS256")
     
     async def save_memory(self, device_id: str, text: str) -> bool:
         try:
+            # デバイス用のJWTトークンを生成
+            jwt_token = self._generate_device_jwt(device_id)
+            
+            # Authorizationヘッダーを設定
+            headers = {"Authorization": f"Bearer {jwt_token}"}
+            
             response = await self.client.post(
                 "/api/memory/",
-                json={"text": text, "device_id": device_id}
+                json={"text": text, "user_id": device_id},
+                headers=headers
             )
             response.raise_for_status()
             logger.info(f"Memory saved for device {device_id}: {text[:50]}...")
