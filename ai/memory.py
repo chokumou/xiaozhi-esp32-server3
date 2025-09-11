@@ -24,43 +24,53 @@ class MemoryService:
         )
         logger.info(f"MemoryService initialized with nekota-server URL: {self.api_url}")
     
-    def _generate_device_jwt(self, device_id: str) -> str:
-        """デバイス用のJWTトークンを生成（nekota-server互換）"""
-        payload = {
-            "sub": device_id,  # nekota-serverはsubフィールドを期待
-            "user_id": device_id,  # 互換性のため両方設定
-            "device_id": device_id,
-            "iat": int(time.time()),
-            "exp": int(time.time()) + 3600,  # 1時間有効
-        }
-        return jwt.encode(payload, self.jwt_secret, algorithm="HS256")
+    async def _get_valid_jwt_and_user(self, device_number: str) -> tuple:
+        """nekota-serverから正規JWTとユーザー情報を取得"""
+        try:
+            response = await self.client.post("/api/device/exists",
+                                            json={"device_number": device_number})
+            if response.status_code == 200:
+                data = response.json()
+                jwt_token = data.get("token")
+                user_data = data.get("user")
+                user_id = user_data.get("id") if user_data else None
+                logger.info(f"🔑 正規JWT取得成功: user_id={user_id}")
+                return jwt_token, user_id
+        except Exception as e:
+            logger.error(f"❌ 正規JWT取得失敗: {e}")
+        return None, None
     
     async def save_memory(self, device_id: str, text: str) -> bool:
         try:
-            # デバイス用のJWTトークンを生成
-            jwt_token = self._generate_device_jwt(device_id)
+            # MACアドレスからデバイス番号に変換（一時的なハードコード）
+            # TODO: 動的にデバイス番号を取得する仕組みを実装
+            device_number = "327546"  # 登録済みデバイス番号
+            
+            # 正規JWTとユーザーIDを取得
+            jwt_token, user_id = await self._get_valid_jwt_and_user(device_number)
+            
+            if not jwt_token or not user_id:
+                logger.error(f"❌ 正規JWT取得失敗: device_number={device_number}")
+                return False
             
             # デバッグ用の詳細ログ
-            logger.info(f"🔑 Generated JWT token for device {device_id}: {jwt_token[:50]}...")
+            logger.info(f"🔑 Using valid JWT for user_id: {user_id}")
             logger.info(f"📡 Sending to: {self.api_url}/api/memory/")
-            logger.info(f"📦 Payload: {{'text': '{text[:30]}...', 'user_id': '{device_id}'}}")
+            logger.info(f"📦 Payload: {{'text': '{text[:30]}...', 'user_id': '{user_id}'}}")
             
             # Authorizationヘッダーを設定
             headers = {"Authorization": f"Bearer {jwt_token}"}
             
             response = await self.client.post(
                 "/api/memory/",
-                json={"text": text, "user_id": device_id},
+                json={"text": text, "user_id": user_id},  # 正しいuser_idを使用
                 headers=headers
             )
             response.raise_for_status()
-            logger.info(f"✅ Memory saved for device {device_id}: {text[:50]}...")
+            logger.info(f"✅ Memory saved for user {user_id}: {text[:50]}...")
             return True
         except httpx.HTTPStatusError as e:
             logger.error(f"❌ HTTP error saving memory: {e.response.status_code} - {e.response.text}")
-            logger.error(f"🔍 Request URL: {self.api_url}/api/memory/")
-            logger.error(f"🔍 Request headers: Authorization: Bearer {jwt_token[:30]}...")
-            logger.error(f"🔍 Request body: {{'text': '{text[:30]}...', 'user_id': '{device_id}'}}")
             return False
         except Exception as e:
             logger.error(f"❌ Unexpected error saving memory: {e}")
