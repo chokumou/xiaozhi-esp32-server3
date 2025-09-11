@@ -855,7 +855,7 @@ class ConnectionHandler:
                 # ESP32にアラーム設定通知を送信
                 await self._send_alarm_notification(target_date, hour, minute)
                 
-                return f"はい！{date_str}の{hour}時{minute:02d}分にアラームを設定しましたにゃん！スリープを無効にしますので、充電しておいてくださいにゃん！"
+                return f"はい！{date_str}の{hour}時{minute:02d}分にアラームを設定しましたにゃん！アラーム時刻の1分前に画面をタッチして起こしてくださいにゃん！そうすれば確実にアラームが鳴りますよ！"
             else:
                 logger.error(f"⏰ [ALARM_FAILED] Failed to create alarm")
                 return None
@@ -920,8 +920,8 @@ class ConnectionHandler:
             await self.websocket.send_str(json.dumps(alarm_msg))
             logger.info(f"⏰ [ALARM_NOTIFY] Sent alarm notification to ESP32: {alarm_msg}")
             
-            # キープアライブタスクを開始
-            self._start_keepalive_for_alarm(date, hour, minute)
+            # キープアライブは電力消費とトランスポート問題のため無効化
+            # self._start_keepalive_for_alarm(date, hour, minute)
             
         except Exception as e:
             logger.error(f"⏰ [ALARM_NOTIFY] Failed to send alarm notification: {e}")
