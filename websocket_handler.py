@@ -509,6 +509,19 @@ class ConnectionHandler:
             logger.info(f"🔥 RID[{rid}] LLM_START: Processing '{text}'")
             self.chat_history.append({"role": "user", "content": text})
 
+            # Check for alarm-related keywords first (highest priority)
+            if any(keyword in text for keyword in ["起こして", "アラーム", "目覚まし", "時に鳴らして"]):
+                logger.info(f"⏰ [ALARM_TRIGGER] Alarm request detected: '{text}'")
+                
+                # アラーム設定処理
+                alarm_result = await self._process_alarm_request(text)
+                if alarm_result:
+                    await self.send_audio_response(alarm_result, rid)
+                    return
+                else:
+                    await self.send_audio_response("アラームの設定に失敗しました。時間を教えてくださいにゃん。", rid)
+                    return
+            
             # Check for memory-related keywords
             memory_query = None
             logger.info(f"🧠 [MEMORY_CHECK] Checking text for memory keywords: '{text}'")
@@ -728,6 +741,119 @@ class ConnectionHandler:
         
         return fixed_text
     
+    async def _process_alarm_request(self, text: str) -> str:
+        """音声からアラーム設定を処理"""
+        import re
+        import datetime
+        
+        try:
+            # 時間パターンを検出
+            time_patterns = [
+                r"(\d{1,2})時(\d{1,2}?)分?",      # "7時30分", "7時"
+                r"(\d{1,2}):(\d{2})",             # "7:30"  
+                r"(\d{1,2})時半",                 # "7時半"
+                r"午前(\d{1,2})時",               # "午前7時"
+                r"午後(\d{1,2})時"                # "午後7時"
+            ]
+            
+            hour, minute = None, 0
+            
+            for pattern in time_patterns:
+                match = re.search(pattern, text)
+                if match:
+                    if "時半" in pattern:
+                        hour = int(match.group(1))
+                        minute = 30
+                    elif "午前" in pattern:
+                        hour = int(match.group(1))
+                    elif "午後" in pattern:
+                        hour = int(match.group(1)) + 12
+                    else:
+                        hour = int(match.group(1))
+                        if match.group(2):
+                            minute = int(match.group(2))
+                    break
+            
+            if hour is None:
+                logger.warning(f"⏰ [ALARM_PARSE] Could not extract time from: '{text}'")
+                return None
+            
+            # 日付の判定（今日か明日か）
+            target_date = datetime.date.today()
+            if "明日" in text:
+                target_date += datetime.timedelta(days=1)
+            elif "今日" in text:
+                target_date = datetime.date.today()
+            else:
+                # 現在時刻より前なら明日に設定
+                now = datetime.datetime.now()
+                if hour < now.hour or (hour == now.hour and minute <= now.minute):
+                    target_date += datetime.timedelta(days=1)
+            
+            # アラームメッセージの生成
+            alarm_message = f"ネコ太からのお知らせにゃん！"
+            if "起きて" in text or "起こして" in text:
+                alarm_message = "起きる時間だにゃん！おはようございます！"
+            
+            # アラーム設定API呼び出し
+            alarm_success = await self._create_alarm_via_api(
+                date=target_date.strftime("%Y-%m-%d"),
+                time=f"{hour:02d}:{minute:02d}",
+                message=alarm_message
+            )
+            
+            if alarm_success:
+                date_str = "今日" if target_date == datetime.date.today() else "明日"
+                logger.info(f"⏰ [ALARM_SUCCESS] Alarm set for {target_date} {hour:02d}:{minute:02d}")
+                return f"はい！{date_str}の{hour}時{minute:02d}分にアラームを設定しましたにゃん！"
+            else:
+                logger.error(f"⏰ [ALARM_FAILED] Failed to create alarm")
+                return None
+                
+        except Exception as e:
+            logger.error(f"⏰ [ALARM_ERROR] Error processing alarm request: {e}")
+            return None
+    
+    async def _create_alarm_via_api(self, date: str, time: str, message: str) -> bool:
+        """nekota-server APIを使ってアラームを作成"""
+        try:
+            import httpx
+            
+            # デバイス番号からuser_idを取得
+            device_number = "327546"  # 登録済みデバイス番号
+            jwt_token, user_id = await self.memory_service._get_valid_jwt_and_user(device_number)
+            
+            if not jwt_token or not user_id:
+                logger.error(f"⏰ [ALARM_API] Failed to get valid JWT for device {device_number}")
+                return False
+            
+            # アラーム作成API呼び出し
+            async with httpx.AsyncClient(timeout=10) as client:
+                headers = {"Authorization": f"Bearer {jwt_token}"}
+                payload = {
+                    "user_id": user_id,
+                    "date": date,
+                    "time": time,
+                    "timezone": "Asia/Tokyo",
+                    "text": message
+                }
+                
+                response = await client.post(
+                    f"{Config.MANAGER_API_URL}/api/alarm",
+                    headers=headers,
+                    json=payload
+                )
+                
+                if response.status_code in [200, 201]:
+                    logger.info(f"⏰ [ALARM_API] Successfully created alarm: {date} {time}")
+                    return True
+                else:
+                    logger.error(f"⏰ [ALARM_API] Failed to create alarm: {response.status_code} - {response.text}")
+                    return False
+                    
+        except Exception as e:
+            logger.error(f"⏰ [ALARM_API] Error calling alarm API: {e}")
+            return False
 
     async def send_audio_response(self, text: str, rid: str = None):
         """Generate and send audio response"""
