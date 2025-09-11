@@ -861,7 +861,8 @@ class ConnectionHandler:
                 return f"はい！{date_str}の{hour}時{minute:02d}分にアラームを設定しましたにゃん！電源管理を調整するので、アラーム時刻になったら自動で起こしますよ！"
             else:
                 logger.error(f"⏰ [ALARM_FAILED] Failed to create alarm")
-                return None
+                # エラーの種類に応じたユーザーフレンドリーなメッセージを返す
+                return self._get_alarm_error_message()
                 
         except Exception as e:
             logger.error(f"⏰ [ALARM_ERROR] Error processing alarm request: {e}")
@@ -900,13 +901,53 @@ class ConnectionHandler:
                 if response.status_code in [200, 201]:
                     logger.info(f"⏰ [ALARM_API] Successfully created alarm: {date} {time}")
                     return True
+                elif response.status_code == 403:
+                    # アラーム制限エラーの詳細を保存
+                    self.last_alarm_error = {
+                        "type": "limit_reached",
+                        "status_code": 403,
+                        "message": response.text
+                    }
+                    logger.error(f"⏰ [ALARM_API] Alarm limit reached: {response.text}")
+                    return False
                 else:
+                    # その他のエラー
+                    self.last_alarm_error = {
+                        "type": "api_error",
+                        "status_code": response.status_code,
+                        "message": response.text
+                    }
                     logger.error(f"⏰ [ALARM_API] Failed to create alarm: {response.status_code} - {response.text}")
                     return False
                     
         except Exception as e:
             logger.error(f"⏰ [ALARM_API] Error calling alarm API: {e}")
+            # ネットワークエラーなど
+            self.last_alarm_error = {
+                "type": "network_error",
+                "message": str(e)
+            }
             return False
+    
+    def _get_alarm_error_message(self) -> str:
+        """アラーム作成失敗時のユーザーフレンドリーなメッセージを生成"""
+        if not hasattr(self, 'last_alarm_error'):
+            return "アラームの設定に失敗しましたにゃん。もう一度お試しくださいにゃ。"
+        
+        error = self.last_alarm_error
+        error_type = error.get("type", "unknown")
+        
+        if error_type == "limit_reached":
+            # アラーム制限到達時の丁寧な説明
+            return ("申し訳ございませんにゃ！現在のプランでは、アラームは3個までしか設定できませんにゃん。"
+                   "既存のアラームを削除するか、プレミアムプランにアップグレードすると無制限でアラームが使えますにゃ！"
+                   "管理画面でアラームの管理ができますよ〜")
+        elif error_type == "api_error":
+            return "アラームの設定でエラーが発生しましたにゃん。少し時間をおいてから再度お試しくださいにゃ。"
+        elif error_type == "network_error":
+            return "ネットワークエラーでアラームが設定できませんでしたにゃん。インターネット接続を確認してくださいにゃ。"
+        else:
+            return "アラームの設定に失敗しましたにゃん。もう一度お試しくださいにゃ。"
     
     async def _send_alarm_notification(self, date, hour, minute):
         """ESP32にアラーム設定を通知＋電源管理制御"""
