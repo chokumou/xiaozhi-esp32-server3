@@ -70,8 +70,6 @@ class Config:
         """設定の検証"""
         required_vars = [
             "OPENAI_API_KEY",
-            "NEKOTA_API_URL", 
-            "NEKOTA_API_SECRET",
             "JWT_SECRET_KEY"
         ]
         
@@ -79,6 +77,11 @@ class Config:
         for var in required_vars:
             if not getattr(cls, var):
                 missing_vars.append(var)
+        
+        # MANAGER_API_* の検証（フォールバック対応）
+        if not (cls.MANAGER_API_URL and cls.MANAGER_API_SECRET):
+            missing_vars.append("MANAGER_API_URL or NEKOTA_API_URL")
+            missing_vars.append("MANAGER_API_SECRET or NEKOTA_API_SECRET")
         
         if missing_vars:
             raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}")
