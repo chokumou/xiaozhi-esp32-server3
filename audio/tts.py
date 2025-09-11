@@ -24,32 +24,50 @@ class TTSService:
             if Config.USE_EDGE_TTS:
                 # EdgeTTSを使用（Server2互換）
                 logger.info(f"🎵 [EDGE_TTS] Using EdgeTTS for text: {text[:50]}...")
-                return await self.edge_tts.generate_speech(text)
+                try:
+                    return await self.edge_tts.generate_speech(text)
+                except Exception as edge_error:
+                    logger.error(f"⚠️ [EDGE_TTS_FAILED] EdgeTTS failed: {edge_error}")
+                    logger.info(f"🔄 [FALLBACK] Switching to OpenAI TTS as fallback...")
+                    # EdgeTTS失敗時はOpenAI TTSにフォールバック
+                    return await self._generate_openai_speech(text)
             else:
                 # OpenAI TTSを使用（従来通り）
                 logger.info(f"🎵 [OPENAI_TTS] Using OpenAI TTS for text: {text[:50]}...")
-                import asyncio
-                response = await asyncio.get_event_loop().run_in_executor(
-                    None, 
-                    lambda: self.client.audio.speech.create(
-                        model="tts-1",
-                        voice=self.voice,
-                        input=text,
-                        response_format="mp3"  # MP3で取得してPCM変換後Opusエンコード
-                    )
-                )
-                
-                # Get audio content and convert to Server2-style format
-                audio_data = response.content
-                logger.debug(f"OpenAI TTS generated MP3 audio for text: {text[:50]}... ({len(audio_data)} bytes)")
-                
-                # Server2準拠: MP3 → PCM → Opus フレーム分割処理
-                opus_frames = await self._convert_to_opus_frames(audio_data, "mp3")
-                
-                return opus_frames
+                return await self._generate_openai_speech(text)
             
         except Exception as e:
-            logger.error(f"TTS generation failed: {e}")
+            logger.error(f"TTS generation completely failed: {e}")
+            return b""
+    
+    async def _generate_openai_speech(self, text: str) -> bytes:
+        """OpenAI TTS音声生成（フォールバック用）"""
+        try:
+            if not hasattr(self, 'client'):
+                self.client = openai.OpenAI(api_key=Config.OPENAI_API_KEY)
+            
+            import asyncio
+            response = await asyncio.get_event_loop().run_in_executor(
+                None, 
+                lambda: self.client.audio.speech.create(
+                    model="tts-1",
+                    voice=Config.OPENAI_TTS_VOICE,  # alloy
+                    input=text,
+                    response_format="mp3"  # MP3で取得してPCM変換後Opusエンコード
+                )
+            )
+            
+            # Get audio content and convert to Server2-style format
+            audio_data = response.content
+            logger.info(f"✅ [OPENAI_FALLBACK] Generated MP3 audio: {len(audio_data)} bytes")
+            
+            # Server2準拠: MP3 → PCM → Opus フレーム分割処理
+            opus_frames = await self._convert_to_opus_frames(audio_data, "mp3")
+            
+            return opus_frames
+            
+        except Exception as e:
+            logger.error(f"OpenAI TTS fallback failed: {e}")
             return b""
     
     async def _convert_to_opus_frames(self, audio_bytes: bytes, file_type: str) -> bytes:
