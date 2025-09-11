@@ -701,6 +701,31 @@ class ConnectionHandler:
             end -= 1
             
         return cleaned[start:end + 1] if start <= end else text
+    
+    def _fix_pronunciation_for_tts(self, text: str) -> str:
+        """TTS用の発音修正"""
+        if not text:
+            return text
+        
+        # 発音修正辞書
+        pronunciation_fixes = {
+            "ネコ太": "ネコタ",
+            "君": "きみ",
+            "君は": "きみは", 
+            "君が": "きみが",
+            "君の": "きみの",
+            "君を": "きみを",
+            "君と": "きみと",
+            "君に": "きみに",
+            "君で": "きみで",
+            "君も": "きみも"
+        }
+        
+        fixed_text = text
+        for wrong, correct in pronunciation_fixes.items():
+            fixed_text = fixed_text.replace(wrong, correct)
+        
+        return fixed_text
 
     async def send_audio_response(self, text: str, rid: str = None):
         """Generate and send audio response"""
@@ -812,6 +837,11 @@ class ConnectionHandler:
             # Generate audio using TTS
             logger.info(f"🔊 [TTS_START] ===== Generating TTS for: '{text}' =====")
             
+            # TTS用の発音修正
+            tts_text = self._fix_pronunciation_for_tts(text)
+            if tts_text != text:
+                logger.info(f"🗣️ [PRONUNCIATION_FIX] '{text}' → '{tts_text}'")
+            
             # Send TTS start message (server2 style)
             try:
                 tts_start_msg = {
@@ -858,7 +888,7 @@ class ConnectionHandler:
             self.last_activity_time = time.time()
             
             # Generate TTS audio (server2 style - individual frames)
-            opus_frames_list = await self.tts_service.generate_speech(text)
+            opus_frames_list = await self.tts_service.generate_speech(tts_text)
             logger.info(f"🎶 [TTS_RESULT] ===== TTS generated: {len(opus_frames_list) if opus_frames_list else 0} individual Opus frames =====")
             
             # TTS処理後の活動状態更新とタイムアウト対策
