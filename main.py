@@ -75,8 +75,8 @@ async def main():
 
     # Add WebSocket handler function
     async def websocket_handler(request):
-        # TTS処理対応: heartbeat=10でタイムアウト延長
-        ws = web.WebSocketResponse(protocols=["v1", "xiaozhi-v1"], heartbeat=10)
+        # ESP32 Ping/Pong対応: heartbeat設定（環境変数で調整可能、TTS中の切断防止）
+        ws = web.WebSocketResponse(protocols=["v1", "xiaozhi-v1"], heartbeat=Config.WEBSOCKET_HEARTBEAT_SECONDS)
         await ws.prepare(request)
         
         # Get device info from headers

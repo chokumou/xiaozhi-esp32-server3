@@ -55,6 +55,7 @@ class Config:
     
     # WebSocket接続設定
     WEBSOCKET_TIMEOUT_SECONDS: int = int(os.getenv("WEBSOCKET_TIMEOUT_SECONDS", "300"))  # 5分
+    WEBSOCKET_HEARTBEAT_SECONDS: int = int(os.getenv("WEBSOCKET_HEARTBEAT_SECONDS", "30"))  # Ping/Pong間隔
     
     # ログ設定
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
