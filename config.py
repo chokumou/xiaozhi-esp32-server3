@@ -53,6 +53,9 @@ class Config:
     # VAD設定
     VAD_SILENCE_DURATION: float = 1.0  # 無音検出時間（秒）
     
+    # WebSocket接続設定
+    WEBSOCKET_TIMEOUT_SECONDS: int = int(os.getenv("WEBSOCKET_TIMEOUT_SECONDS", "300"))  # 5分
+    
     # ログ設定
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
     

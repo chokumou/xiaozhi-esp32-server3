@@ -53,8 +53,8 @@ class ConnectionHandler:
         self.client_voice_stop = False
         self.last_activity_time = time.time()
         
-        # Server2準拠: タイムアウト監視（元の180秒に戻して詳細調査）
-        self.timeout_seconds = 180  # 120 + 60秒のバッファ（ESP32エラー原因を特定するため）
+        # Server2準拠: タイムアウト監視（環境変数で調整可能）
+        self.timeout_seconds = Config.WEBSOCKET_TIMEOUT_SECONDS
         self.timeout_task = None
         
         # Initialize server2-style audio handler
