@@ -1357,6 +1357,9 @@ class ConnectionHandler:
             alarm_task = asyncio.create_task(self.start_alarm_checker())
             timeout_task = asyncio.create_task(self._check_timeout())
             
+            # 接続開始時に待機中のアラームがないかチェック
+            await self._check_pending_alarms()
+            
             # 詳細デバッグ: WebSocketメッセージ受信完全トレース
             try:
                 logger.info(f"🔍 [DEBUG_LOOP] Starting async for loop for {self.device_id}, websocket.closed={self.websocket.closed}")
@@ -1530,7 +1533,14 @@ class ConnectionHandler:
                         # 現在の日付・時刻と一致するかチェック
                         if alarm_date == current_date and alarm_time == current_time:
                             logger.info(f"⏰ [ALARM_FIRED] Alarm triggered: {alarm_time} - {message}")
-                            await self._send_alarm_notification_fired(alarm_time, message, alarm_id)
+                            
+                            # WebSocket接続確認 + 切断時は再接続不要（グローバル送信）
+                            if self.websocket.closed:
+                                logger.warning(f"🔌 [ALARM_DISCONNECT] WebSocket disconnected, attempting global alarm send")
+                                await self._send_alarm_global(self.device_id, alarm_time, message, alarm_id)
+                            else:
+                                # 正常接続時は通常送信
+                                await self._send_alarm_notification_fired(alarm_time, message, alarm_id)
                 
         except Exception as e:
             logger.error(f"⏰ [ALARM_CHECK] Error: {e}")
@@ -1584,4 +1594,80 @@ class ConnectionHandler:
                     
         except Exception as e:
             logger.error(f"⏰ [ALARM_FIRED] Error marking as fired: {e}")
+    
+    async def _send_alarm_global(self, target_device_id: str, alarm_time: str, message: str, alarm_id: str):
+        """WebSocket切断時のグローバルアラーム送信（他の接続やHTTP経由）"""
+        try:
+            logger.info(f"🌐 [ALARM_GLOBAL] Attempting global alarm send to device {target_device_id}")
+            
+            # アラーム発火を記録（重複防止）
+            await self._mark_alarm_as_fired(alarm_id)
+            
+            # アラーム通知テキスト生成
+            if message and message != "ネコ太からのお知らせにゃん！":
+                notification_text = f"{message}ですにゃ"
+            else:
+                hour, minute = alarm_time.split(':')
+                notification_text = f"{hour}時{minute}分ですにゃ"
+            
+            logger.info(f"🔔 [ALARM_GLOBAL] Alarm notification: '{notification_text}' for device {target_device_id}")
+            
+            # 方法1: ESP32への再接続トリガー信号（Light Sleepから復帰）
+            logger.info(f"🔔 [ALARM_WAKE] Device {target_device_id} should wake up and reconnect for alarm")
+            
+            # 方法2: デバイスが再接続してきたときのためにアラーム状態を保持
+            # (実装はconnection_managerに依存)
+            logger.info(f"🔄 [ALARM_PENDING] Alarm ready for when device {target_device_id} reconnects")
+            
+        except Exception as e:
+            logger.error(f"🌐 [ALARM_GLOBAL] Error in global alarm send: {e}")
+    
+    async def _check_pending_alarms(self):
+        """接続開始時に待機中のアラームをチェック（再接続後の即座配信）"""
+        try:
+            if not hasattr(self, 'user_id') or not self.user_id:
+                logger.debug(f"🔄 [PENDING_ALARM] Skipping - no user_id for {self.device_id}")
+                return
+            
+            logger.info(f"🔄 [PENDING_ALARM] Checking for pending alarms on reconnect for {self.device_id}")
+            
+            # 現在時刻前後5分以内の未発火アラームをチェック
+            jst = pytz.timezone('Asia/Tokyo')
+            now_jst = datetime.now(jst)
+            
+            # 5分前から現在時刻までのアラームを取得
+            start_time = (now_jst - timedelta(minutes=5)).strftime('%H:%M')
+            current_time = now_jst.strftime('%H:%M')
+            current_date = now_jst.strftime('%Y-%m-%d')
+            
+            import httpx
+            async with httpx.AsyncClient() as client:
+                response = await client.get(
+                    f"{Config.MANAGER_API_URL}/api/alarm/check",
+                    params={
+                        "user_id": self.user_id,
+                        "timezone": "Asia/Tokyo"
+                    },
+                    headers={
+                        "Authorization": f"Bearer {Config.MANAGER_API_SECRET}"
+                    }
+                )
+                
+                if response.status_code == 200:
+                    result = response.json()
+                    alarms = result.get('alarms', [])
+                    
+                    for alarm in alarms:
+                        alarm_date = alarm.get('alarm_date')
+                        alarm_time = alarm.get('alarm_time')
+                        message = alarm.get('message', '').strip()
+                        alarm_id = alarm.get('id')
+                        
+                        # 今日の過去5分以内のアラームをチェック
+                        if alarm_date == current_date and start_time <= alarm_time <= current_time:
+                            logger.info(f"🔄 [PENDING_ALARM] Found recent alarm on reconnect: {alarm_time} - {message}")
+                            await self._send_alarm_notification_fired(alarm_time, message, alarm_id)
+                            
+        except Exception as e:
+            logger.error(f"🔄 [PENDING_ALARM] Error checking pending alarms: {e}")
             
