@@ -1546,6 +1546,7 @@ class ConnectionHandler:
             current_time = now_jst.strftime('%H:%M')
             
             logger.info(f"⏰ [ALARM_CHECK] Current time: {current_date} {current_time} (JST)")
+            logger.info(f"⏰ [ALARM_CHECK] Full datetime: {now_jst.strftime('%Y-%m-%d %H:%M:%S %Z')}")
             
             # アラームAPIでチェック
             import httpx
@@ -1565,14 +1566,25 @@ class ConnectionHandler:
                     result = response.json()
                     alarms = result.get('alarms', [])
                     
+                    logger.info(f"⏰ [ALARM_CHECK] Found {len(alarms)} total alarms for user")
+                    
                     for alarm in alarms:
                         alarm_date = alarm.get('alarm_date')
                         alarm_time = alarm.get('alarm_time') 
                         message = alarm.get('message', '').strip()
                         alarm_id = alarm.get('id')
+                        is_fired = alarm.get('is_fired', False)
+                        
+                        logger.info(f"⏰ [ALARM_DETAIL] ID:{alarm_id} Date:{alarm_date} Time:{alarm_time} Fired:{is_fired} Msg:'{message}'")
                         
                         # 現在の日付・時刻と一致するかチェック
                         if alarm_date == current_date and alarm_time == current_time:
+                            logger.info(f"🎯 [ALARM_MATCH] EXACT TIME MATCH! {alarm_date} {alarm_time}")
+                        else:
+                            logger.debug(f"⏰ [ALARM_NO_MATCH] {alarm_date} {alarm_time} != {current_date} {current_time}")
+                        
+                        # 現在の日付・時刻と一致するかチェック（かつ未発火）
+                        if alarm_date == current_date and alarm_time == current_time and not is_fired:
                             logger.info(f"⏰ [ALARM_FIRED] Alarm triggered: {alarm_time} - {message}")
                             
                             # WebSocket接続確認 + 切断時は再接続不要（グローバル送信）
