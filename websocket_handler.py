@@ -753,48 +753,88 @@ class ConnectionHandler:
         import datetime
         
         try:
-            # 時間パターンを検出
-            time_patterns = [
-                r"(\d{1,2})時(\d{1,2}?)分?",      # "7時30分", "7時"
-                r"(\d{1,2}):(\d{2})",             # "7:30"  
-                r"(\d{1,2})時半",                 # "7時半"
-                r"午前(\d{1,2})時",               # "午前7時"
-                r"午後(\d{1,2})時"                # "午後7時"
+            # 相対時刻パターンを先にチェック
+            relative_patterns = [
+                r"(\d{1,2})分後",                 # "5分後", "30分後"
+                r"(\d{1,2})時間後",               # "1時間後", "2時間後"
+                r"(\d{1,2})時間(\d{1,2})分後"     # "1時間30分後"
             ]
             
             hour, minute = None, 0
+            is_relative = False
             
-            for pattern in time_patterns:
+            # 相対時刻の処理
+            for pattern in relative_patterns:
                 match = re.search(pattern, text)
                 if match:
-                    if "時半" in pattern:
-                        hour = int(match.group(1))
-                        minute = 30
-                    elif "午前" in pattern:
-                        hour = int(match.group(1))
-                    elif "午後" in pattern:
-                        hour = int(match.group(1)) + 12
-                    else:
-                        hour = int(match.group(1))
-                        if match.group(2):
-                            minute = int(match.group(2))
+                    is_relative = True
+                    now = datetime.datetime.now()
+                    
+                    if "分後" in pattern and "時間" not in pattern:
+                        # N分後
+                        minutes_later = int(match.group(1))
+                        target_time = now + datetime.timedelta(minutes=minutes_later)
+                    elif "時間後" in pattern and "分後" not in pattern:
+                        # N時間後
+                        hours_later = int(match.group(1))
+                        target_time = now + datetime.timedelta(hours=hours_later)
+                    elif "時間" in pattern and "分後" in pattern:
+                        # N時間M分後
+                        hours_later = int(match.group(1))
+                        minutes_later = int(match.group(2))
+                        target_time = now + datetime.timedelta(hours=hours_later, minutes=minutes_later)
+                    
+                    hour = target_time.hour
+                    minute = target_time.minute
+                    logger.info(f"⏰ [RELATIVE_TIME] {text} → {target_time.strftime('%H:%M')}")
                     break
+            
+            # 絶対時刻パターン（相対時刻が見つからなかった場合）
+            if not is_relative:
+                time_patterns = [
+                    r"(\d{1,2})時(\d{1,2}?)分?",      # "7時30分", "7時"
+                    r"(\d{1,2}):(\d{2})",             # "7:30"  
+                    r"(\d{1,2})時半",                 # "7時半"
+                    r"午前(\d{1,2})時",               # "午前7時"
+                    r"午後(\d{1,2})時"                # "午後7時"
+                ]
+                
+                for pattern in time_patterns:
+                    match = re.search(pattern, text)
+                    if match:
+                        if "時半" in pattern:
+                            hour = int(match.group(1))
+                            minute = 30
+                        elif "午前" in pattern:
+                            hour = int(match.group(1))
+                        elif "午後" in pattern:
+                            hour = int(match.group(1)) + 12
+                        else:
+                            hour = int(match.group(1))
+                            if match.group(2):
+                                minute = int(match.group(2))
+                        break
             
             if hour is None:
                 logger.warning(f"⏰ [ALARM_PARSE] Could not extract time from: '{text}'")
                 return None
             
-            # 日付の判定（今日か明日か）
-            target_date = datetime.date.today()
-            if "明日" in text:
-                target_date += datetime.timedelta(days=1)
-            elif "今日" in text:
-                target_date = datetime.date.today()
+            # 日付の判定
+            if is_relative:
+                # 相対時刻の場合は既に計算済み
+                target_date = target_time.date()
             else:
-                # 現在時刻より前なら明日に設定
-                now = datetime.datetime.now()
-                if hour < now.hour or (hour == now.hour and minute <= now.minute):
+                # 絶対時刻の場合の日付判定
+                target_date = datetime.date.today()
+                if "明日" in text:
                     target_date += datetime.timedelta(days=1)
+                elif "今日" in text:
+                    target_date = datetime.date.today()
+                else:
+                    # 現在時刻より前なら明日に設定
+                    now = datetime.datetime.now()
+                    if hour < now.hour or (hour == now.hour and minute <= now.minute):
+                        target_date += datetime.timedelta(days=1)
             
             # アラームメッセージの生成
             alarm_message = f"ネコ太からのお知らせにゃん！"
