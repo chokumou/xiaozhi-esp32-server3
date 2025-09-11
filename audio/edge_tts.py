@@ -1,55 +1,37 @@
-import openai
+import edge_tts
 import opuslib_next
 from pydub import AudioSegment
 from io import BytesIO
 from config import Config
 from utils.logger import setup_logger
-from .edge_tts import EdgeTTSService
 
 logger = setup_logger()
 
-class TTSService:
+class EdgeTTSService:
     def __init__(self):
-        if Config.USE_EDGE_TTS:
-            self.edge_tts = EdgeTTSService()
-            self.voice = Config.EDGE_TTS_VOICE
-            logger.info(f"TTSService initialized with EdgeTTS voice: {self.voice}")
-        else:
-            self.client = openai.OpenAI(api_key=Config.OPENAI_API_KEY)
-            self.voice = Config.OPENAI_TTS_VOICE
-            logger.info(f"TTSService initialized with OpenAI voice: {self.voice}")
+        self.voice = Config.EDGE_TTS_VOICE
+        logger.info(f"EdgeTTSService initialized with voice: {self.voice}")
 
     async def generate_speech(self, text: str) -> bytes:
         try:
-            if Config.USE_EDGE_TTS:
-                # EdgeTTSを使用（Server2互換）
-                logger.info(f"🎵 [EDGE_TTS] Using EdgeTTS for text: {text[:50]}...")
-                return await self.edge_tts.generate_speech(text)
-            else:
-                # OpenAI TTSを使用（従来通り）
-                logger.info(f"🎵 [OPENAI_TTS] Using OpenAI TTS for text: {text[:50]}...")
-                import asyncio
-                response = await asyncio.get_event_loop().run_in_executor(
-                    None, 
-                    lambda: self.client.audio.speech.create(
-                        model="tts-1",
-                        voice=self.voice,
-                        input=text,
-                        response_format="mp3"  # MP3で取得してPCM変換後Opusエンコード
-                    )
-                )
-                
-                # Get audio content and convert to Server2-style format
-                audio_data = response.content
-                logger.debug(f"OpenAI TTS generated MP3 audio for text: {text[:50]}... ({len(audio_data)} bytes)")
-                
-                # Server2準拠: MP3 → PCM → Opus フレーム分割処理
-                opus_frames = await self._convert_to_opus_frames(audio_data, "mp3")
-                
-                return opus_frames
+            # EdgeTTSで音声生成（Server2互換）
+            communicate = edge_tts.Communicate(text, self.voice)
+            audio_bytes = b""
+            
+            # 音声データを取得
+            async for chunk in communicate.stream():
+                if chunk["type"] == "audio":
+                    audio_bytes += chunk["data"]
+            
+            logger.debug(f"EdgeTTS generated audio for text: {text[:50]}... ({len(audio_bytes)} bytes)")
+            
+            # Server2準拠: MP3 → PCM → Opus フレーム分割処理
+            opus_frames = await self._convert_to_opus_frames(audio_bytes, "mp3")
+            
+            return opus_frames
             
         except Exception as e:
-            logger.error(f"TTS generation failed: {e}")
+            logger.error(f"EdgeTTS generation failed: {e}")
             return b""
     
     async def _convert_to_opus_frames(self, audio_bytes: bytes, file_type: str) -> bytes:
@@ -69,14 +51,8 @@ class TTSService:
             
             # Server2準拠: 個別フレームのリストを返す
             logger.debug(f"Individual Opus frames generated: {len(opus_frames_list)} frames")
-            logger.info(f"🔬 [SERVER2_STYLE] Returning individual Opus frames list")
+            logger.info(f"🔬 [EDGE_TTS] Returning individual Opus frames list")
             return opus_frames_list
-            
-            # # ESP32プロトコル対応: BinaryProtocol3ヘッダーを追加
-            # protocol_data = self._add_binary_protocol3_header(opus_data)
-            # 
-            # logger.debug(f"Protocol3 data generated: {len(protocol_data)} bytes (Opus: {len(opus_data)} bytes)")
-            # return protocol_data
             
         except Exception as e:
             logger.error(f"Audio conversion failed: {e}")
@@ -121,13 +97,13 @@ class TTSService:
                     
                     # 最初のフレーム詳細ログ
                     if frame_count == 1:
-                        logger.info(f"🔬 [OPUS_ENCODE] First frame: size={len(opus_frame)}bytes, pcm_samples={len(np_frame)}, hex={opus_frame[:8].hex()}")
+                        logger.info(f"🔬 [EDGE_OPUS] First frame: size={len(opus_frame)}bytes, pcm_samples={len(np_frame)}, hex={opus_frame[:8].hex()}")
                     
                     logger.debug(f"Encoded Opus frame {frame_count}: {len(opus_frame)} bytes")
                 else:
                     logger.warning(f"Empty Opus frame generated for frame {frame_count}")
             
-            logger.info(f"🎵 [SERVER2_EXACT] Generated {frame_count} Opus frames (16kHz, 60ms) for batch send from {len(raw_data)} bytes PCM")
+            logger.info(f"🎵 [EDGE_TTS] Generated {frame_count} Opus frames (16kHz, 60ms) from {len(raw_data)} bytes PCM")
             return opus_frames_list
             
         except Exception as e:
@@ -135,31 +111,3 @@ class TTSService:
             import traceback
             logger.error(f"Opus encoding traceback: {traceback.format_exc()}")
             return []
-    
-    def _add_binary_protocol3_header(self, opus_data: bytes) -> bytes:
-        """ESP32 BinaryProtocol3ヘッダーを追加"""
-        try:
-            import struct
-            
-            # BinaryProtocol3構造:
-            # uint8_t type;           // 0 = OPUS audio data
-            # uint8_t reserved;       // 予約領域 (0)
-            # uint16_t payload_size;  // ペイロードサイズ (ネットワークバイトオーダー)
-            # uint8_t payload[];      // Opusデータ
-            
-            type_field = 0  # OPUS audio type
-            reserved_field = 0  # 予約領域
-            payload_size = len(opus_data)
-            
-            # ネットワークバイトオーダー (big-endian) でパック
-            header = struct.pack('>BBH', type_field, reserved_field, payload_size)
-            
-            # ヘッダー + Opusデータ
-            protocol_data = header + opus_data
-            
-            logger.debug(f"BinaryProtocol3 header: type={type_field}, reserved={reserved_field}, payload_size={payload_size}")
-            return protocol_data
-            
-        except Exception as e:
-            logger.error(f"BinaryProtocol3 header creation failed: {e}")
-            return opus_data  # ヘッダー追加に失敗した場合は生データを返す
