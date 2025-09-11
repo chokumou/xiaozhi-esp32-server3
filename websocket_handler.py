@@ -516,9 +516,9 @@ class ConnectionHandler:
                 if memory_to_save:
                     success = await self.memory_service.save_memory(self.device_id, memory_to_save)
                     if success:
-                        await self.send_text_response("はい、覚えました。")
+                        await self.send_audio_response("はい、覚えました。")
                     else:
-                        await self.send_text_response("すみません、記憶できませんでした。")
+                        await self.send_audio_response("すみません、記憶できませんでした。")
                     return
             elif "覚えてる" in text or "何が好き" in text or "誕生日はいつ" in text:
                 memory_query = text
