@@ -107,8 +107,26 @@ class MemoryService:
                 logger.info(f"🧠 [MEMORY_QUERY] No memories found for user {user_id}")
                 return None
             
-            # メモリーを結合して返す（簡易実装）
-            memory_texts = [memory.get("text", "") for memory in memories_data if memory.get("text")]
+            # レスポンス形式をデバッグ
+            logger.info(f"🔍 [MEMORY_DEBUG] Response type: {type(memories_data)}")
+            logger.info(f"🔍 [MEMORY_DEBUG] Response content: {memories_data}")
+            
+            # メモリーを結合して返す（レスポンス形式に応じた処理）
+            memory_texts = []
+            
+            if isinstance(memories_data, list):
+                # リスト形式の場合
+                for memory in memories_data:
+                    if isinstance(memory, dict):
+                        text = memory.get("text", "")
+                        if text:
+                            memory_texts.append(text)
+                    elif isinstance(memory, str):
+                        memory_texts.append(memory)
+            elif isinstance(memories_data, str):
+                # 文字列形式の場合
+                memory_texts = [memories_data]
+            
             if memory_texts:
                 combined_memory = "君について覚えていることはこれだよ: " + "、".join(memory_texts)
                 logger.info(f"🧠 [MEMORY_QUERY] Found memories: {combined_memory[:100]}...")

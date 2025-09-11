@@ -512,7 +512,12 @@ class ConnectionHandler:
             memory_query = None
             logger.info(f"🧠 [MEMORY_CHECK] Checking text for memory keywords: '{text}'")
             
-            if "覚えて" in text or "覚えといて" in text or "記憶して" in text:
+            # 先に呼び出しキーワードをチェック（優先度高）
+            if ("覚えてる" in text or "記憶ある" in text or "教えて" in text or 
+                "何が好き" in text or "誕生日はいつ" in text or "知ってる" in text or "記憶してる" in text):
+                memory_query = text
+                logger.info(f"🧠 [MEMORY_QUERY_TRIGGER] Memory query triggered! Query: '{text}'")
+            elif "覚えて" in text or "覚えといて" in text or "記憶して" in text:
                 # Extract what to remember
                 memory_to_save = text.replace("覚えて", "").replace("覚えといて", "").replace("記憶して", "").strip()
                 logger.info(f"🧠 [MEMORY_TRIGGER] Memory save triggered! Content: '{memory_to_save}'")
@@ -528,9 +533,6 @@ class ConnectionHandler:
                     return
                 else:
                     logger.warning(f"🧠 [MEMORY_EMPTY] No content to save after keyword removal")
-            elif "覚えてる" in text or "記憶ある" in text or "教えて" in text or "何が好き" in text or "誕生日はいつ" in text or "知ってる" in text or "記憶してる" in text:
-                memory_query = text
-                logger.info(f"🧠 [MEMORY_QUERY_TRIGGER] Memory query triggered! Query: '{text}'")
 
             # Prepare messages for LLM
             llm_messages = list(self.chat_history)
