@@ -522,6 +522,12 @@ class ConnectionHandler:
                     await self.send_audio_response("アラームの設定に失敗しました。時間を教えてくださいにゃん。", rid)
                     return
             
+            # Check for alarm stop keywords
+            elif any(keyword in text for keyword in ["アラーム止めて", "止めて", "アラーム停止", "もういい", "起きた"]):
+                logger.info(f"⏰ [ALARM_STOP] Alarm stop request detected: '{text}'")
+                await self.send_audio_response("はい、アラームを止めましたにゃん！おはようございます！", rid)
+                return
+            
             # Check for memory-related keywords
             memory_query = None
             logger.info(f"🧠 [MEMORY_CHECK] Checking text for memory keywords: '{text}'")
@@ -805,7 +811,11 @@ class ConnectionHandler:
             if alarm_success:
                 date_str = "今日" if target_date == datetime.date.today() else "明日"
                 logger.info(f"⏰ [ALARM_SUCCESS] Alarm set for {target_date} {hour:02d}:{minute:02d}")
-                return f"はい！{date_str}の{hour}時{minute:02d}分にアラームを設定しましたにゃん！"
+                
+                # ESP32にアラーム設定通知を送信
+                await self._send_alarm_notification(target_date, hour, minute)
+                
+                return f"はい！{date_str}の{hour}時{minute:02d}分にアラームを設定しましたにゃん！スリープを無効にしますので、充電しておいてくださいにゃん！"
             else:
                 logger.error(f"⏰ [ALARM_FAILED] Failed to create alarm")
                 return None
@@ -854,6 +864,24 @@ class ConnectionHandler:
         except Exception as e:
             logger.error(f"⏰ [ALARM_API] Error calling alarm API: {e}")
             return False
+    
+    async def _send_alarm_notification(self, date, hour, minute):
+        """ESP32にアラーム設定を通知"""
+        try:
+            alarm_msg = {
+                "type": "alarm_set",
+                "date": date.strftime("%Y-%m-%d"),
+                "time": f"{hour:02d}:{minute:02d}",
+                "keep_awake": True,
+                "message": "アラームが設定されました。スリープを無効化します。"
+            }
+            
+            import json
+            await self.websocket.send_str(json.dumps(alarm_msg))
+            logger.info(f"⏰ [ALARM_NOTIFY] Sent alarm notification to ESP32: {alarm_msg}")
+            
+        except Exception as e:
+            logger.error(f"⏰ [ALARM_NOTIFY] Failed to send alarm notification: {e}")
 
     async def send_audio_response(self, text: str, rid: str = None):
         """Generate and send audio response"""
