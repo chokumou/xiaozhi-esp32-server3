@@ -872,27 +872,36 @@ class ConnectionHandler:
                             first_frame = opus_frames_list[0]
                             logger.info(f"🔬 [OPUS_DEBUG] First frame: size={len(first_frame)}bytes, hex_header={first_frame[:8].hex() if len(first_frame)>=8 else first_frame.hex()}")
                         
-                        # 🚀 [SERVER2_CONCAT] 全フレームを連結してbytes一括送信（Server2と同じ方式）
-                        # Protocol v1: 生のOpusバイトのみ送信（ヘッダー無し）
+                        # 🚀 [CHUNK_SEND] ESP32バッファ制限対応: 小分割送信
+                        # 1つのチャンクサイズを制限（最大4-8KB程度）
+                        max_chunk_size = 4096  # 4KB per chunk to avoid ESP32 buffer overflow
                         concatenated_audio = b''.join(opus_frames_list)
                         total_bytes = len(concatenated_audio)
                         
-                        logger.info(f"🎯 [PROTOCOL_V1] Sending raw Opus bytes (no BinaryProtocol3 header for v1 compatibility)")
+                        logger.info(f"🎯 [CHUNK_STRATEGY] Splitting {total_bytes} bytes into {max_chunk_size}-byte chunks")
                         
-                        logger.info(f"🎵 [SERVER2_SEND] Sending {frame_count} frames as single bytes payload ({total_bytes} total bytes)")
+                        # チャンクに分割して送信
+                        chunks_sent = 0
+                        send_start_time = time.monotonic()
                         
-                        # 🚀 [SERVER2_SINGLE_SEND] Server2方式: 一括送信で完全安定化
                         try:
-                            send_start_time = time.monotonic()  # 送信開始時刻を記録
-                            await self.websocket.send_bytes(concatenated_audio)
+                            for i in range(0, total_bytes, max_chunk_size):
+                                chunk = concatenated_audio[i:i + max_chunk_size]
+                                await self.websocket.send_bytes(chunk)
+                                chunks_sent += 1
+                                
+                                # ESP32処理時間確保のため少し待機
+                                if chunks_sent % 3 == 0:  # 3チャンクごとに少し待機
+                                    await asyncio.sleep(0.01)  # 10ms wait
+                            
                             send_end_time = time.monotonic()
                             total_send_time = (send_end_time - send_start_time) * 1000  # ms
                             
-                            logger.info(f"✅ [SERVER2_SUCCESS] Sent {frame_count} frames in single payload: {total_send_time:.1f}ms total")
-                            logger.info(f"📊 [SERVER2_STATS] Throughput: {total_bytes / total_send_time * 1000:.0f} bytes/sec, {frame_count / total_send_time * 1000:.1f} frames/sec")
+                            logger.info(f"✅ [CHUNK_SUCCESS] Sent {chunks_sent} chunks, {frame_count} frames total: {total_send_time:.1f}ms")
+                            logger.info(f"📊 [CHUNK_STATS] Avg chunk size: {total_bytes/chunks_sent:.0f}bytes, throughput: {total_bytes / total_send_time * 1000:.0f} bytes/sec")
                             
                         except Exception as send_error:
-                            logger.error(f"❌ [SERVER2_SEND_ERROR] Failed to send concatenated audio: {send_error}")
+                            logger.error(f"❌ [CHUNK_SEND_ERROR] Failed to send chunked audio: {send_error}")
                             raise
                     else:
                         logger.error(f"❌ [V3_PROTOCOL] WebSocket disconnected before send")
