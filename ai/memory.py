@@ -78,15 +78,48 @@ class MemoryService:
     
     async def query_memory(self, device_id: str, keyword: str) -> Optional[str]:
         """
-        Server2方式: manager-apiから該当デバイスのsummaryMemoryを取得
-        今のところ検索機能はなく、summaryMemory全体を返すのみ
+        nekota-serverからユーザーのメモリーを取得
         """
         try:
-            # NOTE: manager-apiには検索エンドポイントがないため、
-            # ここではエージェント情報取得を実装する必要がある
-            # 一旦、簡易実装として空文字列を返す
-            logger.info(f"Memory query requested for device {device_id}, keyword '{keyword}' - not implemented yet")
+            # MACアドレスからデバイス番号に変換（一時的なハードコード）
+            device_number = "327546"  # 登録済みデバイス番号
+            
+            # 正規JWTとユーザーIDを取得
+            jwt_token, user_id = await self._get_valid_jwt_and_user(device_number)
+            
+            if not jwt_token or not user_id:
+                logger.error(f"❌ 正規JWT取得失敗: device_number={device_number}")
+                return None
+            
+            logger.info(f"🔍 [MEMORY_QUERY] Searching memories for user {user_id}, keyword '{keyword}'")
+            
+            # nekota-serverのメモリー検索APIを呼び出す
+            headers = {"Authorization": f"Bearer {jwt_token}"}
+            
+            # まずは全メモリーを取得してみる
+            response = await self.client.get(f"/api/memory/?user_id={user_id}", headers=headers)
+            response.raise_for_status()
+            
+            memories_data = response.json()
+            logger.info(f"🧠 [MEMORY_QUERY] Retrieved {len(memories_data)} memories")
+            
+            if not memories_data:
+                logger.info(f"🧠 [MEMORY_QUERY] No memories found for user {user_id}")
+                return None
+            
+            # メモリーを結合して返す（簡易実装）
+            memory_texts = [memory.get("text", "") for memory in memories_data if memory.get("text")]
+            if memory_texts:
+                combined_memory = "君について覚えていることはこれだよ: " + "、".join(memory_texts)
+                logger.info(f"🧠 [MEMORY_QUERY] Found memories: {combined_memory[:100]}...")
+                return combined_memory
+            else:
+                logger.info(f"🧠 [MEMORY_QUERY] No memory text found")
+                return None
+                
+        except httpx.HTTPStatusError as e:
+            logger.error(f"❌ HTTP error querying memory: {e.response.status_code} - {e.response.text}")
             return None
         except Exception as e:
-            logger.error(f"Error querying memory: {e}")
+            logger.error(f"❌ Unexpected error querying memory: {e}")
             return None

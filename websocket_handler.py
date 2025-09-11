@@ -528,16 +528,20 @@ class ConnectionHandler:
                     return
                 else:
                     logger.warning(f"🧠 [MEMORY_EMPTY] No content to save after keyword removal")
-            elif "覚えてる" in text or "何が好き" in text or "誕生日はいつ" in text:
+            elif "覚えてる" in text or "記憶ある" in text or "教えて" in text or "何が好き" in text or "誕生日はいつ" in text or "知ってる" in text or "記憶してる" in text:
                 memory_query = text
+                logger.info(f"🧠 [MEMORY_QUERY_TRIGGER] Memory query triggered! Query: '{text}'")
 
             # Prepare messages for LLM
             llm_messages = list(self.chat_history)
             if memory_query:
+                logger.info(f"🔍 [MEMORY_SEARCH] Starting memory search for query: '{memory_query}'")
                 retrieved_memory = await self.memory_service.query_memory(self.device_id, memory_query)
                 if retrieved_memory:
                     llm_messages.insert(0, {"role": "system", "content": f"ユーザーの記憶: {retrieved_memory}"})
-                    logger.info(f"Retrieved memory for LLM: {retrieved_memory[:50]}...")
+                    logger.info(f"✅ [MEMORY_FOUND] Retrieved memory for LLM: {retrieved_memory[:50]}...")
+                else:
+                    logger.info(f"❌ [MEMORY_NOT_FOUND] No memory found for query: '{memory_query}'")
 
             # Generate LLM response (server2 style - no extra keepalive)
             llm_response = await self.llm_service.chat_completion(llm_messages)
