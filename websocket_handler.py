@@ -866,22 +866,60 @@ class ConnectionHandler:
             return False
     
     async def _send_alarm_notification(self, date, hour, minute):
-        """ESP32にアラーム設定を通知"""
+        """ESP32にアラーム設定を通知＋キープアライブ開始"""
         try:
             alarm_msg = {
-                "type": "alarm_set",
+                "type": "alarm_set", 
                 "date": date.strftime("%Y-%m-%d"),
                 "time": f"{hour:02d}:{minute:02d}",
                 "keep_awake": True,
-                "message": "アラームが設定されました。スリープを無効化します。"
+                "message": "アラームが設定されました。キープアライブを開始します。"
             }
             
             import json
             await self.websocket.send_str(json.dumps(alarm_msg))
             logger.info(f"⏰ [ALARM_NOTIFY] Sent alarm notification to ESP32: {alarm_msg}")
             
+            # キープアライブタスクを開始
+            self._start_keepalive_for_alarm(date, hour, minute)
+            
         except Exception as e:
             logger.error(f"⏰ [ALARM_NOTIFY] Failed to send alarm notification: {e}")
+    
+    def _start_keepalive_for_alarm(self, date, hour, minute):
+        """アラーム時刻までキープアライブを送信"""
+        import asyncio
+        import datetime
+        
+        async def keepalive_task():
+            try:
+                target_datetime = datetime.datetime.combine(date, datetime.time(hour, minute))
+                logger.info(f"⏰ [KEEPALIVE] Starting keepalive until {target_datetime}")
+                
+                while datetime.datetime.now() < target_datetime:
+                    # 25秒間隔でキープアライブ（30秒スリープより短く）
+                    await asyncio.sleep(25)
+                    
+                    if hasattr(self, 'websocket') and self.websocket:
+                        keepalive_msg = {
+                            "type": "keepalive",
+                            "timestamp": datetime.datetime.now().isoformat(),
+                            "message": "アラーム待機中..."
+                        }
+                        import json
+                        await self.websocket.send_str(json.dumps(keepalive_msg))
+                        logger.debug(f"⏰ [KEEPALIVE] Sent keepalive message")
+                    else:
+                        logger.warning(f"⏰ [KEEPALIVE] WebSocket connection lost")
+                        break
+                        
+                logger.info(f"⏰ [KEEPALIVE] Reached alarm time, stopping keepalive")
+                
+            except Exception as e:
+                logger.error(f"⏰ [KEEPALIVE] Error in keepalive task: {e}")
+        
+        # バックグラウンドタスクとして実行
+        asyncio.create_task(keepalive_task())
 
     async def send_audio_response(self, text: str, rid: str = None):
         """Generate and send audio response"""
