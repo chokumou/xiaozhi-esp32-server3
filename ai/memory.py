@@ -40,6 +40,11 @@ class MemoryService:
             # デバイス用のJWTトークンを生成
             jwt_token = self._generate_device_jwt(device_id)
             
+            # デバッグ用の詳細ログ
+            logger.info(f"🔑 Generated JWT token for device {device_id}: {jwt_token[:50]}...")
+            logger.info(f"📡 Sending to: {self.api_url}/api/memory/")
+            logger.info(f"📦 Payload: {{'text': '{text[:30]}...', 'user_id': '{device_id}'}}")
+            
             # Authorizationヘッダーを設定
             headers = {"Authorization": f"Bearer {jwt_token}"}
             
@@ -49,13 +54,16 @@ class MemoryService:
                 headers=headers
             )
             response.raise_for_status()
-            logger.info(f"Memory saved for device {device_id}: {text[:50]}...")
+            logger.info(f"✅ Memory saved for device {device_id}: {text[:50]}...")
             return True
         except httpx.HTTPStatusError as e:
-            logger.error(f"HTTP error saving memory: {e.response.status_code} - {e.response.text}")
+            logger.error(f"❌ HTTP error saving memory: {e.response.status_code} - {e.response.text}")
+            logger.error(f"🔍 Request URL: {self.api_url}/api/memory/")
+            logger.error(f"🔍 Request headers: Authorization: Bearer {jwt_token[:30]}...")
+            logger.error(f"🔍 Request body: {{'text': '{text[:30]}...', 'user_id': '{device_id}'}}")
             return False
         except Exception as e:
-            logger.error(f"Error saving memory: {e}")
+            logger.error(f"❌ Unexpected error saving memory: {e}")
             return False
     
     async def query_memory(self, device_id: str, keyword: str) -> Optional[str]:
