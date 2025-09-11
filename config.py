@@ -17,9 +17,9 @@ class Config:
     OPENAI_TTS_MODEL: str = os.getenv("OPENAI_TTS_MODEL", "tts-1")
     OPENAI_TTS_VOICE: str = os.getenv("OPENAI_TTS_VOICE", "alloy")
     
-    # nekota-server API Configuration (for Memory)
-    NEKOTA_API_URL: str = os.getenv("NEKOTA_API_URL", "https://nekota-server-production.up.railway.app")
-    NEKOTA_API_SECRET: str = os.getenv("NEKOTA_API_SECRET", "")
+    # manager-api Configuration (for Memory)
+    MANAGER_API_URL: str = os.getenv("MANAGER_API_URL", "")
+    MANAGER_API_SECRET: str = os.getenv("MANAGER_API_SECRET", "")
     
     # JWT設定
     JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY", "")
