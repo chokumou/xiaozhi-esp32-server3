@@ -34,7 +34,7 @@ class Config:
     EDGE_TTS_VOICE: str = os.getenv("EDGE_TTS_VOICE", "ja-JP-NanamiNeural")  # 日本語女性音声（ネコ太用）
     
     # VOICEVOX設定（可愛い日本語音声）
-    USE_VOICEVOX: bool = os.getenv("USE_VOICEVOX", "true").lower() == "true"  # VOICEVOXをメインに
+    USE_VOICEVOX: bool = os.getenv("USE_VOICEVOX", "false").lower() == "true"  # VOICEVOX ENGINE準備中はfalse
     VOICEVOX_API_URL: str = os.getenv("VOICEVOX_API_URL", "http://localhost:50021")  # VOICEVOX ENGINE
     VOICEVOX_SPEAKER_ID: int = int(os.getenv("VOICEVOX_SPEAKER_ID", "1"))  # 四国めたん(ノーマル)
     
