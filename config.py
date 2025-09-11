@@ -31,7 +31,7 @@ class Config:
     
     # TTS設定（Server2互換）
     USE_EDGE_TTS: bool = os.getenv("USE_EDGE_TTS", "true").lower() == "true"
-    EDGE_TTS_VOICE: str = os.getenv("EDGE_TTS_VOICE", "zh-CN-XiaoxiaoNeural")  # Server2と同じ音声
+    EDGE_TTS_VOICE: str = os.getenv("EDGE_TTS_VOICE", "ja-JP-NanamiNeural")  # 日本語女性音声（ネコ太用）
     
     # キャラクター設定
     CHARACTER_NAME: str = os.getenv("CHARACTER_NAME", "ネコ太")
