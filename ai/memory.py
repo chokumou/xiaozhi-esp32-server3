@@ -114,7 +114,15 @@ class MemoryService:
             # メモリーを結合して返す（レスポンス形式に応じた処理）
             memory_texts = []
             
-            if isinstance(memories_data, list):
+            if isinstance(memories_data, dict) and 'memories' in memories_data:
+                # nekota-server形式: {'memories': [...], 'total': 4, 'page': 1, 'limit': 10}
+                memories_list = memories_data['memories']
+                for memory in memories_list:
+                    if isinstance(memory, dict):
+                        text = memory.get("text", "")
+                        if text:
+                            memory_texts.append(text)
+            elif isinstance(memories_data, list):
                 # リスト形式の場合
                 for memory in memories_data:
                     if isinstance(memory, dict):
