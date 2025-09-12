@@ -111,3 +111,4 @@ class EdgeTTSService:
             import traceback
             logger.error(f"Opus encoding traceback: {traceback.format_exc()}")
             return []
+

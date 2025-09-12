@@ -89,3 +89,4 @@ def test_different_payloads():
 if __name__ == "__main__":
     token = debug_jwt()
     test_different_payloads()
+

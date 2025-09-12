@@ -157,3 +157,4 @@ class VoicevoxTTSService:
         except Exception as e:
             logger.error(f"Error getting speakers: {e}")
             return []
+
