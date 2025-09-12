@@ -57,6 +57,10 @@ class ConnectionHandler:
         
         # Server2準拠: タイムアウト監視（環境変数で調整可能）
         self.timeout_seconds = Config.WEBSOCKET_TIMEOUT_SECONDS
+        
+        # 🎯 3. ACK + 再送キュー機能
+        self.pending_alarms = {}  # {message_id: alarm_data}
+        self.alarm_ack_timeouts = {}  # {message_id: timeout_task}
         logger.info(f"🕐 [TIMEOUT_CONFIG] WebSocket timeout set to: {self.timeout_seconds} seconds")
         
         self.timeout_task = None
@@ -382,6 +386,13 @@ class ConnectionHandler:
             logger.info(f"✅ [ACK_RECEIVED] ESP32 confirmed mic_off: {msg_json}")
         elif original_type == "audio_control" and action == "mic_on":
             logger.info(f"✅ [ACK_RECEIVED] ESP32 confirmed mic_on: {msg_json}")
+        elif original_type == "alarm_set":
+            # 🎯 alarm_set ACK処理
+            message_id = msg_json.get("message_id")
+            if message_id:
+                self._handle_alarm_ack(message_id)
+            else:
+                logger.warning(f"⚠️ [ALARM_ACK_NO_ID] alarm_set ACK without message_id: {msg_json}")
         else:
             logger.info(f"✅ [ACK_RECEIVED] Unknown ACK: {msg_json}")
 
@@ -522,7 +533,15 @@ class ConnectionHandler:
                 # アラーム設定処理
                 alarm_result = await self._process_alarm_request(text)
                 if alarm_result:
-                    await self.send_audio_response(alarm_result, rid)
+                    # 🎯 1. 順序固定: アラーム通知が _process_alarm_request 内で先行送信済み
+                    logger.info(f"⏰ [ALARM_ORDER_FIXED] Alarm notification sent before TTS")
+                    
+                    # 🎯 2. 非同期分離: 音声送信を並行実行（ブロックしない）
+                    import asyncio
+                    audio_task = asyncio.create_task(self.send_audio_response(alarm_result, rid))
+                    logger.info(f"🎵 [ASYNC_TTS] Audio response started in background")
+                    
+                    # TTS処理の完了は待たずに即座にreturn
                     return
                 else:
                     await self.send_audio_response("アラームの設定に失敗しました。時間を教えてくださいにゃん。", rid)
@@ -962,18 +981,30 @@ class ConnectionHandler:
             seconds_until_alarm = int((target_datetime - now).total_seconds())
             
             # 1. 優先送信: alarm_setメッセージ（ESP32のAlarmManagerに登録）
+            import uuid
+            message_id = str(uuid.uuid4())
+            alarm_id = int(datetime.datetime.now().timestamp())
+            
             alarm_set_msg = {
                 "type": "alarm_set",
-                "alarm_id": int(datetime.datetime.now().timestamp()),  # 一意のID
+                "message_id": message_id,  # 🎯 ACK追跡用ID
+                "alarm_id": alarm_id,
                 "alarm_date": date.strftime("%Y-%m-%d"),
                 "alarm_time": f"{hour:02d}:{minute:02d}",
                 "message": f"{hour:02d}:{minute:02d}のアラーム",
                 "timezone": "Asia/Tokyo"
             }
             
+            # 🎯 4. 再送キューに登録
+            self.pending_alarms[message_id] = alarm_set_msg
+            
             import json
             await self.websocket.send_str(json.dumps(alarm_set_msg))
-            logger.info(f"🔔 [ALARM_SET] Sent alarm_set to ESP32: {date.strftime('%Y-%m-%d')} {hour:02d}:{minute:02d}")
+            logger.info(f"🔔 [ALARM_SET] Sent alarm_set to ESP32: {date.strftime('%Y-%m-%d')} {hour:02d}:{minute:02d}, msg_id={message_id}")
+            
+            # 🎯 ACKタイムアウト設定（5秒）
+            timeout_task = asyncio.create_task(self._alarm_ack_timeout(message_id, 5.0))
+            self.alarm_ack_timeouts[message_id] = timeout_task
             
             # 少し待機してから次のメッセージ送信
             import asyncio
@@ -1034,6 +1065,61 @@ class ConnectionHandler:
                         
         except Exception as e:
             logger.error(f"⏰ [ALARM_RESEND] Failed to check pending alarms: {e}")
+    
+    async def _alarm_ack_timeout(self, message_id: str, timeout_seconds: float):
+        """ACKタイムアウト監視"""
+        await asyncio.sleep(timeout_seconds)
+        
+        if message_id in self.pending_alarms:
+            logger.warning(f"⏰ [ACK_TIMEOUT] No ACK received for alarm message: {message_id}")
+            # 再送実行（最大3回）
+            alarm_msg = self.pending_alarms[message_id]
+            await self._resend_alarm(message_id, alarm_msg)
+    
+    async def _resend_alarm(self, message_id: str, alarm_msg: dict, retry_count: int = 0):
+        """アラーム再送機能"""
+        max_retries = 3
+        if retry_count >= max_retries:
+            logger.error(f"❌ [ALARM_RESEND_FAILED] Max retries exceeded for message: {message_id}")
+            # 失敗時はペンディングから削除
+            self.pending_alarms.pop(message_id, None)
+            return
+        
+        try:
+            import json
+            await self.websocket.send_str(json.dumps(alarm_msg))
+            logger.info(f"🔄 [ALARM_RESEND] Retry {retry_count + 1}/{max_retries} for message: {message_id}")
+            
+            # 次回タイムアウト設定
+            timeout_task = asyncio.create_task(
+                self._alarm_resend_timeout(message_id, alarm_msg, retry_count + 1, 5.0)
+            )
+            self.alarm_ack_timeouts[message_id] = timeout_task
+            
+        except Exception as e:
+            logger.error(f"❌ [ALARM_RESEND_ERROR] Failed to resend alarm: {e}")
+    
+    async def _alarm_resend_timeout(self, message_id: str, alarm_msg: dict, retry_count: int, timeout_seconds: float):
+        """再送タイムアウト監視"""
+        await asyncio.sleep(timeout_seconds)
+        
+        if message_id in self.pending_alarms:
+            await self._resend_alarm(message_id, alarm_msg, retry_count)
+    
+    def _handle_alarm_ack(self, message_id: str):
+        """ACK受信処理"""
+        if message_id in self.pending_alarms:
+            logger.info(f"✅ [ALARM_ACK] Received ACK for message: {message_id}")
+            
+            # ペンディングから削除
+            self.pending_alarms.pop(message_id, None)
+            
+            # タイムアウトタスクをキャンセル
+            if message_id in self.alarm_ack_timeouts:
+                self.alarm_ack_timeouts[message_id].cancel()
+                self.alarm_ack_timeouts.pop(message_id, None)
+        else:
+            logger.warning(f"⚠️ [ALARM_ACK_UNKNOWN] Received ACK for unknown message: {message_id}")
     
     def _start_keepalive_for_alarm(self, date, hour, minute):
         """アラーム時刻までキープアライブを送信"""
