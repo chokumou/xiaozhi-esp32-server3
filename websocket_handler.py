@@ -1207,12 +1207,34 @@ class ConnectionHandler:
                         frame_duration_ms = 60  # Server2と同じ60ms
                         send_start_time = time.monotonic()
                         
+                        # 送信前のWebSocket状態詳細チェック
+                        logger.info(f"🔍 [WEBSOCKET_STATE] Before send: closed={self.websocket.closed}, state={getattr(self.websocket, 'state', 'unknown')}")
+                        
+                        if self.websocket.closed:
+                            logger.error(f"❌ [SERVER2_EXACT] WebSocket already closed before sending")
+                            raise Exception("WebSocket closed before audio send")
+                        
                         logger.info(f"🎯 [SERVER2_EXACT] Sending {frame_count} frames individually, 60ms intervals (exactly like Server2)")
                         
                         try:
                             for frame_index, opus_frame in enumerate(opus_frames_list):
-                                # 各フレームを個別に送信（Server2方式）
-                                await self.websocket.send_bytes(opus_frame)
+                                # WebSocket接続状態を毎フレームチェック
+                                if self.websocket.closed:
+                                    logger.error(f"❌ [SERVER2_EXACT_ERROR] WebSocket closed at frame {frame_index}/{frame_count}")
+                                    break
+                                
+                                try:
+                                    # 各フレームを個別に送信（Server2方式）
+                                    await self.websocket.send_bytes(opus_frame)
+                                    
+                                    # 10フレーム毎に接続状態ログ
+                                    if frame_index % 10 == 0:
+                                        logger.debug(f"🔄 [SERVER2_PROGRESS] Frame {frame_index}/{frame_count}, WS state: closed={self.websocket.closed}")
+                                    
+                                except Exception as frame_error:
+                                    logger.error(f"❌ [SERVER2_FRAME_ERROR] Frame {frame_index} failed: {frame_error}")
+                                    # フレーム送信失敗時は即座に終了
+                                    break
                                 
                                 # 最後のフレーム以外は60ms待機
                                 if frame_index < len(opus_frames_list) - 1:
@@ -1227,6 +1249,12 @@ class ConnectionHandler:
                             
                         except Exception as send_error:
                             logger.error(f"❌ [SERVER2_EXACT_ERROR] Failed to send individual frames: {send_error}")
+                            
+                            # WebSocket切断が原因の場合は再接続を試行
+                            if "closing transport" in str(send_error) or "closed" in str(send_error):
+                                logger.warning(f"🔄 [WEBSOCKET_RECONNECT] Attempting reconnection due to transport closure")
+                                # WebSocket切断フラグをセット（アプリケーション層で再接続処理）
+                                self.websocket.closed = True
                             raise
                     else:
                         logger.error(f"❌ [V3_PROTOCOL] WebSocket disconnected before send")
