@@ -893,11 +893,15 @@ class ConnectionHandler:
                 import asyncio
                 
                 if ack_received:
-                    logger.info(f"✅ [OPTIMIZED_FLOW] Phase 2: ACK confirmed, starting TTS in background")
+                    logger.info(f"✅ [OPTIMIZED_FLOW] Phase 2: ACK confirmed, waiting for WebSocket to stabilize...")
+                    
+                    # 🎯 WebSocket安定化待機（フレーム処理を落ち着かせる）
+                    await asyncio.sleep(0.5)  # 500ms待機でフレーム処理安定化
+                    logger.info(f"🌊 [WEBSOCKET_STABLE] WebSocket stabilized, starting TTS in background")
                     
                     # 3. TTS を別スレッドで開始（ブロックしない）
                     audio_task = asyncio.create_task(self.send_audio_response(alarm_result, rid))
-                    logger.info(f"🎵 [BACKGROUND_TTS] TTS started in background after ACK confirmation")
+                    logger.info(f"🎵 [BACKGROUND_TTS] TTS started in background after stabilization")
                 else:
                     logger.warning(f"⚠️ [OPTIMIZED_FLOW] ACK timeout, proceeding with TTS anyway")
                     # ACKタイムアウトでもTTSは実行
