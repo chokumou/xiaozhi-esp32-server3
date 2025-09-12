@@ -530,22 +530,9 @@ class ConnectionHandler:
             if any(keyword in text for keyword in ["起こして", "アラーム", "目覚まし", "時に鳴らして"]):
                 logger.info(f"⏰ [ALARM_TRIGGER] Alarm request detected: '{text}'")
                 
-                # アラーム設定処理
-                alarm_result = await self._process_alarm_request(text)
-                if alarm_result:
-                    # 🎯 1. 順序固定: アラーム通知が _process_alarm_request 内で先行送信済み
-                    logger.info(f"⏰ [ALARM_ORDER_FIXED] Alarm notification sent before TTS")
-                    
-                    # 🎯 2. 非同期分離: 音声送信を並行実行（ブロックしない）
-                    import asyncio
-                    audio_task = asyncio.create_task(self.send_audio_response(alarm_result, rid))
-                    logger.info(f"🎵 [ASYNC_TTS] Audio response started in background")
-                    
-                    # TTS処理の完了は待たずに即座にreturn
-                    return
-                else:
-                    await self.send_audio_response("アラームの設定に失敗しました。時間を教えてくださいにゃん。", rid)
-                    return
+                # 🎯 順序最適化: アラーム通知→ACK確認→TTS別スレッド
+                alarm_result = await self._process_alarm_request_optimized(text, rid)
+                return
             
             # Check for alarm stop keywords
             elif any(keyword in text for keyword in ["アラーム止めて", "止めて", "アラーム停止", "もういい", "起きた"]):
@@ -889,6 +876,59 @@ class ConnectionHandler:
         except Exception as e:
             logger.error(f"⏰ [ALARM_ERROR] Error processing alarm request: {e}")
             return None
+    
+    async def _process_alarm_request_optimized(self, text: str, rid: str):
+        """最適化されたアラーム処理: 通知→ACK→TTS別スレッド"""
+        try:
+            # 1. アラーム作成 + 軽量通知送信
+            alarm_result = await self._process_alarm_request(text)
+            
+            if alarm_result:
+                logger.info(f"⏰ [OPTIMIZED_FLOW] Phase 1: Alarm notification sent, waiting for ACK...")
+                
+                # 2. ACK確認待機（最大2秒）
+                ack_received = await self._wait_for_latest_alarm_ack(timeout=2.0)
+                
+                if ack_received:
+                    logger.info(f"✅ [OPTIMIZED_FLOW] Phase 2: ACK confirmed, starting TTS in background")
+                    
+                    # 3. TTS を別スレッドで開始（ブロックしない）
+                    import asyncio
+                    audio_task = asyncio.create_task(self.send_audio_response(alarm_result, rid))
+                    logger.info(f"🎵 [BACKGROUND_TTS] TTS started in background after ACK confirmation")
+                else:
+                    logger.warning(f"⚠️ [OPTIMIZED_FLOW] ACK timeout, proceeding with TTS anyway")
+                    # ACKタイムアウトでもTTSは実行
+                    audio_task = asyncio.create_task(self.send_audio_response(alarm_result, rid))
+            else:
+                # アラーム作成失敗
+                await self.send_audio_response("アラームの設定に失敗しました。時間を教えてくださいにゃん。", rid)
+                
+        except Exception as e:
+            logger.error(f"⏰ [OPTIMIZED_ERROR] Error in optimized alarm flow: {e}")
+            await self.send_audio_response("アラームの設定でエラーが発生しました。", rid)
+    
+    async def _wait_for_latest_alarm_ack(self, timeout: float) -> bool:
+        """最新のアラームACKを待機"""
+        import asyncio
+        
+        # 最新のpending alarmのmessage_idを取得
+        if not self.pending_alarms:
+            return False
+            
+        latest_message_id = list(self.pending_alarms.keys())[-1]
+        
+        # ACK待機ループ
+        start_time = asyncio.get_event_loop().time()
+        while (asyncio.get_event_loop().time() - start_time) < timeout:
+            if latest_message_id not in self.pending_alarms:
+                # ACK受信済み（pendingから削除された）
+                logger.info(f"🎯 [ACK_WAIT] ACK received for message: {latest_message_id}")
+                return True
+            await asyncio.sleep(0.1)  # 100ms間隔でチェック
+        
+        logger.warning(f"⏰ [ACK_WAIT] Timeout waiting for ACK: {latest_message_id}")
+        return False
     
     async def _create_alarm_via_api(self, date: str, time: str, message: str) -> bool:
         """nekota-server APIを使ってアラームを作成"""
