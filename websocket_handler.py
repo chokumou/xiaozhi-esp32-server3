@@ -325,6 +325,9 @@ class ConnectionHandler:
         # Server2準拠: タイムアウト監視タスク起動
         self.timeout_task = asyncio.create_task(self._check_timeout())
         logger.info(f"Started timeout monitoring task for {self.device_id}")
+        
+        # WebSocket再接続時の未送信アラーム再送チェック
+        await self._check_pending_alarms()
 
     async def handle_listen_message(self, msg_json: Dict[str, Any]):
         """Handle listen state changes"""
@@ -958,17 +961,35 @@ class ConnectionHandler:
             now = datetime.datetime.now()
             seconds_until_alarm = int((target_datetime - now).total_seconds())
             
-            alarm_msg = {
+            # 1. 優先送信: alarm_setメッセージ（ESP32のAlarmManagerに登録）
+            alarm_set_msg = {
+                "type": "alarm_set",
+                "alarm_id": int(datetime.datetime.now().timestamp()),  # 一意のID
+                "alarm_date": date.strftime("%Y-%m-%d"),
+                "alarm_time": f"{hour:02d}:{minute:02d}",
+                "message": f"{hour:02d}:{minute:02d}のアラーム",
+                "timezone": "Asia/Tokyo"
+            }
+            
+            import json
+            await self.websocket.send_str(json.dumps(alarm_set_msg))
+            logger.info(f"🔔 [ALARM_SET] Sent alarm_set to ESP32: {date.strftime('%Y-%m-%d')} {hour:02d}:{minute:02d}")
+            
+            # 少し待機してから次のメッセージ送信
+            import asyncio
+            await asyncio.sleep(0.1)
+            
+            # 2. 電源管理メッセージ（既存のpower_wakeup）
+            power_wakeup_msg = {
                 "type": "power_wakeup",
-                "reason": "alarm_scheduled",
+                "reason": "alarm_scheduled", 
                 "seconds_until_alarm": seconds_until_alarm,
                 "alarm_time": f"{hour:02d}:{minute:02d}",
                 "alarm_date": date.strftime("%Y-%m-%d"),
                 "message": f"アラーム設定: PowerSaveTimer WakeUp() - {seconds_until_alarm}秒後にアラーム"
             }
             
-            import json
-            await self.websocket.send_str(json.dumps(alarm_msg))
+            await self.websocket.send_str(json.dumps(power_wakeup_msg))
             logger.info(f"⚡ [POWER_WAKEUP] Sent power_wakeup to ESP32: WakeUp() for alarm in {seconds_until_alarm}s")
             
             # サーバー側のタイムアウトも延長
@@ -977,7 +998,42 @@ class ConnectionHandler:
                 logger.info(f"⏰ [SERVER_TIMEOUT] Extended server timeout to {self.timeout_seconds}s for alarm")
             
         except Exception as e:
-            logger.error(f"⏰ [POWER_MGMT] Failed to send power management: {e}")
+            logger.error(f"⏰ [ALARM_NOTIFICATION] Failed to send alarm messages: {e}")
+    
+    async def _check_pending_alarms(self):
+        """WebSocket再接続時に未送信アラームをチェック・再送"""
+        try:
+            import datetime
+            import requests
+            
+            # デバイスIDを使ってアラーム情報を取得
+            response = requests.get(
+                f"https://nekota-server-production.up.railway.app/alarm/check?device_id={self.device_id}",
+                timeout=5
+            )
+            
+            if response.status_code == 200:
+                alarms = response.json()
+                logger.info(f"🔍 [ALARM_RESEND] Found {len(alarms)} pending alarms for {self.device_id}")
+                
+                # 未来のアラームのみ再送
+                now = datetime.datetime.now()
+                for alarm in alarms:
+                    try:
+                        alarm_datetime = datetime.datetime.fromisoformat(alarm['alarm_datetime'].replace('Z', '+00:00'))
+                        if alarm_datetime > now:
+                            # 再送実行
+                            await self._send_alarm_notification(
+                                alarm_datetime.date(),
+                                alarm_datetime.hour,
+                                alarm_datetime.minute
+                            )
+                            logger.info(f"🔄 [ALARM_RESENT] Resent alarm: {alarm['alarm_datetime']}")
+                    except Exception as alarm_error:
+                        logger.error(f"❌ [ALARM_RESEND_ERROR] Failed to resend alarm: {alarm_error}")
+                        
+        except Exception as e:
+            logger.error(f"⏰ [ALARM_RESEND] Failed to check pending alarms: {e}")
     
     def _start_keepalive_for_alarm(self, date, hour, minute):
         """アラーム時刻までキープアライブを送信"""
@@ -1236,9 +1292,9 @@ class ConnectionHandler:
                                     # フレーム送信失敗時は即座に終了
                                     break
                                 
-                                # 最後のフレーム以外は60ms待機
+                                # 最後のフレーム以外は待機（WebSocket安定性のため少し短めに）
                                 if frame_index < len(opus_frames_list) - 1:
-                                    await asyncio.sleep(frame_duration_ms / 1000.0)  # 60ms = 0.06s
+                                    await asyncio.sleep(0.040)  # 40ms（60ms→40msで高速化＋安定性向上）
                             
                             send_end_time = time.monotonic()
                             total_send_time = (send_end_time - send_start_time) * 1000  # ms
