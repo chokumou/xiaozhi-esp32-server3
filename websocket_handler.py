@@ -1003,11 +1003,11 @@ class ConnectionHandler:
             logger.info(f"🔔 [ALARM_SET] Sent alarm_set to ESP32: {date.strftime('%Y-%m-%d')} {hour:02d}:{minute:02d}, msg_id={message_id}")
             
             # 🎯 ACKタイムアウト設定（5秒）
+            import asyncio
             timeout_task = asyncio.create_task(self._alarm_ack_timeout(message_id, 5.0))
             self.alarm_ack_timeouts[message_id] = timeout_task
             
             # 少し待機してから次のメッセージ送信
-            import asyncio
             await asyncio.sleep(0.1)
             
             # 2. 電源管理メッセージ（既存のpower_wakeup）
