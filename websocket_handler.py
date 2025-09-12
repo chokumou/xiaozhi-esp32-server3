@@ -889,11 +889,13 @@ class ConnectionHandler:
                 # 2. ACK確認待機（最大2秒）
                 ack_received = await self._wait_for_latest_alarm_ack(timeout=2.0)
                 
+                # asyncioインポートを先頭で実行
+                import asyncio
+                
                 if ack_received:
                     logger.info(f"✅ [OPTIMIZED_FLOW] Phase 2: ACK confirmed, starting TTS in background")
                     
                     # 3. TTS を別スレッドで開始（ブロックしない）
-                    import asyncio
                     audio_task = asyncio.create_task(self.send_audio_response(alarm_result, rid))
                     logger.info(f"🎵 [BACKGROUND_TTS] TTS started in background after ACK confirmation")
                 else:
