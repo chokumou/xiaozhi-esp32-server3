@@ -936,19 +936,128 @@ class ConnectionHandler:
         logger.warning(f"⏰ [ACK_WAIT] Timeout waiting for ACK: {latest_message_id}")
         return False
     
+    async def _process_alarm_setting_only(self, text: str) -> bool:
+        """アラーム設定のみを処理（TTS応答なし）"""
+        import re
+        import datetime
+        
+        try:
+            # 相対時刻パターンを先にチェック
+            relative_patterns = [
+                r"(\d{1,2})分後",                 # "5分後", "30分後"
+                r"(\d{1,2})時間後",               # "1時間後", "2時間後"
+                r"(\d{1,2})時間(\d{1,2})分後"     # "1時間30分後"
+            ]
+            
+            hour, minute = None, 0
+            is_relative = False
+            
+            # 相対時刻の処理
+            for pattern in relative_patterns:
+                match = re.search(pattern, text)
+                if match:
+                    is_relative = True
+                    now = datetime.datetime.now()
+                    
+                    if "分後" in pattern and "時間" not in pattern:
+                        # N分後
+                        minutes_later = int(match.group(1))
+                        target_time = now + datetime.timedelta(minutes=minutes_later)
+                    elif "時間後" in pattern and "分後" not in pattern:
+                        # N時間後
+                        hours_later = int(match.group(1))
+                        target_time = now + datetime.timedelta(hours=hours_later)
+                    elif "時間" in pattern and "分後" in pattern:
+                        # N時間M分後
+                        hours_later = int(match.group(1))
+                        minutes_later = int(match.group(2))
+                        target_time = now + datetime.timedelta(hours=hours_later, minutes=minutes_later)
+                    
+                    hour = target_time.hour
+                    minute = target_time.minute
+                    logger.info(f"⏰ [RELATIVE_TIME] {text} → {target_time.strftime('%H:%M')}")
+                    break
+            
+            # 絶対時刻パターン（相対時刻が見つからなかった場合）
+            if not is_relative:
+                time_patterns = [
+                    r"(\d{1,2})時(\d{1,2}?)分?",      # "7時30分", "7時"
+                    r"(\d{1,2}):(\d{2})",             # "7:30"  
+                    r"(\d{1,2})時半",                 # "7時半"
+                ]
+                
+                for pattern in time_patterns:
+                    match = re.search(pattern, text)
+                    if match:
+                        if "時半" in pattern:
+                            hour = int(match.group(1))
+                            minute = 30
+                        else:
+                            hour = int(match.group(1))
+                            minute = int(match.group(2)) if match.group(2) else 0
+                        break
+            
+            if hour is None:
+                logger.warning(f"⏰ [TIME_PARSE_FAILED] Could not extract time from: '{text}'")
+                return False
+            
+            # 24時間形式に変換
+            if 0 <= hour <= 23:
+                if hour < 12 and any(keyword in text for keyword in ["午後", "夜", "夕方"]):
+                    hour += 12
+                elif hour == 12 and any(keyword in text for keyword in ["午前", "朝"]):
+                    hour = 0
+            
+            # 明日のアラームか今日のアラームか判定
+            current_time = datetime.datetime.now()
+            target_date = current_time.date()
+            
+            # アラーム時刻を今日の日付で作成
+            alarm_datetime = datetime.datetime.combine(target_date, datetime.time(hour, minute))
+            
+            # もし設定時刻が現在時刻より前なら、明日に設定
+            if alarm_datetime <= current_time:
+                target_date = target_date + datetime.timedelta(days=1)
+                logger.info(f"⏰ [TOMORROW_ALARM] Setting alarm for tomorrow: {target_date} {hour:02d}:{minute:02d}")
+            else:
+                logger.info(f"⏰ [TODAY_ALARM] Setting alarm for today: {target_date} {hour:02d}:{minute:02d}")
+            
+            # アラームメッセージ
+            alarm_message = f"アラーム: {hour:02d}:{minute:02d}"
+            
+            # アラーム設定API呼び出し
+            alarm_success = await self._create_alarm_via_api(
+                date=target_date.strftime("%Y-%m-%d"),
+                time=f"{hour:02d}:{minute:02d}",
+                message=alarm_message
+            )
+            
+            if alarm_success:
+                logger.info(f"⏰ [ALARM_SUCCESS] Alarm set for {target_date} {hour:02d}:{minute:02d}")
+                # ESP32にアラーム設定通知を送信
+                await self._send_alarm_notification(target_date, hour, minute)
+                return True
+            else:
+                logger.error(f"⏰ [ALARM_FAILED] Failed to create alarm")
+                return False
+                
+        except Exception as e:
+            logger.error(f"⏰ [ALARM_ERROR] Error processing alarm request: {e}")
+            return False
+
     async def _process_alarm_request_simple(self, text: str):
         """シンプルなアラーム処理: 設定のみ、AI応答なし"""
         try:
-            # 1. アラーム作成 + 通知送信
-            alarm_result = await self._process_alarm_request(text)
+            # 1. アラーム設定処理（TTS応答なし）
+            alarm_result = await self._process_alarm_setting_only(text)
             
             if alarm_result:
                 logger.info(f"⏰ [SIMPLE_ALARM] Alarm set successfully, no TTS response")
                 
-                # 2. 固定の「アラーム設定中」メッセージを画面表示のみ
+                # 2. 固定の「アラーム設定完了」メッセージを画面表示のみ
                 display_msg = {
                     "type": "display_text",
-                    "text": "アラーム設定中...",
+                    "text": "アラーム設定完了",
                     "duration": 3000  # 3秒表示
                 }
                 
