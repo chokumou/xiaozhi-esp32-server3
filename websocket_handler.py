@@ -530,8 +530,8 @@ class ConnectionHandler:
             if any(keyword in text for keyword in ["起こして", "アラーム", "目覚まし", "時に鳴らして"]):
                 logger.info(f"⏰ [ALARM_TRIGGER] Alarm request detected: '{text}'")
                 
-                # 🎯 順序最適化: アラーム通知→ACK確認→TTS別スレッド
-                alarm_result = await self._process_alarm_request_optimized(text, rid)
+                # 🎯 シンプル確実: アラーム設定のみ、AI応答なし
+                alarm_result = await self._process_alarm_request_simple(text)
                 return
             
             # Check for alarm stop keywords
@@ -935,6 +935,41 @@ class ConnectionHandler:
         
         logger.warning(f"⏰ [ACK_WAIT] Timeout waiting for ACK: {latest_message_id}")
         return False
+    
+    async def _process_alarm_request_simple(self, text: str):
+        """シンプルなアラーム処理: 設定のみ、AI応答なし"""
+        try:
+            # 1. アラーム作成 + 通知送信
+            alarm_result = await self._process_alarm_request(text)
+            
+            if alarm_result:
+                logger.info(f"⏰ [SIMPLE_ALARM] Alarm set successfully, no TTS response")
+                
+                # 2. 固定の「アラーム設定中」メッセージを画面表示のみ
+                display_msg = {
+                    "type": "display_text",
+                    "text": "アラーム設定中...",
+                    "duration": 3000  # 3秒表示
+                }
+                
+                import json
+                await self.websocket.send_str(json.dumps(display_msg))
+                logger.info(f"📱 [FIXED_DISPLAY] Sent fixed alarm setting message to display")
+                
+            else:
+                # 設定失敗時も固定メッセージ
+                error_msg = {
+                    "type": "display_text", 
+                    "text": "アラーム設定失敗",
+                    "duration": 3000
+                }
+                
+                import json
+                await self.websocket.send_str(json.dumps(error_msg))
+                logger.info(f"📱 [FIXED_ERROR] Sent fixed error message to display")
+                
+        except Exception as e:
+            logger.error(f"⏰ [SIMPLE_ERROR] Error in simple alarm flow: {e}")
     
     async def _create_alarm_via_api(self, date: str, time: str, message: str) -> bool:
         """nekota-server APIを使ってアラームを作成"""
