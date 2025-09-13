@@ -1008,21 +1008,25 @@ class ConnectionHandler:
                 elif hour == 12 and any(keyword in text for keyword in ["午前", "朝"]):
                     hour = 0
             
-            # 明日のアラームか今日のアラームか判定（UTCで計算）
+            # 明日のアラームか今日のアラームか判定（ユーザーのタイムゾーンで計算）
             import pytz
-            utc = pytz.UTC
-            current_time_utc = datetime.datetime.now(utc)
-            target_date = current_time_utc.date()
             
-            # アラーム時刻をUTCで作成
-            alarm_datetime_utc = datetime.datetime.combine(target_date, datetime.time(hour, minute)).replace(tzinfo=utc)
+            # ユーザーのタイムゾーンを取得（デフォルトはJST）
+            user_timezone = self._get_user_timezone()
+            user_tz = pytz.timezone(user_timezone)
+            current_time_user = datetime.datetime.now(user_tz)
+            target_date = current_time_user.date()
+            
+            # アラーム時刻をユーザータイムゾーンで作成
+            alarm_datetime_user = datetime.datetime.combine(target_date, datetime.time(hour, minute))
+            alarm_datetime_user = user_tz.localize(alarm_datetime_user)
             
             # もし設定時刻が現在時刻より前なら、明日に設定
-            if alarm_datetime_utc <= current_time_utc:
+            if alarm_datetime_user <= current_time_user:
                 target_date = target_date + datetime.timedelta(days=1)
-                logger.info(f"⏰ [TOMORROW_ALARM] Setting alarm for tomorrow (UTC): {target_date} {hour:02d}:{minute:02d}")
+                logger.info(f"⏰ [TOMORROW_ALARM] Setting alarm for tomorrow ({user_timezone}): {target_date} {hour:02d}:{minute:02d}")
             else:
-                logger.info(f"⏰ [TODAY_ALARM] Setting alarm for today (UTC): {target_date} {hour:02d}:{minute:02d}")
+                logger.info(f"⏰ [TODAY_ALARM] Setting alarm for today ({user_timezone}): {target_date} {hour:02d}:{minute:02d}")
             
             # アラームメッセージ
             alarm_message = f"アラーム: {hour:02d}:{minute:02d}"
@@ -1038,6 +1042,16 @@ class ConnectionHandler:
                 logger.info(f"⏰ [ALARM_SUCCESS] Alarm set for {target_date} {hour:02d}:{minute:02d}")
                 # ESP32にアラーム設定通知を送信
                 await self._send_alarm_notification(target_date, hour, minute)
+                
+                # ディスプレイにアラーム設定完了メッセージを表示
+                display_msg = {
+                    "type": "display_text",
+                    "text": "アラーム設定完了",
+                    "duration": 3000
+                }
+                await self.websocket.send_str(json.dumps(display_msg))
+                logger.info(f"📱 [DISPLAY] Sent alarm setting completion message")
+                
                 return True
             else:
                 logger.error(f"⏰ [ALARM_FAILED] Failed to create alarm")
@@ -1081,6 +1095,31 @@ class ConnectionHandler:
                 
         except Exception as e:
             logger.error(f"⏰ [SIMPLE_ERROR] Error in simple alarm flow: {e}")
+    
+    def _get_user_timezone(self):
+        """ユーザーのタイムゾーンを取得（デフォルトはJST）"""
+        # TODO: ユーザー設定からタイムゾーンを取得
+        # 現在はデフォルトでJSTを使用
+        # 将来的には以下のように実装：
+        # user_settings = self.get_user_settings()
+        # return user_settings.get('timezone', 'Asia/Tokyo')
+        
+        # 世界中対応のタイムゾーンマップ
+        region_timezone_map = {
+            'JP': 'Asia/Tokyo',
+            'US': 'America/New_York',
+            'GB': 'Europe/London',
+            'DE': 'Europe/Berlin',
+            'FR': 'Europe/Paris',
+            'AU': 'Australia/Sydney',
+            'CN': 'Asia/Shanghai',
+            'KR': 'Asia/Seoul',
+            'HK': 'Asia/Hong_Kong',
+            'SG': 'Asia/Singapore'
+        }
+        
+        # デフォルトはJST
+        return 'Asia/Tokyo'
     
     async def _create_alarm_via_api(self, date: str, time: str, message: str) -> bool:
         """nekota-server APIを使ってアラームを作成"""
@@ -1177,16 +1216,13 @@ class ConnectionHandler:
             message_id = str(uuid.uuid4())
             alarm_id = int(datetime.datetime.now().timestamp())
             
-            # サーバーの現在時刻を追加（ESP32の時刻修正用）
-            import datetime
-            import pytz
+            # ユーザータイムゾーンでの現在時刻を取得
+            user_timezone = self._get_user_timezone()
+            user_tz = pytz.timezone(user_timezone)
+            server_now_user = datetime.datetime.now(user_tz)
             
-            # UTC時刻を取得
+            # UTC時刻も取得（デバッグ用）
             utc_now = datetime.datetime.now(pytz.UTC)
-            
-            # JST時刻もデバッグ用に保持
-            jst = pytz.timezone('Asia/Tokyo')
-            server_now_jst = utc_now.astimezone(jst)
             
             alarm_set_msg = {
                 "type": "alarm_set",
@@ -1195,15 +1231,15 @@ class ConnectionHandler:
                 "alarm_date": date.strftime("%Y-%m-%d"),
                 "alarm_time": f"{hour:02d}:{minute:02d}",
                 "message": f"{hour:02d}:{minute:02d}のアラーム",
-                "timezone": "Asia/Tokyo",
-                "server_time": utc_now.strftime("%Y-%m-%d %H:%M:%S"),  # サーバー現在時刻（UTC）
-                "server_timestamp": int(utc_now.timestamp())  # Unix timestamp（UTC）
+                "timezone": user_timezone,  # ユーザータイムゾーン
+                "server_time": server_now_user.strftime("%Y-%m-%d %H:%M:%S"),  # サーバー現在時刻（ユーザータイムゾーン）
+                "server_timestamp": int(server_now_user.timestamp())  # Unix timestamp（ユーザータイムゾーン）
             }
             
             # デバッグログ：送信する時刻情報を確認
             logger.info(f"🕐 [TIME_DEBUG] Server time (UTC): {utc_now.strftime('%Y-%m-%d %H:%M:%S')}")
-            logger.info(f"🕐 [TIME_DEBUG] Server time (JST): {server_now_jst.strftime('%Y-%m-%d %H:%M:%S')}")
-            logger.info(f"🕐 [TIME_DEBUG] Server timestamp (UTC): {int(utc_now.timestamp())}")
+            logger.info(f"🕐 [TIME_DEBUG] Server time (User TZ): {server_now_user.strftime('%Y-%m-%d %H:%M:%S')}")
+            logger.info(f"🕐 [TIME_DEBUG] Server timestamp (User TZ): {int(server_now_user.timestamp())}")
             
             # 🎯 4. 再送キューに登録
             self.pending_alarms[message_id] = alarm_set_msg
