@@ -1008,19 +1008,21 @@ class ConnectionHandler:
                 elif hour == 12 and any(keyword in text for keyword in ["午前", "朝"]):
                     hour = 0
             
-            # 明日のアラームか今日のアラームか判定
-            current_time = datetime.datetime.now()
-            target_date = current_time.date()
+            # 明日のアラームか今日のアラームか判定（UTCで計算）
+            import pytz
+            utc = pytz.UTC
+            current_time_utc = datetime.datetime.now(utc)
+            target_date = current_time_utc.date()
             
-            # アラーム時刻を今日の日付で作成
-            alarm_datetime = datetime.datetime.combine(target_date, datetime.time(hour, minute))
+            # アラーム時刻をUTCで作成
+            alarm_datetime_utc = datetime.datetime.combine(target_date, datetime.time(hour, minute)).replace(tzinfo=utc)
             
             # もし設定時刻が現在時刻より前なら、明日に設定
-            if alarm_datetime <= current_time:
+            if alarm_datetime_utc <= current_time_utc:
                 target_date = target_date + datetime.timedelta(days=1)
-                logger.info(f"⏰ [TOMORROW_ALARM] Setting alarm for tomorrow: {target_date} {hour:02d}:{minute:02d}")
+                logger.info(f"⏰ [TOMORROW_ALARM] Setting alarm for tomorrow (UTC): {target_date} {hour:02d}:{minute:02d}")
             else:
-                logger.info(f"⏰ [TODAY_ALARM] Setting alarm for today: {target_date} {hour:02d}:{minute:02d}")
+                logger.info(f"⏰ [TODAY_ALARM] Setting alarm for today (UTC): {target_date} {hour:02d}:{minute:02d}")
             
             # アラームメッセージ
             alarm_message = f"アラーム: {hour:02d}:{minute:02d}"
