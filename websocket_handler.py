@@ -1177,12 +1177,14 @@ class ConnectionHandler:
             
             # サーバーの現在時刻を追加（ESP32の時刻修正用）
             import datetime
-            server_now = datetime.datetime.now()
-            
-            # タイムゾーンをJSTに設定
             import pytz
+            
+            # UTC時刻を取得
+            utc_now = datetime.datetime.now(pytz.UTC)
+            
+            # JST時刻もデバッグ用に保持
             jst = pytz.timezone('Asia/Tokyo')
-            server_now_jst = datetime.datetime.now(jst)
+            server_now_jst = utc_now.astimezone(jst)
             
             alarm_set_msg = {
                 "type": "alarm_set",
@@ -1192,13 +1194,14 @@ class ConnectionHandler:
                 "alarm_time": f"{hour:02d}:{minute:02d}",
                 "message": f"{hour:02d}:{minute:02d}のアラーム",
                 "timezone": "Asia/Tokyo",
-                "server_time": server_now_jst.strftime("%Y-%m-%d %H:%M:%S"),  # サーバー現在時刻（JST）
-                "server_timestamp": int(server_now.timestamp())  # Unix timestamp（UTC）
+                "server_time": utc_now.strftime("%Y-%m-%d %H:%M:%S"),  # サーバー現在時刻（UTC）
+                "server_timestamp": int(utc_now.timestamp())  # Unix timestamp（UTC）
             }
             
             # デバッグログ：送信する時刻情報を確認
+            logger.info(f"🕐 [TIME_DEBUG] Server time (UTC): {utc_now.strftime('%Y-%m-%d %H:%M:%S')}")
             logger.info(f"🕐 [TIME_DEBUG] Server time (JST): {server_now_jst.strftime('%Y-%m-%d %H:%M:%S')}")
-            logger.info(f"🕐 [TIME_DEBUG] Server timestamp (UTC): {int(server_now.timestamp())}")
+            logger.info(f"🕐 [TIME_DEBUG] Server timestamp (UTC): {int(utc_now.timestamp())}")
             
             # 🎯 4. 再送キューに登録
             self.pending_alarms[message_id] = alarm_set_msg
