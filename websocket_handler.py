@@ -1175,6 +1175,15 @@ class ConnectionHandler:
             message_id = str(uuid.uuid4())
             alarm_id = int(datetime.datetime.now().timestamp())
             
+            # サーバーの現在時刻を追加（ESP32の時刻修正用）
+            import datetime
+            server_now = datetime.datetime.now()
+            
+            # タイムゾーンをJSTに設定
+            import pytz
+            jst = pytz.timezone('Asia/Tokyo')
+            server_now_jst = datetime.datetime.now(jst)
+            
             alarm_set_msg = {
                 "type": "alarm_set",
                 "message_id": message_id,  # 🎯 ACK追跡用ID
@@ -1182,8 +1191,14 @@ class ConnectionHandler:
                 "alarm_date": date.strftime("%Y-%m-%d"),
                 "alarm_time": f"{hour:02d}:{minute:02d}",
                 "message": f"{hour:02d}:{minute:02d}のアラーム",
-                "timezone": "Asia/Tokyo"
+                "timezone": "Asia/Tokyo",
+                "server_time": server_now_jst.strftime("%Y-%m-%d %H:%M:%S"),  # サーバー現在時刻（JST）
+                "server_timestamp": int(server_now.timestamp())  # Unix timestamp（UTC）
             }
+            
+            # デバッグログ：送信する時刻情報を確認
+            logger.info(f"🕐 [TIME_DEBUG] Server time (JST): {server_now_jst.strftime('%Y-%m-%d %H:%M:%S')}")
+            logger.info(f"🕐 [TIME_DEBUG] Server timestamp (UTC): {int(server_now.timestamp())}")
             
             # 🎯 4. 再送キューに登録
             self.pending_alarms[message_id] = alarm_set_msg
@@ -2083,4 +2098,3 @@ class ConnectionHandler:
                             
         except Exception as e:
             logger.error(f"🔄 [PENDING_ALARM] Error checking pending alarms: {e}")
-            
