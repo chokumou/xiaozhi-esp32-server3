@@ -115,7 +115,7 @@ class ConnectionHandler:
                 logger.info(f"⏰ タイマー完了通知を受信: '{timer_message}'")
                 
                 # タイマー完了をユーザーに通知
-                response_text = f"⏰ タイマーが完了しました！{timer_message}"
+                response_text = f"時間だよ！{timer_message}にゃん"
                 import uuid
                 rid = str(uuid.uuid4())[:8]
                 await self.send_audio_response(response_text, rid)
@@ -1345,7 +1345,10 @@ class ConnectionHandler:
             logger.info(f"⏰ RID[{rid}] ESP32にタイマー設定コマンドを送信: {json.dumps(timer_command)}")
             
             # ユーザーに確認メッセージを送信
-            response_text = f"⏰ {seconds}秒のタイマーを設定しました。{message}"
+            from datetime import datetime, timedelta
+            target_time = datetime.now() + timedelta(seconds=seconds)
+            time_str = target_time.strftime("%H時%M分")
+            response_text = f"わかったよ！{time_str}にお知らせするにゃん"
             await self.send_audio_response(response_text, rid)
             logger.info(f"⏰ RID[{rid}] タイマー設定確認メッセージを送信: {response_text}")
             
@@ -1367,7 +1370,7 @@ class ConnectionHandler:
             logger.info(f"⏹️ RID[{rid}] ESP32にタイマー停止コマンドを送信: {json.dumps(stop_command)}")
             
             # ユーザーに確認メッセージを送信
-            response_text = "⏹️ タイマーを停止しました"
+            response_text = "わかったよ！タイマーをやめたにゃん"
             await self.send_audio_response(response_text, rid)
             logger.info(f"⏹️ RID[{rid}] タイマー停止確認メッセージを送信: {response_text}")
             
