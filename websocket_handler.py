@@ -1341,7 +1341,7 @@ class ConnectionHandler:
             }
             
             # WebSocketでESP32に送信
-            await self.websocket.send_text(json.dumps(timer_command))
+            await self.websocket.send_str(json.dumps(timer_command))
             logger.info(f"⏰ RID[{rid}] ESP32にタイマー設定コマンドを送信: {json.dumps(timer_command)}")
             
             # ユーザーに確認メッセージを送信
@@ -1363,7 +1363,7 @@ class ConnectionHandler:
             }
             
             # WebSocketでESP32に送信
-            await self.websocket.send_text(json.dumps(stop_command))
+            await self.websocket.send_str(json.dumps(stop_command))
             logger.info(f"⏹️ RID[{rid}] ESP32にタイマー停止コマンドを送信: {json.dumps(stop_command)}")
             
             # ユーザーに確認メッセージを送信
