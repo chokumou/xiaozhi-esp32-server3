@@ -109,6 +109,17 @@ class ConnectionHandler:
             elif msg_type == "ack":
                 # 🎯 [ACK_HANDLER] ESP32からのACK受信処理
                 await self.handle_ack_message(msg_json)
+            elif msg_type == "timer_expired":
+                # タイマー完了通知の処理
+                timer_message = msg_json.get("message", "")
+                logger.info(f"⏰ タイマー完了通知を受信: '{timer_message}'")
+                
+                # タイマー完了をユーザーに通知
+                response_text = f"⏰ タイマーが完了しました！{timer_message}"
+                import uuid
+                rid = str(uuid.uuid4())[:8]
+                await self.send_audio_response(response_text, rid)
+                logger.info(f"⏰ タイマー完了通知を送信: {response_text}")
             else:
                 logger.warning(f"Unknown message type from {self.device_id}: {msg_type}")
 
@@ -507,6 +518,14 @@ class ConnectionHandler:
                 self.audio_handler.active_tts_rid = rid
             
             logger.info(f"🔥 RID[{rid}] LLM_START: Processing '{text}'")
+            
+            # タイマー機能の自然言語処理
+            timer_processed = await self.process_timer_command(text, rid)
+            if timer_processed:
+                # タイマー処理が成功した場合は、LLM処理をスキップ
+                self._processing_text = False
+                return
+            
             self.chat_history.append({"role": "user", "content": text})
 
             # Check for memory-related keywords
@@ -1221,4 +1240,137 @@ class ConnectionHandler:
                 
         except Exception as e:
             logger.error(f"Error in timeout check for {self.device_id}: {e}")
+
+    async def process_timer_command(self, text: str, rid: str) -> bool:
+        """
+        自然言語からタイマー設定を解析し、ESP32に送信する
+        戻り値: タイマー処理が成功した場合True、そうでなければFalse
+        """
+        try:
+            import re
+            from datetime import datetime, timedelta
+            
+            # タイマー設定のパターンマッチング
+            timer_patterns = [
+                # "X秒後" パターン
+                (r'(\d+)秒後', lambda m: int(m.group(1))),
+                # "X分後" パターン  
+                (r'(\d+)分後', lambda m: int(m.group(1)) * 60),
+                # "X時間後" パターン
+                (r'(\d+)時間後', lambda m: int(m.group(1)) * 3600),
+                # "X時Y分" パターン（今日の時刻）
+                (r'(\d+)時(\d+)分', lambda m: self.calculate_time_until_today(int(m.group(1)), int(m.group(2)))),
+                # "X時" パターン（今日の時刻、分は0）
+                (r'(\d+)時', lambda m: self.calculate_time_until_today(int(m.group(1)), 0)),
+            ]
+            
+            # タイマー停止のパターン
+            stop_patterns = [
+                r'タイマー.*停止',
+                r'タイマー.*キャンセル', 
+                r'タイマー.*やめる',
+                r'アラーム.*停止',
+                r'アラーム.*キャンセル',
+            ]
+            
+            # 停止コマンドのチェック
+            for pattern in stop_patterns:
+                if re.search(pattern, text):
+                    logger.info(f"⏹️ RID[{rid}] タイマー停止コマンドを検出: {text}")
+                    await self.send_timer_stop_command(rid)
+                    return True
+            
+            # タイマー設定コマンドのチェック
+            for pattern, time_calculator in timer_patterns:
+                match = re.search(pattern, text)
+                if match:
+                    try:
+                        # 時刻指定の場合はタイムゾーンを考慮
+                        if "時" in pattern:
+                            seconds = time_calculator(match)
+                        else:
+                            seconds = time_calculator(match)
+                        
+                        if seconds > 0:
+                            # メッセージを抽出（タイマー時間以外の部分）
+                            message = re.sub(pattern, '', text).strip()
+                            if not message:
+                                message = f"{seconds}秒のタイマー"
+                            
+                            logger.info(f"⏰ RID[{rid}] タイマー設定コマンドを検出: {text} -> {seconds}秒, メッセージ: '{message}'")
+                            await self.send_timer_set_command(rid, seconds, message)
+                            return True
+                    except Exception as e:
+                        logger.error(f"RID[{rid}] タイマー時間計算エラー: {e}")
+                        continue
+            
+            return False
+            
+        except Exception as e:
+            logger.error(f"RID[{rid}] タイマーコマンド処理エラー: {e}")
+            return False
+
+    def calculate_time_until_today(self, hour: int, minute: int) -> int:
+        """
+        今日の指定時刻までの秒数を計算
+        """
+        try:
+            now = datetime.now()
+            target_time = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+            
+            # 今日の時刻が既に過ぎている場合は明日の時刻にする
+            if target_time <= now:
+                target_time += timedelta(days=1)
+            
+            delta = target_time - now
+            return int(delta.total_seconds())
+        except Exception as e:
+            logger.error(f"時刻計算エラー: {e}")
+            return 0
+
+    async def send_timer_set_command(self, rid: str, seconds: int, message: str):
+        """
+        ESP32にタイマー設定コマンドを送信
+        """
+        try:
+            # ESP32に送信するメッセージ
+            timer_command = {
+                "type": "set_timer",
+                "seconds": seconds,
+                "message": message
+            }
+            
+            # WebSocketでESP32に送信
+            await self.websocket.send_text(json.dumps(timer_command))
+            logger.info(f"⏰ RID[{rid}] ESP32にタイマー設定コマンドを送信: {json.dumps(timer_command)}")
+            
+            # ユーザーに確認メッセージを送信
+            response_text = f"⏰ {seconds}秒のタイマーを設定しました。{message}"
+            await self.send_audio_response(response_text, rid)
+            logger.info(f"⏰ RID[{rid}] タイマー設定確認メッセージを送信: {response_text}")
+            
+        except Exception as e:
+            logger.error(f"RID[{rid}] タイマー設定コマンド送信エラー: {e}")
+
+    async def send_timer_stop_command(self, rid: str):
+        """
+        ESP32にタイマー停止コマンドを送信
+        """
+        try:
+            # ESP32に送信するメッセージ
+            stop_command = {
+                "type": "stop_timer"
+            }
+            
+            # WebSocketでESP32に送信
+            await self.websocket.send_text(json.dumps(stop_command))
+            logger.info(f"⏹️ RID[{rid}] ESP32にタイマー停止コマンドを送信: {json.dumps(stop_command)}")
+            
+            # ユーザーに確認メッセージを送信
+            response_text = "⏹️ タイマーを停止しました"
+            await self.send_audio_response(response_text, rid)
+            logger.info(f"⏹️ RID[{rid}] タイマー停止確認メッセージを送信: {response_text}")
+            
+        except Exception as e:
+            logger.error(f"RID[{rid}] タイマー停止コマンド送信エラー: {e}")
             
