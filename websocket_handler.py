@@ -5,6 +5,7 @@ import uuid
 import io
 import threading
 import time
+import aiohttp
 from typing import Dict, Any, Optional
 from collections import deque
 from aiohttp import web
@@ -1249,6 +1250,7 @@ class ConnectionHandler:
         try:
             import re
             from datetime import datetime, timedelta
+            import pytz
             
             # タイマー設定のパターンマッチング
             timer_patterns = [
@@ -1330,7 +1332,7 @@ class ConnectionHandler:
 
     async def send_timer_set_command(self, rid: str, seconds: int, message: str):
         """
-        ESP32にタイマー設定コマンドを送信
+        ESP32にタイマー設定コマンドを送信 + nekota-serverのDBに保存
         """
         try:
             # ESP32に送信するメッセージ
@@ -1343,6 +1345,9 @@ class ConnectionHandler:
             # WebSocketでESP32に送信
             await self.websocket.send_str(json.dumps(timer_command))
             logger.info(f"⏰ RID[{rid}] ESP32にタイマー設定コマンドを送信: {json.dumps(timer_command)}")
+            
+            # nekota-serverのDBにアラームを保存
+            await self.save_alarm_to_nekota_server(rid, seconds, message)
             
             # ユーザーに確認メッセージを送信
             from datetime import datetime, timedelta
@@ -1376,4 +1381,59 @@ class ConnectionHandler:
             
         except Exception as e:
             logger.error(f"RID[{rid}] タイマー停止コマンド送信エラー: {e}")
+
+    async def save_alarm_to_nekota_server(self, rid: str, seconds: int, message: str):
+        """
+        nekota-serverのDBにアラームを保存
+        """
+        try:
+            from datetime import datetime, timedelta
+            import pytz
+            import jwt
+            
+            # タイマー完了時刻を計算
+            target_time = datetime.now() + timedelta(seconds=seconds)
+            
+            # 日本時間で計算
+            jst = pytz.timezone('Asia/Tokyo')
+            target_time_jst = target_time.replace(tzinfo=pytz.utc).astimezone(jst)
+            
+            # JWTトークンを生成（nekota-serverと同じ秘密鍵を使用）
+            from config import Config
+            jwt_payload = {
+                "user_id": rid,
+                "exp": datetime.utcnow() + timedelta(hours=1)  # 1時間有効
+            }
+            jwt_token = jwt.encode(jwt_payload, Config.JWT_SECRET_KEY, algorithm="HS256")
+            
+            # アラームデータを準備
+            alarm_data = {
+                "user_id": rid,  # デバイスIDをuser_idとして使用
+                "date": target_time_jst.strftime("%Y-%m-%d"),
+                "time": target_time_jst.strftime("%H:%M"),
+                "timezone": "Asia/Tokyo",
+                "text": message
+            }
+            
+            # nekota-serverのアラームAPIを呼び出し
+            nekota_server_url = "http://localhost:8090"  # nekota-serverのURL
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    f"{nekota_server_url}/api/alarm",
+                    json=alarm_data,
+                    headers={
+                        "Content-Type": "application/json",
+                        "Authorization": f"Bearer {jwt_token}"
+                    }
+                ) as response:
+                    if response.status == 201:
+                        result = await response.json()
+                        logger.info(f"💾 RID[{rid}] アラームをnekota-serverのDBに保存成功: {result}")
+                    else:
+                        error_text = await response.text()
+                        logger.error(f"💾 RID[{rid}] アラーム保存失敗: {response.status} - {error_text}")
+                        
+        except Exception as e:
+            logger.error(f"💾 RID[{rid}] nekota-serverアラーム保存エラー: {e}")
             
