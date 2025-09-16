@@ -1252,17 +1252,23 @@ class ConnectionHandler:
             from datetime import datetime, timedelta
             import pytz
             
-            # タイマー設定のパターンマッチング
+            # タイマー設定のパターンマッチング（アラーム関連キーワードも含める）
             timer_patterns = [
-                # "X秒後" パターン
+                # "X秒後" パターン（アラーム関連キーワード付き）
+                (r'(\d+)秒後.*(?:アラーム|タイマー|お知らせ)', lambda m: int(m.group(1))),
+                # "X分後" パターン（アラーム関連キーワード付き）
+                (r'(\d+)分後.*(?:アラーム|タイマー|お知らせ)', lambda m: int(m.group(1)) * 60),
+                # "X時間後" パターン（アラーム関連キーワード付き）
+                (r'(\d+)時間後.*(?:アラーム|タイマー|お知らせ)', lambda m: int(m.group(1)) * 3600),
+                # "X時Y分" パターン（今日の時刻、アラーム関連キーワード付き）
+                (r'(\d+)時(\d+)分.*(?:アラーム|タイマー|お知らせ)', lambda m: self.calculate_time_until_today(int(m.group(1)), int(m.group(2)))),
+                # "X時" パターン（今日の時刻、分は0、アラーム関連キーワード付き）
+                (r'(\d+)時.*(?:アラーム|タイマー|お知らせ)', lambda m: self.calculate_time_until_today(int(m.group(1)), 0)),
+                # 従来のパターン（後方互換性のため）
                 (r'(\d+)秒後', lambda m: int(m.group(1))),
-                # "X分後" パターン  
                 (r'(\d+)分後', lambda m: int(m.group(1)) * 60),
-                # "X時間後" パターン
                 (r'(\d+)時間後', lambda m: int(m.group(1)) * 3600),
-                # "X時Y分" パターン（今日の時刻）
                 (r'(\d+)時(\d+)分', lambda m: self.calculate_time_until_today(int(m.group(1)), int(m.group(2)))),
-                # "X時" パターン（今日の時刻、分は0）
                 (r'(\d+)時', lambda m: self.calculate_time_until_today(int(m.group(1)), 0)),
             ]
             
@@ -1282,29 +1288,58 @@ class ConnectionHandler:
                     await self.send_timer_stop_command(rid)
                     return True
             
-            # タイマー設定コマンドのチェック
-            for pattern, time_calculator in timer_patterns:
+            # タイマー設定コマンドのチェック（2つのキーワード分離方式）
+            logger.info(f"🐛 RID[{rid}] タイマーパターンマッチング開始: '{text}'")
+            
+            # 1. アラーム/タイマー関連キーワードがあるかチェック
+            has_alarm_keyword = re.search(r'(?:アラーム|タイマー|お知らせ)', text)
+            logger.debug(f"🐛 RID[{rid}] アラーム関連キーワード: {has_alarm_keyword is not None}")
+            
+            # 2. 時間表現があるかチェック
+            time_patterns = [
+                (r'(\d+)秒後', lambda m: int(m.group(1))),
+                (r'(\d+)分後', lambda m: int(m.group(1)) * 60),
+                (r'(\d+)時間後', lambda m: int(m.group(1)) * 3600),
+                (r'(\d+)時(\d+)分', lambda m: self.calculate_time_until_today(int(m.group(1)), int(m.group(2)))),
+                (r'(\d+)時', lambda m: self.calculate_time_until_today(int(m.group(1)), 0)),
+            ]
+            
+            time_match = None
+            matched_pattern = None
+            for pattern, time_calculator in time_patterns:
                 match = re.search(pattern, text)
+                logger.debug(f"🐛 RID[{rid}] 時間パターン '{pattern}' チェック: {match is not None}")
                 if match:
-                    try:
-                        # 時刻指定の場合はタイムゾーンを考慮
-                        if "時" in pattern:
-                            seconds = time_calculator(match)
-                        else:
-                            seconds = time_calculator(match)
+                    time_match = match
+                    matched_pattern = pattern
+                    matched_calculator = time_calculator
+                    break
+            
+            # 3. 両方のキーワードがある場合のみタイマー設定
+            if has_alarm_keyword and time_match:
+                try:
+                    logger.info(f"🎯 RID[{rid}] タイマー条件マッチ: アラーム関連=True, 時間表現='{matched_pattern}'")
+                    
+                    # 時刻指定の場合はタイムゾーンを考慮
+                    if "時" in matched_pattern:
+                        seconds = matched_calculator(time_match)
+                    else:
+                        seconds = matched_calculator(time_match)
+                    
+                    if seconds > 0:
+                        # メッセージを抽出（タイマー時間以外の部分）
+                        message = re.sub(matched_pattern, '', text).strip()
+                        message = re.sub(r'(?:アラーム|タイマー|お知らせ)', '', message).strip()
+                        if not message:
+                            message = f"{seconds}秒のタイマー"
                         
-                        if seconds > 0:
-                            # メッセージを抽出（タイマー時間以外の部分）
-                            message = re.sub(pattern, '', text).strip()
-                            if not message:
-                                message = f"{seconds}秒のタイマー"
-                            
-                            logger.info(f"⏰ RID[{rid}] タイマー設定コマンドを検出: {text} -> {seconds}秒, メッセージ: '{message}'")
-                            await self.send_timer_set_command(rid, seconds, message)
-                            return True
-                    except Exception as e:
-                        logger.error(f"RID[{rid}] タイマー時間計算エラー: {e}")
-                        continue
+                        logger.info(f"⏰ RID[{rid}] タイマー設定コマンドを検出: {text} -> {seconds}秒, メッセージ: '{message}'")
+                        await self.send_timer_set_command(rid, seconds, message)
+                        return True
+                except Exception as e:
+                    logger.error(f"RID[{rid}] タイマー時間計算エラー: {e}")
+            else:
+                logger.debug(f"🐛 RID[{rid}] タイマー条件不一致: アラーム関連={has_alarm_keyword is not None}, 時間表現={time_match is not None}")
             
             return False
             
