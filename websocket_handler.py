@@ -30,9 +30,11 @@ connected_devices: Dict[str, 'ConnectionHandler'] = {}
 
 class ConnectionHandler:
     def __init__(self, websocket: web.WebSocketResponse, headers: Dict[str, str]):
+        logger.info(f"🐛 ConnectionHandler.__init__ 開始")
         self.websocket = websocket
         self.headers = headers
         self.device_id = headers.get("device-id") or "unknown"
+        logger.info(f"🐛 device_id設定: {self.device_id}")
         self.client_id = headers.get("client-id") or str(uuid.uuid4())
         self.protocol_version = int(headers.get("protocol-version", "1"))
         import time as time_module  # スコープエラー回避
@@ -52,6 +54,8 @@ class ConnectionHandler:
         # 接続時にデバイスを登録
         connected_devices[self.device_id] = self
         logger.info(f"📱 RID[{self.device_id}] デバイス接続登録完了")
+        logger.info(f"🐛 現在の接続デバイス一覧: {list(connected_devices.keys())}")
+        logger.info(f"🐛 接続デバイス数: {len(connected_devices)}")
         self.features = {}
         self.close_after_chat = False  # Server2準拠: チャット後の接続制御
         
@@ -1218,6 +1222,10 @@ class ConnectionHandler:
             if self.device_id in connected_devices:
                 del connected_devices[self.device_id]
                 logger.info(f"📱 RID[{self.device_id}] デバイス接続削除完了")
+                logger.info(f"🐛 残りの接続デバイス一覧: {list(connected_devices.keys())}")
+                logger.info(f"🐛 残りの接続デバイス数: {len(connected_devices)}")
+            else:
+                logger.warning(f"📱 RID[{self.device_id}] デバイスが接続リストに存在しません")
             
             # Server2準拠: タイムアウト監視タスク終了
             if self.timeout_task and not self.timeout_task.done():
