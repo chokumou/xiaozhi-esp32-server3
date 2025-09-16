@@ -25,6 +25,9 @@ from audio_handler_server2 import AudioHandlerServer2
 
 logger = setup_logger()
 
+# 接続中のデバイス管理（グローバル）
+connected_devices: Dict[str, 'ConnectionHandler'] = {}
+
 class ConnectionHandler:
     def __init__(self, websocket: web.WebSocketResponse, headers: Dict[str, str]):
         self.websocket = websocket
@@ -45,6 +48,10 @@ class ConnectionHandler:
         self.stop_event = threading.Event() # For graceful shutdown (server2 style)
         self.session_id = str(uuid.uuid4())
         self.audio_format = "opus"  # Default format (ESP32 sends Opus like server2)
+        
+        # 接続時にデバイスを登録
+        connected_devices[self.device_id] = self
+        logger.info(f"📱 RID[{self.device_id}] デバイス接続登録完了")
         self.features = {}
         self.close_after_chat = False  # Server2準拠: チャット後の接続制御
         
@@ -1207,6 +1214,11 @@ class ConnectionHandler:
         except Exception as e:
             logger.error(f"❌ [WEBSOCKET] Unhandled error in connection handler for {self.device_id}: {e}")
         finally:
+            # 切断時にデバイスを削除
+            if self.device_id in connected_devices:
+                del connected_devices[self.device_id]
+                logger.info(f"📱 RID[{self.device_id}] デバイス接続削除完了")
+            
             # Server2準拠: タイムアウト監視タスク終了
             if self.timeout_task and not self.timeout_task.done():
                 self.timeout_task.cancel()
@@ -1482,4 +1494,27 @@ class ConnectionHandler:
         except Exception as e:
             logger.warning(f"💾 RID[{rid}] nekota-serverアラーム保存エラー（動作は継続）: {e}")
             # DB保存に失敗してもタイマー機能は正常動作
-            
+
+# デバイス接続チェック関数
+def is_device_connected(device_id: str) -> bool:
+    """
+    指定されたデバイスが接続中かチェック
+    """
+    return device_id in connected_devices
+
+async def send_timer_to_connected_device(device_id: str, seconds: int, message: str) -> bool:
+    """
+    接続中のデバイスにタイマー設定コマンドを送信
+    """
+    if device_id not in connected_devices:
+        logger.warning(f"📱 デバイス {device_id} は接続されていません")
+        return False
+    
+    try:
+        handler = connected_devices[device_id]
+        await handler.send_timer_set_command(device_id, seconds, message)
+        logger.info(f"📱 デバイス {device_id} にタイマー設定コマンドを送信成功")
+        return True
+    except Exception as e:
+        logger.error(f"📱 デバイス {device_id} へのタイマー送信エラー: {e}")
+        return False
