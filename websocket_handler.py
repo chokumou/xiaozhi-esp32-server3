@@ -1450,7 +1450,7 @@ class ConnectionHandler:
             }
             
             # nekota-serverのアラームAPIを呼び出し
-            nekota_server_url = "http://localhost:8090"  # nekota-serverのURL
+            nekota_server_url = "https://nekota-server-production.up.railway.app"  # 本番環境のnekota-serverのURL
             
             async with aiohttp.ClientSession() as session:
                 async with session.post(
@@ -1469,5 +1469,6 @@ class ConnectionHandler:
                         logger.error(f"💾 RID[{rid}] アラーム保存失敗: {response.status} - {error_text}")
                         
         except Exception as e:
-            logger.error(f"💾 RID[{rid}] nekota-serverアラーム保存エラー: {e}")
+            logger.warning(f"💾 RID[{rid}] nekota-serverアラーム保存エラー（動作は継続）: {e}")
+            # DB保存に失敗してもタイマー機能は正常動作
             
