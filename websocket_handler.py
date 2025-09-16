@@ -1326,11 +1326,9 @@ class ConnectionHandler:
                         seconds = matched_calculator(time_match)
                     
                     if seconds > 0:
-                        # メッセージを抽出（タイマー時間以外の部分）
-                        message = re.sub(matched_pattern, '', text).strip()
-                        message = re.sub(r'(?:アラーム|タイマー|お知らせ)', '', message).strip()
-                        if not message:
-                            message = f"{seconds}秒のタイマー"
+                        # メッセージを元のテキストに設定（抽出処理を削除）
+                        message = text
+                        logger.debug(f"🐛 RID[{rid}] メッセージ設定: '{message}'")
                         
                         logger.info(f"⏰ RID[{rid}] タイマー設定コマンドを検出: {text} -> {seconds}秒, メッセージ: '{message}'")
                         await self.send_timer_set_command(rid, seconds, message)
