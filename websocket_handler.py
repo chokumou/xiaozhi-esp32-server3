@@ -1381,10 +1381,14 @@ class ConnectionHandler:
             # nekota-serverのDBにアラームを保存
             await self.save_alarm_to_nekota_server(rid, seconds, message)
             
-            # ユーザーに確認メッセージを送信
-            from datetime import datetime, timedelta
-            target_time = datetime.now() + timedelta(seconds=seconds)
-            time_str = target_time.strftime("%H時%M分")
+            # ユーザーに確認メッセージを送信（現地時間で表示）
+            from datetime import datetime, timedelta, timezone, timedelta as td
+            
+            # 現地時間（日本時間）で計算
+            jst = timezone(td(hours=9))  # JST = UTC+9
+            now_jst = datetime.now(jst)
+            target_time_jst = now_jst + timedelta(seconds=seconds)
+            time_str = target_time_jst.strftime("%H時%M分")
             response_text = f"わかったよ！{time_str}にお知らせするにゃん"
             await self.send_audio_response(response_text, rid)
             logger.info(f"⏰ RID[{rid}] タイマー設定確認メッセージを送信: {response_text}")
