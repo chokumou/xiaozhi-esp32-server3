@@ -1,12 +1,16 @@
 import asyncio
 import signal
 import sys
+import json
 from aiohttp import web
 
 from config import Config
 from utils.logger import setup_logger
 from utils.auth import AuthManager, AuthError
 from websocket_handler import ConnectionHandler, connected_devices
+
+# 制御チャネル用の接続管理
+control_connections = {}
 
 logger = setup_logger()
 auth_manager = AuthManager()
@@ -145,14 +149,27 @@ async def main():
                 logger.error(f"📱 接続デバイスなし")
                 return web.json_response({"error": "No devices connected"}, status=400)
             
-            # 最初の接続デバイスにタイマー設定（簡易実装）
-            device_id = list(connected_devices.keys())[0]
-            handler = connected_devices[device_id]
-            logger.info(f"📱 タイマー送信先デバイス: {device_id}")
+            # 制御チャネル経由でタイマー設定コマンドを送信
+            device_id = list(control_connections.keys())[0] if control_connections else None
             
-            logger.info(f"📱 send_timer_set_command呼び出し開始")
-            await handler.send_timer_set_command(device_id, seconds, message)
-            logger.info(f"📱 send_timer_set_command呼び出し完了")
+            if not device_id:
+                logger.error(f"📱 制御チャネル接続デバイスなし")
+                return web.json_response({"error": "No control channel connected"}, status=400)
+                
+            logger.info(f"📱 制御チャネル経由タイマー設定: {device_id}")
+            
+            # 制御コマンド作成
+            command = {
+                "cmd": "SET_TIMER",
+                "seconds": seconds,
+                "message": message,
+                "timestamp": asyncio.get_event_loop().time()
+            }
+            
+            # 制御チャネル経由で送信
+            success = await send_control_command(device_id, command)
+            if not success:
+                return web.json_response({"error": "Failed to send control command"}, status=500)
             
             logger.info(f"📱 タイマー設定成功: device_id={device_id}")
             
@@ -167,6 +184,69 @@ async def main():
             logger.error(f"デバイスタイマー設定エラー: {e}")
             return web.json_response({"error": str(e)}, status=500)
 
+    async def control_websocket_handler(request):
+        """
+        制御チャネル用WebSocket（常時接続、60秒ハートビート）
+        """
+        ws = web.WebSocketResponse(heartbeat=60)
+        await ws.prepare(request)
+        
+        # デバイスIDを取得
+        headers = {k.lower(): v for k, v in request.headers.items()}
+        device_id = headers.get("device-id") or f"device_{request.remote}"
+        
+        logger.info(f"🔧 制御チャネル接続: device_id={device_id}")
+        
+        try:
+            # 制御チャネルに登録
+            control_connections[device_id] = ws
+            logger.info(f"🔧 制御チャネル登録完了: {device_id}")
+            
+            # 接続確認メッセージ送信
+            await ws.send_str('{"type":"control_hello","message":"Control channel established"}')
+            
+            # メッセージ受信ループ
+            async for msg in ws:
+                if msg.type == web.WSMsgType.TEXT:
+                    try:
+                        data = msg.json()
+                        logger.info(f"🔧 制御メッセージ受信: {device_id} -> {data}")
+                        
+                        # ハートビート応答
+                        if data.get("type") == "ping":
+                            await ws.send_str('{"type":"pong"}')
+                            
+                    except Exception as e:
+                        logger.error(f"🔧 制御メッセージ処理エラー: {e}")
+                        
+                elif msg.type == web.WSMsgType.ERROR:
+                    logger.error(f"🔧 制御チャネルエラー: {ws.exception()}")
+                    break
+                    
+        except Exception as e:
+            logger.error(f"🔧 制御チャネル例外: {e}")
+        finally:
+            # 接続解除時にクリーンアップ
+            if device_id in control_connections:
+                del control_connections[device_id]
+                logger.info(f"🔧 制御チャネル解除: {device_id}")
+        
+        return ws
+
+    async def send_control_command(device_id: str, command: dict):
+        """制御チャネル経由でコマンド送信"""
+        if device_id in control_connections:
+            try:
+                await control_connections[device_id].send_str(json.dumps(command))
+                logger.info(f"🔧 制御コマンド送信成功: {device_id} -> {command}")
+                return True
+            except Exception as e:
+                logger.error(f"🔧 制御コマンド送信失敗: {device_id} -> {e}")
+                return False
+        else:
+            logger.warning(f"🔧 制御チャネル未接続: {device_id}")
+            return False
+
     # Create HTTP server with all endpoints BEFORE starting
     app = web.Application()
     app.router.add_post('/xiaozhi/ota/', ota_endpoint)
@@ -176,6 +256,9 @@ async def main():
     # Web画面からのアラーム設定用APIエンドポイント
     app.router.add_get('/api/device/connected', device_connected_check)
     app.router.add_post('/api/device/set_timer', device_set_timer)
+    
+    # 制御チャネル用エンドポイント
+    app.router.add_get('/control', control_websocket_handler)
     
     stop_event = asyncio.Event()
     if sys.platform != "win32":
