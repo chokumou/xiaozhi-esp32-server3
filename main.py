@@ -6,7 +6,7 @@ from aiohttp import web
 from config import Config
 from utils.logger import setup_logger
 from utils.auth import AuthManager, AuthError
-from websocket_handler import ConnectionHandler
+from websocket_handler import ConnectionHandler, connected_devices
 
 logger = setup_logger()
 auth_manager = AuthManager()
@@ -95,11 +95,77 @@ async def main():
         await handler.run()
         return ws
 
+    async def device_connected_check(request):
+        """
+        デバイス接続状態をチェック
+        """
+        try:
+            user_id = request.query.get('user_id')
+            if not user_id:
+                return web.json_response({"error": "user_id required"}, status=400)
+            
+            # user_idからdevice_idを取得する必要があるが、
+            # 現在は簡易実装：接続中のデバイス一覧をチェック
+            connected = len(connected_devices) > 0
+            
+            logger.info(f"📱 接続チェック: user_id={user_id}, connected_devices={list(connected_devices.keys())}")
+            
+            return web.json_response({
+                "connected": connected,
+                "connected_devices": list(connected_devices.keys())
+            })
+            
+        except Exception as e:
+            logger.error(f"デバイス接続チェックエラー: {e}")
+            return web.json_response({"error": str(e)}, status=500)
+
+    async def device_set_timer(request):
+        """
+        接続中のデバイスにタイマー設定
+        """
+        try:
+            data = await request.json()
+            user_id = data.get('user_id')
+            seconds = data.get('seconds')
+            message = data.get('message', '')
+            
+            if not user_id or not seconds:
+                return web.json_response({"error": "user_id and seconds required"}, status=400)
+            
+            logger.info(f"📱 タイマー設定リクエスト: user_id={user_id}, seconds={seconds}, message='{message}'")
+            
+            # 接続中のデバイスを確認（簡易実装）
+            if not connected_devices:
+                return web.json_response({"error": "No devices connected"}, status=400)
+            
+            # 最初の接続デバイスにタイマー設定（簡易実装）
+            device_id = list(connected_devices.keys())[0]
+            handler = connected_devices[device_id]
+            
+            await handler.send_timer_set_command(device_id, seconds, message)
+            
+            logger.info(f"📱 タイマー設定成功: device_id={device_id}")
+            
+            return web.json_response({
+                "success": True,
+                "device_id": device_id,
+                "seconds": seconds,
+                "message": message
+            })
+            
+        except Exception as e:
+            logger.error(f"デバイスタイマー設定エラー: {e}")
+            return web.json_response({"error": str(e)}, status=500)
+
     # Create HTTP server with all endpoints BEFORE starting
     app = web.Application()
     app.router.add_post('/xiaozhi/ota/', ota_endpoint)
     app.router.add_get('/xiaozhi/ota/', ota_endpoint)
     app.router.add_get('/xiaozhi/v1/', websocket_handler)
+    
+    # Web画面からのアラーム設定用APIエンドポイント
+    app.router.add_get('/api/device/connected', device_connected_check)
+    app.router.add_post('/api/device/set_timer', device_set_timer)
     
     stop_event = asyncio.Event()
     if sys.platform != "win32":

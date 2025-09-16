@@ -1461,6 +1461,7 @@ class ConnectionHandler:
                 return
             
             logger.info(f"🐛 RID[{rid}] 認証成功: user_id={user_id}, token={jwt_token[:20]}...")
+            logger.info(f"🐛 RID[{rid}] device_id={rid}, user_id={user_id} の関係を確認")
             
             # アラームデータを準備
             alarm_data = {
