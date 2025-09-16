@@ -1418,11 +1418,12 @@ class ConnectionHandler:
 
     async def save_alarm_to_nekota_server(self, rid: str, seconds: int, message: str):
         """
-        nekota-serverのDBにアラームを保存
+        nekota-serverのDBにアラームを保存（MemoryServiceのパターンを使用）
         """
         try:
             from datetime import datetime, timedelta
-            import jwt
+            
+            logger.info(f"🐛 RID[{rid}] アラーム保存開始: seconds={seconds}, message='{message}'")
             
             # タイマー完了時刻を計算
             target_time = datetime.now() + timedelta(seconds=seconds)
@@ -1432,41 +1433,49 @@ class ConnectionHandler:
             jst = timezone(td(hours=9))  # JST = UTC+9
             target_time_jst = target_time.replace(tzinfo=timezone.utc).astimezone(jst)
             
-            # JWTトークンを生成（nekota-serverと同じ秘密鍵を使用）
-            from config import Config
-            jwt_payload = {
-                "user_id": rid,
-                "exp": datetime.utcnow() + timedelta(hours=1)  # 1時間有効
-            }
-            jwt_token = jwt.encode(jwt_payload, Config.JWT_SECRET_KEY, algorithm="HS256")
+            logger.info(f"🐛 RID[{rid}] 計算された時刻: {target_time_jst.strftime('%Y-%m-%d %H:%M')}")
+            
+            # MemoryServiceと同じ方法で端末認証（既存の仕組みを使用）
+            device_number = "327546"  # 登録済みデバイス番号（MemoryServiceと同じ）
+            logger.info(f"🐛 RID[{rid}] 端末番号を使用: {device_number}")
+            
+            # MemoryServiceの認証方法を使用
+            jwt_token, user_id = await self.memory_service._get_valid_jwt_and_user(device_number)
+            
+            if not jwt_token or not user_id:
+                logger.error(f"🐛 RID[{rid}] 認証失敗: device_number={device_number}")
+                return
+            
+            logger.info(f"🐛 RID[{rid}] 認証成功: user_id={user_id}, token={jwt_token[:20]}...")
             
             # アラームデータを準備
             alarm_data = {
-                "user_id": rid,  # デバイスIDをuser_idとして使用
+                "user_id": user_id,
                 "date": target_time_jst.strftime("%Y-%m-%d"),
                 "time": target_time_jst.strftime("%H:%M"),
                 "timezone": "Asia/Tokyo",
                 "text": message
             }
             
-            # nekota-serverのアラームAPIを呼び出し
-            nekota_server_url = "https://nekota-server-production.up.railway.app"  # 本番環境のnekota-serverのURL
+            logger.info(f"🐛 RID[{rid}] アラームデータ: {alarm_data}")
             
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    f"{nekota_server_url}/api/alarm",
-                    json=alarm_data,
-                    headers={
-                        "Content-Type": "application/json",
-                        "Authorization": f"Bearer {jwt_token}"
-                    }
-                ) as response:
-                    if response.status == 201:
-                        result = await response.json()
-                        logger.info(f"💾 RID[{rid}] アラームをnekota-serverのDBに保存成功: {result}")
-                    else:
-                        error_text = await response.text()
-                        logger.error(f"💾 RID[{rid}] アラーム保存失敗: {response.status} - {error_text}")
+            # MemoryServiceと同じhttpxクライアントを使用
+            headers = {"Authorization": f"Bearer {jwt_token}"}
+            
+            response = await self.memory_service.client.post(
+                "/api/alarm",
+                json=alarm_data,
+                headers=headers
+            )
+            
+            logger.info(f"🐛 RID[{rid}] アラーム保存レスポンス: {response.status_code}")
+            
+            if response.status_code == 201:
+                result = response.json()
+                logger.info(f"💾 RID[{rid}] アラームをnekota-serverのDBに保存成功: {result}")
+            else:
+                error_text = response.text
+                logger.error(f"💾 RID[{rid}] アラーム保存失敗: {response.status_code} - {error_text}")
                         
         except Exception as e:
             logger.warning(f"💾 RID[{rid}] nekota-serverアラーム保存エラー（動作は継続）: {e}")
