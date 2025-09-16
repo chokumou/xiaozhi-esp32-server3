@@ -1250,7 +1250,6 @@ class ConnectionHandler:
         try:
             import re
             from datetime import datetime, timedelta
-            import pytz
             
             # タイマー設定のパターンマッチング（アラーム関連キーワードも含める）
             timer_patterns = [
@@ -1423,15 +1422,15 @@ class ConnectionHandler:
         """
         try:
             from datetime import datetime, timedelta
-            import pytz
             import jwt
             
             # タイマー完了時刻を計算
             target_time = datetime.now() + timedelta(seconds=seconds)
             
-            # 日本時間で計算
-            jst = pytz.timezone('Asia/Tokyo')
-            target_time_jst = target_time.replace(tzinfo=pytz.utc).astimezone(jst)
+            # 日本時間で計算（標準ライブラリのみ使用）
+            from datetime import timezone, timedelta as td
+            jst = timezone(td(hours=9))  # JST = UTC+9
+            target_time_jst = target_time.replace(tzinfo=timezone.utc).astimezone(jst)
             
             # JWTトークンを生成（nekota-serverと同じ秘密鍵を使用）
             from config import Config
