@@ -1379,6 +1379,7 @@ class ConnectionHandler:
         ESP32にタイマー設定コマンドを送信 + nekota-serverのDBに保存
         """
         try:
+            logger.info(f"🐛 RID[{rid}] send_timer_set_command開始: seconds={seconds}, message='{message}'")
             # ESP32に送信するメッセージ
             timer_command = {
                 "type": "set_timer",
@@ -1387,8 +1388,10 @@ class ConnectionHandler:
             }
             
             # WebSocketでESP32に送信
+            logger.info(f"🐛 RID[{rid}] WebSocket送信前: websocket.closed={self.websocket.closed}")
             await self.websocket.send_str(json.dumps(timer_command))
             logger.info(f"⏰ RID[{rid}] ESP32にタイマー設定コマンドを送信: {json.dumps(timer_command)}")
+            logger.info(f"🐛 RID[{rid}] WebSocket送信後: websocket.closed={self.websocket.closed}")
             
             # nekota-serverのDBにアラームを保存
             await self.save_alarm_to_nekota_server(rid, seconds, message)

@@ -134,15 +134,22 @@ async def main():
             
             logger.info(f"📱 タイマー設定リクエスト: user_id={user_id}, seconds={seconds}, message='{message}'")
             
-            # 接続中のデバイスを確認（簡易実装）
+            # 接続中のデバイスを確認（デバッグログ付き）
+            logger.info(f"📱 接続デバイス一覧: {list(connected_devices.keys())}")
+            logger.info(f"📱 接続デバイス数: {len(connected_devices)}")
+            
             if not connected_devices:
+                logger.error(f"📱 接続デバイスなし")
                 return web.json_response({"error": "No devices connected"}, status=400)
             
             # 最初の接続デバイスにタイマー設定（簡易実装）
             device_id = list(connected_devices.keys())[0]
             handler = connected_devices[device_id]
+            logger.info(f"📱 タイマー送信先デバイス: {device_id}")
             
+            logger.info(f"📱 send_timer_set_command呼び出し開始")
             await handler.send_timer_set_command(device_id, seconds, message)
+            logger.info(f"📱 send_timer_set_command呼び出し完了")
             
             logger.info(f"📱 タイマー設定成功: device_id={device_id}")
             
