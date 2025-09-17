@@ -194,15 +194,17 @@ async def main():
                 )
                 
                 if auth_response.status != 200:
-                    logger.error(f"📱 デバイス認証失敗: {auth_response.status}")
+                    error_text = await auth_response.text()
+                    logger.error(f"📱 デバイス認証失敗: {auth_response.status} - {error_text}")
                     return web.json_response({"alarms": []})
                 
                 auth_data = await auth_response.json()
+                logger.info(f"📱 認証レスポンス: {auth_data}")
                 user_id = auth_data.get("user_id")
                 jwt_token = auth_data.get("token")
                 
                 if not user_id or not jwt_token:
-                    logger.error(f"📱 認証情報取得失敗")
+                    logger.error(f"📱 認証情報取得失敗: user_id={user_id}, token={'あり' if jwt_token else 'なし'}")
                     return web.json_response({"alarms": []})
                 
                 # 未発火アラーム取得
