@@ -168,6 +168,81 @@ async def main():
             logger.error(f"デバイスタイマー設定エラー: {e}")
             return web.json_response({"error": str(e)}, status=500)
 
+    async def device_check_alarms(request):
+        """
+        ESP32からの未発火アラームチェック要求
+        """
+        try:
+            data = await request.json()
+            device_id = data.get('device_id')
+            
+            if not device_id:
+                return web.json_response({"error": "device_id required"}, status=400)
+            
+            logger.info(f"📱 アラームチェック要求: device_id={device_id}")
+            
+            # nekota-serverから未発火アラーム取得
+            import aiohttp
+            nekota_server_url = "https://nekota-server-production.up.railway.app"
+            
+            # デバイス認証でuser_idを取得
+            async with aiohttp.ClientSession() as session:
+                # デバイス認証
+                auth_response = await session.post(
+                    f"{nekota_server_url}/api/device/exists",
+                    json={"device_number": "327546"}  # 固定デバイス番号
+                )
+                
+                if auth_response.status != 200:
+                    logger.error(f"📱 デバイス認証失敗: {auth_response.status}")
+                    return web.json_response({"alarms": []})
+                
+                auth_data = await auth_response.json()
+                user_id = auth_data.get("user_id")
+                jwt_token = auth_data.get("token")
+                
+                if not user_id or not jwt_token:
+                    logger.error(f"📱 認証情報取得失敗")
+                    return web.json_response({"alarms": []})
+                
+                # 未発火アラーム取得
+                headers = {"Authorization": f"Bearer {jwt_token}"}
+                alarm_response = await session.get(
+                    f"{nekota_server_url}/api/alarm/?user_id={user_id}&fired=false",
+                    headers=headers
+                )
+                
+                if alarm_response.status == 200:
+                    alarm_data = await alarm_response.json()
+                    alarms = alarm_data.get("alarms", [])
+                    
+                    logger.info(f"📱 未発火アラーム取得: {len(alarms)}件")
+                    
+                    # 現在時刻より未来のアラームのみ処理
+                    import datetime
+                    now_utc = datetime.datetime.now(datetime.timezone.utc)
+                    
+                    pending_alarms = []
+                    for alarm in alarms:
+                        alarm_time = datetime.datetime.fromisoformat(alarm['alarm_time'].replace('Z', '+00:00'))
+                        if alarm_time > now_utc:
+                            seconds_until = int((alarm_time - now_utc).total_seconds())
+                            pending_alarms.append({
+                                "id": alarm["id"],
+                                "seconds": seconds_until,
+                                "message": alarm["text"]
+                            })
+                    
+                    logger.info(f"📱 有効アラーム: {len(pending_alarms)}件")
+                    return web.json_response({"alarms": pending_alarms})
+                else:
+                    logger.error(f"📱 アラーム取得失敗: {alarm_response.status}")
+                    return web.json_response({"alarms": []})
+                    
+        except Exception as e:
+            logger.error(f"📱 アラームチェックエラー: {e}")
+            return web.json_response({"alarms": []})
+
     # Create HTTP server with all endpoints BEFORE starting
     app = web.Application()
     app.router.add_post('/xiaozhi/ota/', ota_endpoint)
@@ -177,6 +252,9 @@ async def main():
     # Web画面からのアラーム設定用APIエンドポイント
     app.router.add_get('/api/device/connected', device_connected_check)
     app.router.add_post('/api/device/set_timer', device_set_timer)
+    
+    # ESP32起動時アラームチェック用API
+    app.router.add_post('/api/device/check_alarms', device_check_alarms)
     
     stop_event = asyncio.Event()
     if sys.platform != "win32":
