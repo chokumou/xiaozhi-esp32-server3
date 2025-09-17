@@ -250,12 +250,25 @@ async def main():
                                 
                                 if alarm_time > now_utc:
                                     seconds_until = int((alarm_time - now_utc).total_seconds())
+                                    
+                                    # メッセージとテキストを統合
+                                    message = alarm.get("message", "")
+                                    text = alarm.get("text", "")
+                                    
+                                    # 両方ある場合は統合、片方だけの場合はそのまま
+                                    if message and text:
+                                        combined_message = f"{message}　{text}"
+                                    elif text:
+                                        combined_message = text
+                                    else:
+                                        combined_message = message or "アラームの時間だにゃん！"
+                                    
                                     pending_alarms.append({
                                         "id": alarm["id"],
                                         "seconds": seconds_until,
-                                        "message": alarm["message"]
+                                        "message": combined_message
                                     })
-                                    logger.info(f"📱 有効アラーム追加: {seconds_until}秒後")
+                                    logger.info(f"📱 有効アラーム追加: {seconds_until}秒後, メッセージ: {combined_message}")
                                 else:
                                     logger.info(f"📱 過去のアラーム（スキップ）: {alarm_time}")
                             else:
