@@ -234,16 +234,22 @@ async def main():
                             logger.info(f"📱 アラームデータ: {alarm}")
                             
                             # 日付と時刻を組み合わせてUTC時刻を作成
-                            alarm_date = alarm.get('alarm_date')  # YYYY-MM-DD
-                            alarm_time_str = alarm.get('time')    # HH:MM:SS
+                            alarm_date = alarm.get('alarm_date')     # YYYY-MM-DD
+                            alarm_time_str = alarm.get('alarm_time') # HH:MM:SS
                             
                             if alarm_date and alarm_time_str:
                                 # 日付と時刻を組み合わせ
                                 alarm_datetime_str = f"{alarm_date}T{alarm_time_str}"
                                 alarm_time = datetime.datetime.fromisoformat(alarm_datetime_str)
                                 
-                                # UTCに変換（必要に応じて）
-                                if alarm_time.tzinfo is None:
+                                # タイムゾーン処理
+                                timezone_str = alarm.get('timezone', 'UTC')
+                                if timezone_str == 'Asia/Tokyo':
+                                    # JST (UTC+9) として解釈してUTCに変換
+                                    jst = datetime.timezone(datetime.timedelta(hours=9))
+                                    alarm_time = alarm_time.replace(tzinfo=jst)
+                                    alarm_time = alarm_time.astimezone(datetime.timezone.utc)
+                                elif alarm_time.tzinfo is None:
                                     alarm_time = alarm_time.replace(tzinfo=datetime.timezone.utc)
                                 
                                 logger.info(f"📱 アラーム時刻: {alarm_time}, 現在時刻: {now_utc}")
