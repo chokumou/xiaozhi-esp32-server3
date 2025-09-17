@@ -200,7 +200,10 @@ async def main():
                 
                 auth_data = await auth_response.json()
                 logger.info(f"📱 認証レスポンス: {auth_data}")
-                user_id = auth_data.get("user_id")
+                
+                # 正しい構造でuser_idを取得
+                user_data = auth_data.get("user", {})
+                user_id = user_data.get("id")
                 jwt_token = auth_data.get("token")
                 
                 if not user_id or not jwt_token:
