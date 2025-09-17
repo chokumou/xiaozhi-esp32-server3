@@ -229,14 +229,40 @@ async def main():
                     
                     pending_alarms = []
                     for alarm in alarms:
-                        alarm_time = datetime.datetime.fromisoformat(alarm['alarm_time'].replace('Z', '+00:00'))
-                        if alarm_time > now_utc:
-                            seconds_until = int((alarm_time - now_utc).total_seconds())
-                            pending_alarms.append({
-                                "id": alarm["id"],
-                                "seconds": seconds_until,
-                                "message": alarm["text"]
-                            })
+                        try:
+                            # アラームデータの構造をログ出力
+                            logger.info(f"📱 アラームデータ: {alarm}")
+                            
+                            # 日付と時刻を組み合わせてUTC時刻を作成
+                            alarm_date = alarm.get('alarm_date')  # YYYY-MM-DD
+                            alarm_time_str = alarm.get('time')    # HH:MM:SS
+                            
+                            if alarm_date and alarm_time_str:
+                                # 日付と時刻を組み合わせ
+                                alarm_datetime_str = f"{alarm_date}T{alarm_time_str}"
+                                alarm_time = datetime.datetime.fromisoformat(alarm_datetime_str)
+                                
+                                # UTCに変換（必要に応じて）
+                                if alarm_time.tzinfo is None:
+                                    alarm_time = alarm_time.replace(tzinfo=datetime.timezone.utc)
+                                
+                                logger.info(f"📱 アラーム時刻: {alarm_time}, 現在時刻: {now_utc}")
+                                
+                                if alarm_time > now_utc:
+                                    seconds_until = int((alarm_time - now_utc).total_seconds())
+                                    pending_alarms.append({
+                                        "id": alarm["id"],
+                                        "seconds": seconds_until,
+                                        "message": alarm["text"]
+                                    })
+                                    logger.info(f"📱 有効アラーム追加: {seconds_until}秒後")
+                                else:
+                                    logger.info(f"📱 過去のアラーム（スキップ）: {alarm_time}")
+                            else:
+                                logger.error(f"📱 アラーム時刻データ不正: date={alarm_date}, time={alarm_time_str}")
+                                
+                        except Exception as e:
+                            logger.error(f"📱 アラーム処理エラー: {e}, データ: {alarm}")
                     
                     logger.info(f"📱 有効アラーム: {len(pending_alarms)}件")
                     return web.json_response({"alarms": pending_alarms})
