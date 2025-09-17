@@ -278,10 +278,36 @@ async def main():
                             logger.error(f"📱 アラーム処理エラー: {e}, データ: {alarm}")
                     
                     logger.info(f"📱 有効アラーム: {len(pending_alarms)}件")
-                    return web.json_response({"alarms": pending_alarms})
+                    
+                    # 未読レター取得
+                    letter_response = await session.get(
+                        f"{nekota_server_url}/api/message/list?friend_id=all&unread_only=true",
+                        headers=headers
+                    )
+                    
+                    pending_letters = []
+                    if letter_response.status == 200:
+                        letter_data = await letter_response.json()
+                        letters = letter_data.get("messages", [])
+                        
+                        logger.info(f"📮 未読レター取得: {len(letters)}件")
+                        
+                        for letter in letters:
+                            pending_letters.append({
+                                "id": letter["id"],
+                                "from_user_name": letter.get("from_user_name", "誰か"),
+                                "message": letter.get("transcribed_text", letter.get("message", ""))
+                            })
+                    else:
+                        logger.error(f"📮 レター取得失敗: {letter_response.status}")
+                    
+                    return web.json_response({
+                        "alarms": pending_alarms,
+                        "letters": pending_letters
+                    })
                 else:
                     logger.error(f"📱 アラーム取得失敗: {alarm_response.status}")
-                    return web.json_response({"alarms": []})
+                    return web.json_response({"alarms": [], "letters": []})
                     
         except Exception as e:
             logger.error(f"📱 アラームチェックエラー: {e}")

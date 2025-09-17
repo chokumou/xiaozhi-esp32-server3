@@ -538,6 +538,16 @@ class ConnectionHandler:
                 self._processing_text = False
                 return
             
+            # レター機能の自然言語処理
+            logger.info(f"📮 RID[{rid}] レター処理チェック開始: '{text}'")
+            letter_processed = await self.process_letter_command(text, rid)
+            logger.info(f"📮 RID[{rid}] レター処理結果: {letter_processed}")
+            if letter_processed:
+                # レター処理が成功した場合は、LLM処理をスキップ
+                logger.info(f"📮 RID[{rid}] レター処理完了、LLM処理をスキップ")
+                self._processing_text = False
+                return
+            
             self.chat_history.append({"role": "user", "content": text})
 
             # Check for memory-related keywords
@@ -1506,6 +1516,129 @@ class ConnectionHandler:
         except Exception as e:
             logger.warning(f"💾 RID[{rid}] nekota-serverアラーム保存エラー（動作は継続）: {e}")
             # DB保存に失敗してもタイマー機能は正常動作
+
+    async def process_letter_command(self, text: str, rid: str) -> bool:
+        """レター送信コマンドの処理"""
+        try:
+            logger.info(f"📮 RID[{rid}] レター処理開始: '{text}'")
+            
+            # レター送信のキーワードチェック
+            if "メッセージを送って" in text or "レターを送って" in text or "手紙を送って" in text:
+                logger.info(f"📮 RID[{rid}] レター送信開始")
+                
+                # メッセージ内容を質問
+                response_text = "なんのメッセージを送るにゃ？"
+                await self.send_audio_response(response_text, rid)
+                
+                # 次の音声入力を待機（メッセージ内容）
+                self.letter_state = "waiting_message"
+                self.letter_rid = rid
+                return True
+                
+            # メッセージ内容受信状態
+            elif hasattr(self, 'letter_state') and self.letter_state == "waiting_message":
+                logger.info(f"📮 RID[{rid}] メッセージ内容受信: '{text}'")
+                
+                self.letter_message = text
+                
+                # 友達選択を質問
+                response_text = "誰に送るにゃ？"
+                await self.send_audio_response(response_text, rid)
+                
+                # 次の音声入力を待機（友達選択）
+                self.letter_state = "waiting_friend"
+                return True
+                
+            # 友達選択受信状態
+            elif hasattr(self, 'letter_state') and self.letter_state == "waiting_friend":
+                logger.info(f"📮 RID[{rid}] 友達選択受信: '{text}'")
+                
+                friend_name = text.strip()
+                success = await self.send_letter_to_friend(friend_name, self.letter_message, rid)
+                
+                if success:
+                    response_text = f"わかったよ！{friend_name}にお手紙を送ったにゃん"
+                else:
+                    response_text = f"ごめん、{friend_name}が見つからないにゃん。友達になってるか確認してにゃん"
+                
+                await self.send_audio_response(response_text, rid)
+                
+                # 状態をリセット
+                self.letter_state = None
+                self.letter_message = None
+                self.letter_rid = None
+                return True
+                
+            return False
+            
+        except Exception as e:
+            logger.error(f"📮 RID[{rid}] レター処理エラー: {e}")
+            return False
+
+    async def send_letter_to_friend(self, friend_name: str, message: str, rid: str) -> bool:
+        """友達にレターを送信"""
+        try:
+            logger.info(f"📮 RID[{rid}] レター送信処理: '{friend_name}' へ '{message}'")
+            
+            # nekota-serverから友達リストを取得
+            jwt_token, user_id = await self._get_valid_jwt_and_user()
+            if not jwt_token or not user_id:
+                logger.error(f"📮 RID[{rid}] 認証失敗")
+                return False
+            
+            import aiohttp
+            nekota_server_url = "https://nekota-server-production.up.railway.app"
+            
+            async with aiohttp.ClientSession() as session:
+                # 友達リスト取得
+                headers = {"Authorization": f"Bearer {jwt_token}"}
+                friend_response = await session.get(
+                    f"{nekota_server_url}/api/friend/list?user_id={user_id}",
+                    headers=headers
+                )
+                
+                if friend_response.status == 200:
+                    friend_data = await friend_response.json()
+                    friends = friend_data.get("friends", [])
+                    
+                    # 名前で友達を検索
+                    target_friend = None
+                    for friend in friends:
+                        if friend.get("name", "").lower() == friend_name.lower():
+                            target_friend = friend
+                            break
+                    
+                    if not target_friend:
+                        logger.warning(f"📮 RID[{rid}] 友達が見つからない: '{friend_name}'")
+                        return False
+                    
+                    # レター送信
+                    letter_data = {
+                        "from_user_id": user_id,
+                        "to_user_id": target_friend["user_id"],
+                        "message": message,
+                        "type": "letter"
+                    }
+                    
+                    message_response = await session.post(
+                        f"{nekota_server_url}/api/message/send",
+                        json=letter_data,
+                        headers=headers
+                    )
+                    
+                    if message_response.status == 201:
+                        logger.info(f"📮 RID[{rid}] レター送信成功")
+                        return True
+                    else:
+                        logger.error(f"📮 RID[{rid}] レター送信失敗: {message_response.status}")
+                        return False
+                else:
+                    logger.error(f"📮 RID[{rid}] 友達リスト取得失敗: {friend_response.status}")
+                    return False
+                    
+        except Exception as e:
+            logger.error(f"📮 RID[{rid}] レター送信エラー: {e}")
+            return False
 
 # デバイス接続チェック関数
 def is_device_connected(device_id: str) -> bool:
