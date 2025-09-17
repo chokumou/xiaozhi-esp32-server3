@@ -253,7 +253,7 @@ async def main():
                                     pending_alarms.append({
                                         "id": alarm["id"],
                                         "seconds": seconds_until,
-                                        "message": alarm["text"]
+                                        "message": alarm["message"]
                                     })
                                     logger.info(f"📱 有効アラーム追加: {seconds_until}秒後")
                                 else:
