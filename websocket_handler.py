@@ -1522,9 +1522,12 @@ class ConnectionHandler:
         try:
             logger.info(f"📮 RID[{rid}] レター処理開始: '{text}'")
             
-            # レター送信のキーワードチェック
-            if "メッセージを送って" in text or "レターを送って" in text or "手紙を送って" in text:
-                logger.info(f"📮 RID[{rid}] レター送信開始")
+            # 柔軟なレター送信キーワードチェック
+            letter_keywords = ["メッセージ", "レター", "手紙", "送って", "送る", "伝えて", "連絡"]
+            has_letter_keyword = any(keyword in text for keyword in letter_keywords)
+            
+            if has_letter_keyword:
+                logger.info(f"📮 RID[{rid}] レター送信開始（キーワード検出）")
                 
                 # メッセージ内容を質問
                 response_text = "なんのメッセージを送るにゃ？"
@@ -1554,19 +1557,75 @@ class ConnectionHandler:
                 logger.info(f"📮 RID[{rid}] 友達選択受信: '{text}'")
                 
                 friend_name = text.strip()
-                success = await self.send_letter_to_friend(friend_name, self.letter_message, rid)
+                result = await self.find_and_send_letter(friend_name, self.letter_message, rid)
                 
-                if success:
-                    response_text = f"わかったよ！{friend_name}にお手紙を送ったにゃん"
+                if result["success"]:
+                    response_text = f"わかったよ！{result['friend_name']}にお手紙を送ったにゃん"
+                    # 状態をリセット
+                    self.letter_state = None
+                    self.letter_message = None
+                    self.letter_rid = None
+                elif result["suggestion"]:
+                    response_text = f"もしかして{result['suggestion']}？それとも他の友達？"
+                    self.letter_suggested_friend = result['suggestion']
+                    self.letter_state = "confirming_friend"
                 else:
-                    response_text = f"ごめん、{friend_name}が見つからないにゃん。友達になってるか確認してにゃん"
+                    response_text = f"ごめん、{friend_name}が見つからないにゃん。もう一度名前を言ってにゃん"
+                    self.letter_state = "waiting_friend_retry"
                 
                 await self.send_audio_response(response_text, rid)
+                return True
                 
-                # 状態をリセット
-                self.letter_state = None
-                self.letter_message = None
-                self.letter_rid = None
+            # 友達確認状態
+            elif hasattr(self, 'letter_state') and self.letter_state == "confirming_friend":
+                logger.info(f"📮 RID[{rid}] 友達確認受信: '{text}'")
+                
+                if "はい" in text or "そう" in text or "うん" in text or "はい" in text:
+                    # 提案された友達に送信
+                    success = await self.send_letter_to_friend_direct(self.letter_suggested_friend, self.letter_message, rid)
+                    if success:
+                        response_text = f"わかったよ！{self.letter_suggested_friend}にお手紙を送ったにゃん"
+                    else:
+                        response_text = "ごめん、送信に失敗したにゃん"
+                    
+                    # 状態をリセット
+                    self.letter_state = None
+                    self.letter_message = None
+                    self.letter_rid = None
+                    self.letter_suggested_friend = None
+                else:
+                    # 他の友達を再質問
+                    response_text = "じゃあ、誰に送るにゃ？"
+                    self.letter_state = "waiting_friend"
+                
+                await self.send_audio_response(response_text, rid)
+                return True
+                
+            # 友達名リトライ状態
+            elif hasattr(self, 'letter_state') and self.letter_state == "waiting_friend_retry":
+                logger.info(f"📮 RID[{rid}] 友達名リトライ受信: '{text}'")
+                
+                friend_name = text.strip()
+                result = await self.find_and_send_letter(friend_name, self.letter_message, rid)
+                
+                if result["success"]:
+                    response_text = f"わかったよ！{result['friend_name']}にお手紙を送ったにゃん"
+                    # 状態をリセット
+                    self.letter_state = None
+                    self.letter_message = None
+                    self.letter_rid = None
+                elif result["suggestion"]:
+                    response_text = f"もしかして{result['suggestion']}？"
+                    self.letter_suggested_friend = result['suggestion']
+                    self.letter_state = "confirming_friend"
+                else:
+                    response_text = "やっぱり見つからないにゃん。友達リストを確認してにゃん"
+                    # 状態をリセット
+                    self.letter_state = None
+                    self.letter_message = None
+                    self.letter_rid = None
+                
+                await self.send_audio_response(response_text, rid)
                 return True
                 
             return False
@@ -1575,16 +1634,16 @@ class ConnectionHandler:
             logger.error(f"📮 RID[{rid}] レター処理エラー: {e}")
             return False
 
-    async def send_letter_to_friend(self, friend_name: str, message: str, rid: str) -> bool:
-        """友達にレターを送信"""
+    async def find_and_send_letter(self, friend_name: str, message: str, rid: str) -> dict:
+        """友達をあいまい検索してレターを送信"""
         try:
-            logger.info(f"📮 RID[{rid}] レター送信処理: '{friend_name}' へ '{message}'")
+            logger.info(f"📮 RID[{rid}] あいまい検索開始: '{friend_name}' へ '{message}'")
             
             # nekota-serverから友達リストを取得
             jwt_token, user_id = await self._get_valid_jwt_and_user()
             if not jwt_token or not user_id:
                 logger.error(f"📮 RID[{rid}] 認証失敗")
-                return False
+                return {"success": False, "suggestion": None}
             
             import aiohttp
             nekota_server_url = "https://nekota-server-production.up.railway.app"
@@ -1601,44 +1660,128 @@ class ConnectionHandler:
                     friend_data = await friend_response.json()
                     friends = friend_data.get("friends", [])
                     
-                    # 名前で友達を検索
+                    # 完全一致検索
                     target_friend = None
                     for friend in friends:
                         if friend.get("name", "").lower() == friend_name.lower():
                             target_friend = friend
                             break
                     
-                    if not target_friend:
-                        logger.warning(f"📮 RID[{rid}] 友達が見つからない: '{friend_name}'")
-                        return False
+                    # 完全一致した場合は送信
+                    if target_friend:
+                        success = await self._send_letter_api(target_friend, message, user_id, headers, session, rid)
+                        if success:
+                            return {"success": True, "friend_name": target_friend["name"], "suggestion": None}
                     
-                    # レター送信
-                    letter_data = {
-                        "from_user_id": user_id,
-                        "to_user_id": target_friend["user_id"],
-                        "message": message,
-                        "type": "letter"
-                    }
+                    # あいまい検索（部分一致）
+                    suggestions = []
+                    for friend in friends:
+                        friend_name_lower = friend.get("name", "").lower()
+                        input_name_lower = friend_name.lower()
+                        
+                        # 部分一致または含む関係
+                        if (input_name_lower in friend_name_lower or 
+                            friend_name_lower in input_name_lower or
+                            self._calculate_similarity(input_name_lower, friend_name_lower) > 0.6):
+                            suggestions.append(friend)
                     
-                    message_response = await session.post(
-                        f"{nekota_server_url}/api/message/send",
-                        json=letter_data,
-                        headers=headers
-                    )
+                    # 最も類似度の高い友達を提案
+                    if suggestions:
+                        best_match = suggestions[0]
+                        return {"success": False, "suggestion": best_match["name"]}
                     
-                    if message_response.status == 201:
-                        logger.info(f"📮 RID[{rid}] レター送信成功")
-                        return True
-                    else:
-                        logger.error(f"📮 RID[{rid}] レター送信失敗: {message_response.status}")
-                        return False
+                    return {"success": False, "suggestion": None}
                 else:
                     logger.error(f"📮 RID[{rid}] 友達リスト取得失敗: {friend_response.status}")
-                    return False
+                    return {"success": False, "suggestion": None}
                     
         except Exception as e:
-            logger.error(f"📮 RID[{rid}] レター送信エラー: {e}")
+            logger.error(f"📮 RID[{rid}] あいまい検索エラー: {e}")
+            return {"success": False, "suggestion": None}
+
+    async def send_letter_to_friend_direct(self, friend_name: str, message: str, rid: str) -> bool:
+        """友達名で直接レター送信（確認済み）"""
+        try:
+            jwt_token, user_id = await self._get_valid_jwt_and_user()
+            if not jwt_token or not user_id:
+                return False
+            
+            import aiohttp
+            nekota_server_url = "https://nekota-server-production.up.railway.app"
+            
+            async with aiohttp.ClientSession() as session:
+                headers = {"Authorization": f"Bearer {jwt_token}"}
+                friend_response = await session.get(
+                    f"{nekota_server_url}/api/friend/list?user_id={user_id}",
+                    headers=headers
+                )
+                
+                if friend_response.status == 200:
+                    friend_data = await friend_response.json()
+                    friends = friend_data.get("friends", [])
+                    
+                    target_friend = None
+                    for friend in friends:
+                        if friend.get("name", "").lower() == friend_name.lower():
+                            target_friend = friend
+                            break
+                    
+                    if target_friend:
+                        return await self._send_letter_api(target_friend, message, user_id, headers, session, rid)
+                        
             return False
+        except Exception as e:
+            logger.error(f"📮 RID[{rid}] 直接送信エラー: {e}")
+            return False
+
+    async def _send_letter_api(self, target_friend: dict, message: str, user_id: str, headers: dict, session, rid: str) -> bool:
+        """レター送信API呼び出し"""
+        try:
+            nekota_server_url = "https://nekota-server-production.up.railway.app"
+            
+            letter_data = {
+                "from_user_id": user_id,
+                "to_user_id": target_friend["user_id"],
+                "message": message,
+                "type": "letter"
+            }
+            
+            message_response = await session.post(
+                f"{nekota_server_url}/api/message/send",
+                json=letter_data,
+                headers=headers
+            )
+            
+            if message_response.status == 201:
+                logger.info(f"📮 RID[{rid}] レター送信成功: {target_friend['name']}")
+                return True
+            else:
+                logger.error(f"📮 RID[{rid}] レター送信失敗: {message_response.status}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"📮 RID[{rid}] API送信エラー: {e}")
+            return False
+
+    def _calculate_similarity(self, str1: str, str2: str) -> float:
+        """文字列の類似度を計算（簡易版）"""
+        if not str1 or not str2:
+            return 0.0
+        
+        # レーベンシュタイン距離の簡易版
+        len1, len2 = len(str1), len(str2)
+        if len1 == 0:
+            return 0.0 if len2 > 0 else 1.0
+        if len2 == 0:
+            return 0.0
+        
+        # 共通文字数を計算
+        common = 0
+        for char in str1:
+            if char in str2:
+                common += 1
+        
+        return common / max(len1, len2)
 
 # デバイス接続チェック関数
 def is_device_connected(device_id: str) -> bool:
