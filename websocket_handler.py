@@ -1660,6 +1660,10 @@ class ConnectionHandler:
                     friend_data = await friend_response.json()
                     friends = friend_data.get("friends", [])
                     
+                    logger.info(f"📮 RID[{rid}] 友達リスト取得成功: {len(friends)}人")
+                    for i, friend in enumerate(friends):
+                        logger.info(f"📮 RID[{rid}] 友達{i+1}: {friend.get('name', 'Unknown')}")
+                    
                     # 完全一致検索
                     target_friend = None
                     for friend in friends:
@@ -1674,21 +1678,39 @@ class ConnectionHandler:
                             return {"success": True, "friend_name": target_friend["name"], "suggestion": None}
                     
                     # あいまい検索（部分一致）
+                    logger.info(f"📮 RID[{rid}] あいまい検索開始: 友達数={len(friends)}")
                     suggestions = []
                     for friend in friends:
                         friend_name_lower = friend.get("name", "").lower()
                         input_name_lower = friend_name.lower()
                         
+                        logger.info(f"📮 RID[{rid}] 検索比較: '{input_name_lower}' vs '{friend_name_lower}'")
+                        
                         # 部分一致または含む関係
-                        if (input_name_lower in friend_name_lower or 
-                            friend_name_lower in input_name_lower or
-                            self._calculate_similarity(input_name_lower, friend_name_lower) > 0.6):
-                            suggestions.append(friend)
+                        is_partial_match = (input_name_lower in friend_name_lower or 
+                                          friend_name_lower in input_name_lower)
+                        similarity = self._calculate_similarity(input_name_lower, friend_name_lower)
+                        
+                        logger.info(f"📮 RID[{rid}] マッチ結果: partial={is_partial_match}, similarity={similarity}")
+                        
+                        if is_partial_match or similarity > 0.3:  # 類似度閾値を下げる
+                            suggestions.append({
+                                "friend": friend,
+                                "similarity": similarity,
+                                "partial_match": is_partial_match
+                            })
+                            logger.info(f"📮 RID[{rid}] 候補追加: {friend['name']}")
+                    
+                    # 類似度でソート（部分一致を優先）
+                    suggestions.sort(key=lambda x: (x["partial_match"], x["similarity"]), reverse=True)
                     
                     # 最も類似度の高い友達を提案
                     if suggestions:
-                        best_match = suggestions[0]
+                        best_match = suggestions[0]["friend"]
+                        logger.info(f"📮 RID[{rid}] 最適候補: {best_match['name']}")
                         return {"success": False, "suggestion": best_match["name"]}
+                    
+                    logger.info(f"📮 RID[{rid}] 候補なし")
                     
                     return {"success": False, "suggestion": None}
                 else:
@@ -1764,24 +1786,34 @@ class ConnectionHandler:
             return False
 
     def _calculate_similarity(self, str1: str, str2: str) -> float:
-        """文字列の類似度を計算（簡易版）"""
+        """文字列の類似度を計算（改良版）"""
         if not str1 or not str2:
             return 0.0
         
-        # レーベンシュタイン距離の簡易版
-        len1, len2 = len(str1), len(str2)
-        if len1 == 0:
-            return 0.0 if len2 > 0 else 1.0
-        if len2 == 0:
-            return 0.0
+        # 完全一致
+        if str1 == str2:
+            return 1.0
+        
+        # 部分一致（含まれる関係）
+        if str1 in str2 or str2 in str1:
+            return 0.8
         
         # 共通文字数を計算
+        len1, len2 = len(str1), len(str2)
         common = 0
+        str2_chars = list(str2)
+        
         for char in str1:
-            if char in str2:
+            if char in str2_chars:
+                str2_chars.remove(char)  # 重複カウントを防ぐ
                 common += 1
         
-        return common / max(len1, len2)
+        # ジャッカード係数的な計算
+        union_size = len1 + len2 - common
+        if union_size == 0:
+            return 1.0
+        
+        return common / union_size
 
 # デバイス接続チェック関数
 def is_device_connected(device_id: str) -> bool:
