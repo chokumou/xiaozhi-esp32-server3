@@ -1529,7 +1529,23 @@ class ConnectionHandler:
             if has_letter_keyword:
                 logger.info(f"📮 RID[{rid}] レター送信開始（キーワード検出）")
                 
-                # メッセージ内容を質問
+                # 「○○に送って」形式の場合、名前を抽出して直接処理
+                if ("に送って" in text or "に送る" in text or "へ送って" in text or "へ送る" in text):
+                    extracted_name = self._extract_name_from_text(text)
+                    logger.info(f"📮 RID[{rid}] 文章から名前抽出: '{extracted_name}' (元: '{text}')")
+                    
+                    if extracted_name and extracted_name != text:  # 名前が抽出できた場合
+                        # メッセージ内容を質問
+                        response_text = f"{extracted_name}になんのメッセージを送るにゃ？"
+                        await self.send_audio_response(response_text, rid)
+                        
+                        # 事前に友達名を保存
+                        self.letter_target_friend = extracted_name
+                        self.letter_state = "waiting_message_with_friend"
+                        self.letter_rid = rid
+                        return True
+                
+                # 通常のレター送信フロー
                 response_text = "なんのメッセージを送るにゃ？"
                 await self.send_audio_response(response_text, rid)
                 
@@ -1552,11 +1568,42 @@ class ConnectionHandler:
                 self.letter_state = "waiting_friend"
                 return True
                 
+            # 友達名付きメッセージ内容受信状態
+            elif hasattr(self, 'letter_state') and self.letter_state == "waiting_message_with_friend":
+                logger.info(f"📮 RID[{rid}] 友達名付きメッセージ内容受信: '{text}'")
+                
+                self.letter_message = text
+                friend_name = self.letter_target_friend
+                
+                # 友達を検索して送信
+                result = await self.find_and_send_letter(friend_name, self.letter_message, rid)
+                
+                if result["success"]:
+                    response_text = f"わかったよ！{result['friend_name']}にお手紙を送ったにゃん"
+                    # 状態をリセット
+                    self.letter_state = None
+                    self.letter_message = None
+                    self.letter_rid = None
+                    self.letter_target_friend = None
+                elif result["suggestion"]:
+                    response_text = f"もしかして{result['suggestion']}？それとも他の友達？"
+                    self.letter_suggested_friend = result['suggestion']
+                    self.letter_state = "confirming_friend"
+                else:
+                    response_text = f"ごめん、{friend_name}が見つからないにゃん。もう一度名前を言ってにゃん"
+                    self.letter_state = "waiting_friend_retry"
+                
+                await self.send_audio_response(response_text, rid)
+                return True
+                
             # 友達選択受信状態
             elif hasattr(self, 'letter_state') and self.letter_state == "waiting_friend":
                 logger.info(f"📮 RID[{rid}] 友達選択受信: '{text}'")
                 
-                friend_name = text.strip()
+                # 文章から名前を抽出
+                friend_name = self._extract_name_from_text(text)
+                logger.info(f"📮 RID[{rid}] 抽出された名前: '{friend_name}' (元テキスト: '{text}')")
+                
                 result = await self.find_and_send_letter(friend_name, self.letter_message, rid)
                 
                 if result["success"]:
@@ -1785,35 +1832,113 @@ class ConnectionHandler:
             logger.error(f"📮 RID[{rid}] API送信エラー: {e}")
             return False
 
+    def _normalize_japanese_text(self, text: str) -> list:
+        """日本語テキストを正規化（ひらがな・カタカナ・漢字変換）"""
+        import unicodedata
+        
+        normalized_variants = [text.lower()]
+        
+        # ひらがな→カタカナ変換
+        hiragana_to_katakana = ""
+        for char in text:
+            if 'ひ' <= char <= 'ゖ':  # ひらがな範囲
+                hiragana_to_katakana += chr(ord(char) + 0x60)
+            else:
+                hiragana_to_katakana += char
+        if hiragana_to_katakana != text:
+            normalized_variants.append(hiragana_to_katakana.lower())
+        
+        # カタカナ→ひらがな変換
+        katakana_to_hiragana = ""
+        for char in text:
+            if 'ア' <= char <= 'ヶ':  # カタカナ範囲
+                katakana_to_hiragana += chr(ord(char) - 0x60)
+            else:
+                katakana_to_hiragana += char
+        if katakana_to_hiragana != text:
+            normalized_variants.append(katakana_to_hiragana.lower())
+        
+        # 全角→半角変換
+        half_width = unicodedata.normalize('NFKC', text).lower()
+        if half_width != text.lower():
+            normalized_variants.append(half_width)
+        
+        return list(set(normalized_variants))  # 重複除去
+
+    def _extract_name_from_text(self, text: str) -> str:
+        """文章から名前を抽出"""
+        import re
+        
+        # 不要な語句を除去するパターン
+        noise_patterns = [
+            r'に送って$',
+            r'に送る$', 
+            r'を探して$',
+            r'に連絡$',
+            r'にメッセージ$',
+            r'にレター$',
+            r'に手紙$',
+            r'へ送って$',
+            r'へ送る$',
+            r'に伝えて$',
+            r'に教えて$'
+        ]
+        
+        extracted_name = text.strip()
+        
+        # 各パターンで不要部分を除去
+        for pattern in noise_patterns:
+            extracted_name = re.sub(pattern, '', extracted_name, flags=re.IGNORECASE)
+        
+        # 前後の空白を除去
+        extracted_name = extracted_name.strip()
+        
+        # 空文字列の場合は元のテキストを返す
+        if not extracted_name:
+            extracted_name = text.strip()
+        
+        return extracted_name
+
     def _calculate_similarity(self, str1: str, str2: str) -> float:
-        """文字列の類似度を計算（改良版）"""
+        """文字列の類似度を計算（日本語対応改良版）"""
         if not str1 or not str2:
             return 0.0
         
-        # 完全一致
-        if str1 == str2:
-            return 1.0
+        # 正規化バリアントを生成
+        str1_variants = self._normalize_japanese_text(str1)
+        str2_variants = self._normalize_japanese_text(str2)
         
-        # 部分一致（含まれる関係）
-        if str1 in str2 or str2 in str1:
-            return 0.8
+        max_similarity = 0.0
         
-        # 共通文字数を計算
-        len1, len2 = len(str1), len(str2)
-        common = 0
-        str2_chars = list(str2)
+        # 全組み合わせで最高類似度を計算
+        for v1 in str1_variants:
+            for v2 in str2_variants:
+                # 完全一致
+                if v1 == v2:
+                    return 1.0
+                
+                # 部分一致（含まれる関係）
+                if v1 in v2 or v2 in v1:
+                    max_similarity = max(max_similarity, 0.8)
+                    continue
+                
+                # 共通文字数を計算
+                len1, len2 = len(v1), len(v2)
+                common = 0
+                v2_chars = list(v2)
+                
+                for char in v1:
+                    if char in v2_chars:
+                        v2_chars.remove(char)  # 重複カウントを防ぐ
+                        common += 1
+                
+                # ジャッカード係数的な計算
+                union_size = len1 + len2 - common
+                if union_size > 0:
+                    similarity = common / union_size
+                    max_similarity = max(max_similarity, similarity)
         
-        for char in str1:
-            if char in str2_chars:
-                str2_chars.remove(char)  # 重複カウントを防ぐ
-                common += 1
-        
-        # ジャッカード係数的な計算
-        union_size = len1 + len2 - common
-        if union_size == 0:
-            return 1.0
-        
-        return common / union_size
+        return max_similarity
 
 # デバイス接続チェック関数
 def is_device_connected(device_id: str) -> bool:
