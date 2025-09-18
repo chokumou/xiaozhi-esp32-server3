@@ -39,10 +39,21 @@ async def authenticate_websocket(websocket, path):
         # Extract headers (case insensitive)
         headers = {k.lower(): v for k, v in websocket.request_headers.items()}
         
-        # Get device ID and client ID from headers
+        # Get device ID and client ID from headers or URL query params
         device_id = headers.get("device-id")
         client_id = headers.get("client-id")
         protocol_version = headers.get("protocol-version", "1")
+        
+        # ヘッダーにdevice-idがない場合、URLのクエリパラメータから取得
+        if not device_id:
+            import urllib.parse
+            url_path = websocket.path_qs
+            parsed = urllib.parse.urlparse(url_path)
+            query_params = urllib.parse.parse_qs(parsed.query)
+            device_id = query_params.get('device-id', [None])[0]
+            logger.info(f"🔍 [URL_DEVICE_ID] Retrieved device_id from URL: {device_id}")
+        
+        logger.info(f"🔍 [DEVICE_ID_DEBUG] Final device_id: {device_id}")
         
         # Optional JWT authentication
         auth_header = headers.get("authorization")
