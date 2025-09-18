@@ -51,6 +51,12 @@ class ConnectionHandler:
         self.session_id = str(uuid.uuid4())
         self.audio_format = "opus"  # Default format (ESP32 sends Opus like server2)
         
+        # レター機能の状態管理
+        self.letter_state = "none"
+        self.letter_message = None
+        self.letter_target_friend = None
+        self.letter_suggested_friend = None
+        
         # 接続時にデバイスを登録
         connected_devices[self.device_id] = self
         logger.info(f"📱 RID[{self.device_id}] デバイス接続登録完了")
