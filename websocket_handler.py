@@ -577,9 +577,9 @@ class ConnectionHandler:
                 "何が好き" in text or "誕生日はいつ" in text or "知ってる" in text or "記憶してる" in text):
                 memory_query = text
                 logger.info(f"🧠 [MEMORY_QUERY_TRIGGER] Memory query triggered! Query: '{text}'")
-            elif "覚えて" in text or "覚えといて" in text or "記憶して" in text:
+            elif "覚えて" in text or "覚えといて" in text or "記憶して" in text or "おぼえて" in text or "おぼえといて" in text:
                 # Extract what to remember
-                memory_to_save = text.replace("覚えて", "").replace("覚えといて", "").replace("記憶して", "").strip()
+                memory_to_save = text.replace("覚えて", "").replace("覚えといて", "").replace("記憶して", "").replace("おぼえて", "").replace("おぼえといて", "").strip()
                 logger.info(f"🧠 [MEMORY_TRIGGER] Memory save triggered! Content: '{memory_to_save}'")
                 
                 if memory_to_save:
