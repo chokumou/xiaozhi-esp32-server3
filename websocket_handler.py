@@ -1605,6 +1605,7 @@ class ConnectionHandler:
             # 友達選択受信状態
             elif hasattr(self, 'letter_state') and self.letter_state == "waiting_friend":
                 logger.info(f"📮 RID[{rid}] 友達選択受信: '{text}'")
+                logger.info(f"📮 RID[{rid}] 現在の状態: letter_state={getattr(self, 'letter_state', None)}, letter_message={getattr(self, 'letter_message', None)}")
                 
                 # 文章から名前を抽出
                 friend_name = self._extract_name_from_text(text)
