@@ -1590,8 +1590,14 @@ class ConnectionHandler:
                     self.letter_suggested_friend = result['suggestion']
                     self.letter_state = "confirming_friend"
                 else:
-                    response_text = f"ごめん、{friend_name}が見つからないにゃん。もう一度名前を言ってにゃん"
-                    self.letter_state = "waiting_friend_retry"
+                    # システムエラーまたは友達が見つからない場合は完全リセット
+                    response_text = f"ごめん、{friend_name}への送信に失敗したにゃん。もう一度最初からお願いします"
+                    # 状態を完全にリセット
+                    self.letter_state = None
+                    self.letter_message = None
+                    self.letter_rid = None
+                    self.letter_target_friend = None
+                    self.letter_suggested_friend = None
                 
                 await self.send_audio_response(response_text, rid)
                 return True
@@ -1617,8 +1623,14 @@ class ConnectionHandler:
                     self.letter_suggested_friend = result['suggestion']
                     self.letter_state = "confirming_friend"
                 else:
-                    response_text = f"ごめん、{friend_name}が見つからないにゃん。もう一度名前を言ってにゃん"
-                    self.letter_state = "waiting_friend_retry"
+                    # システムエラーまたは友達が見つからない場合は完全リセット
+                    response_text = f"ごめん、{friend_name}への送信に失敗したにゃん。もう一度最初からお願いします"
+                    # 状態を完全にリセット
+                    self.letter_state = None
+                    self.letter_message = None
+                    self.letter_rid = None
+                    self.letter_target_friend = None
+                    self.letter_suggested_friend = None
                 
                 await self.send_audio_response(response_text, rid)
                 return True
@@ -1666,11 +1678,14 @@ class ConnectionHandler:
                     self.letter_suggested_friend = result['suggestion']
                     self.letter_state = "confirming_friend"
                 else:
-                    response_text = "やっぱり見つからないにゃん。友達リストを確認してにゃん"
-                    # 状態をリセット
+                    # システムエラーまたは友達が見つからない場合は完全リセット
+                    response_text = "やっぱり見つからないにゃん。もう一度最初からお願いします"
+                    # 状態を完全にリセット
                     self.letter_state = None
                     self.letter_message = None
                     self.letter_rid = None
+                    self.letter_target_friend = None
+                    self.letter_suggested_friend = None
                 
                 await self.send_audio_response(response_text, rid)
                 return True
