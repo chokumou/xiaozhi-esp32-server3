@@ -1687,7 +1687,8 @@ class ConnectionHandler:
             logger.info(f"📮 RID[{rid}] あいまい検索開始: '{friend_name}' へ '{message}'")
             
             # nekota-serverから友達リストを取得
-            jwt_token, user_id = await self._get_valid_jwt_and_user()
+            device_number = "327546"  # 固定デバイス番号
+            jwt_token, user_id = await self.memory_service._get_valid_jwt_and_user(device_number)
             if not jwt_token or not user_id:
                 logger.error(f"📮 RID[{rid}] 認証失敗")
                 return {"success": False, "suggestion": None}
@@ -1771,7 +1772,8 @@ class ConnectionHandler:
     async def send_letter_to_friend_direct(self, friend_name: str, message: str, rid: str) -> bool:
         """友達名で直接レター送信（確認済み）"""
         try:
-            jwt_token, user_id = await self._get_valid_jwt_and_user()
+            device_number = "327546"  # 固定デバイス番号
+            jwt_token, user_id = await self.memory_service._get_valid_jwt_and_user(device_number)
             if not jwt_token or not user_id:
                 return False
             
