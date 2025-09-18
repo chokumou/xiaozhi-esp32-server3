@@ -1592,7 +1592,7 @@ class ConnectionHandler:
                     self.letter_rid = None
                     self.letter_target_friend = None
                 elif result["suggestion"]:
-                    response_text = f"もしかして{result['suggestion']}？それとも他の友達？"
+                    response_text = f"もしかして{result['suggestion']}？"
                     self.letter_suggested_friend = result['suggestion']
                     self.letter_state = "confirming_friend"
                 else:
@@ -1626,7 +1626,7 @@ class ConnectionHandler:
                     self.letter_message = None
                     self.letter_rid = None
                 elif result["suggestion"]:
-                    response_text = f"もしかして{result['suggestion']}？それとも他の友達？"
+                    response_text = f"もしかして{result['suggestion']}？"
                     self.letter_suggested_friend = result['suggestion']
                     self.letter_state = "confirming_friend"
                 else:
@@ -1852,6 +1852,8 @@ class ConnectionHandler:
                 error_text = await message_response.text()
                 logger.error(f"📮 RID[{rid}] レター送信失敗: {message_response.status} - {error_text}")
                 logger.error(f"📮 RID[{rid}] 送信データ: {letter_data}")
+                logger.error(f"📮 RID[{rid}] リクエストURL: {nekota_server_url}/api/message/send_letter")
+                logger.error(f"📮 RID[{rid}] リクエストヘッダー: {headers}")
                 return False
                 
         except Exception as e:
