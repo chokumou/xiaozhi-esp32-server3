@@ -210,7 +210,11 @@ class ConnectionHandler:
             is_ai_speaking = hasattr(self, 'audio_handler') and getattr(self.audio_handler, 'client_is_speaking', False)
             is_cooldown = hasattr(self, 'audio_handler') and now_ms < getattr(self.audio_handler, 'tts_cooldown_until', 0)
             
-            if is_ai_speaking or is_cooldown:
+            # レター機能中はクールダウンをスキップして音声データを通す
+            is_letter_active = self.letter_state != "none"
+            should_block = (is_ai_speaking or (is_cooldown and not is_letter_active))
+            
+            if should_block:
                 # B. WebSocket入口で必ず落とす（最重要）
                 # 同一の時基でガード（ユーザー指摘の通り）
                 if not hasattr(self, 'ws_gate_drops'):
@@ -228,6 +232,14 @@ class ConnectionHandler:
                 if self._ws_block_count % 30 == 0:
                     logger.info(f"🚪 [WS_ENTRANCE_BLOCK] {block_reason}入口ブロック: {size_category}({msg_size}B) 過去30フレーム完全破棄 (累計={self.ws_gate_drops})")
                 return  # 即座に破棄
+            
+            # レター機能中でクールダウンをスキップした場合のログ
+            if is_cooldown and is_letter_active:
+                if not hasattr(self, '_letter_cooldown_skip_count'):
+                    self._letter_cooldown_skip_count = 0
+                self._letter_cooldown_skip_count += 1
+                if self._letter_cooldown_skip_count % 10 == 0:
+                    logger.info(f"📮 [LETTER_COOLDOWN_SKIP] レター機能中のクールダウンスキップ: {self._letter_cooldown_skip_count}回")
             
             # Server2準拠: 小パケットでも活動時間を更新（ESP32からの継続通信を認識）
             self.last_activity_time = time.time()
