@@ -1538,190 +1538,77 @@ class ConnectionHandler:
             logger.warning(f"💾 RID[{rid}] nekota-serverアラーム保存エラー（動作は継続）: {e}")
             # DB保存に失敗してもタイマー機能は正常動作
 
+    def _reset_letter_state(self):
+        """レター状態を完全リセット"""
+        self.letter_state = "none"
+        self.letter_message = None
+        self.letter_target_friend = None
+        self.letter_suggested_friend = None
+        self.letter_rid = None
+
     async def process_letter_command(self, text: str, rid: str) -> bool:
-        """レター送信コマンドの処理"""
+        """シンプルなレター送信フロー"""
         try:
-            logger.info(f"📮 RID[{rid}] レター処理開始: '{text}'")
+            logger.info(f"📮 RID[{rid}] レター処理: '{text}' (状態: {self.letter_state})")
             
-            # 柔軟なレター送信キーワードチェック
-            letter_keywords = ["メッセージ", "レター", "手紙", "送って", "送る", "伝えて", "連絡"]
-            has_letter_keyword = any(keyword in text for keyword in letter_keywords)
+            # 1. 送信開始
+            if self.letter_state == "none":
+                letter_keywords = ["メッセージ", "レター", "手紙", "送って", "送る", "伝えて", "連絡"]
+                if any(keyword in text for keyword in letter_keywords):
+                    logger.info(f"📮 RID[{rid}] レター送信開始")
+                    await self.send_audio_response("なんのメッセージを送るにゃ？", rid)
+                    self.letter_state = "waiting_message"
+                    return True
+                return False
             
-            if has_letter_keyword:
-                logger.info(f"📮 RID[{rid}] レター送信開始（キーワード検出）")
-                
-                # 「○○に送って」形式の場合、名前を抽出して直接処理
-                if ("に送って" in text or "に送る" in text or "へ送って" in text or "へ送る" in text):
-                    extracted_name = self._extract_name_from_text(text)
-                    logger.info(f"📮 RID[{rid}] 文章から名前抽出: '{extracted_name}' (元: '{text}')")
-                    
-                    if extracted_name and extracted_name != text:  # 名前が抽出できた場合
-                        # メッセージ内容を質問
-                        response_text = f"{extracted_name}になんのメッセージを送るにゃ？"
-                        await self.send_audio_response(response_text, rid)
-                        
-                        # 事前に友達名を保存
-                        self.letter_target_friend = extracted_name
-                        self.letter_state = "waiting_message_with_friend"
-                        self.letter_rid = rid
-                        return True
-                
-                # 通常のレター送信フロー
-                response_text = "なんのメッセージを送るにゃ？"
-                await self.send_audio_response(response_text, rid)
-                
-                # 次の音声入力を待機（メッセージ内容）
-                self.letter_state = "waiting_message"
-                self.letter_rid = rid
-                return True
-                
-            # メッセージ内容受信状態
-            elif hasattr(self, 'letter_state') and self.letter_state == "waiting_message":
-                logger.info(f"📮 RID[{rid}] メッセージ内容受信: '{text}'")
-                
+            # 2. メッセージ内容受信
+            elif self.letter_state == "waiting_message":
+                logger.info(f"📮 RID[{rid}] メッセージ受信: '{text}'")
                 self.letter_message = text
-                
-                # 友達選択を質問
-                response_text = "誰に送るにゃ？"
-                await self.send_audio_response(response_text, rid)
-                
-                # 次の音声入力を待機（友達選択）
+                await self.send_audio_response("誰に送るにゃ？", rid)
                 self.letter_state = "waiting_friend"
                 return True
-                
-            # 友達名付きメッセージ内容受信状態
-            elif hasattr(self, 'letter_state') and self.letter_state == "waiting_message_with_friend":
-                logger.info(f"📮 RID[{rid}] 友達名付きメッセージ内容受信: '{text}'")
-                
-                # メッセージが既に設定されている場合は上書きしない
-                if not hasattr(self, 'letter_message') or not self.letter_message:
-                    self.letter_message = text
-                    logger.info(f"📮 RID[{rid}] メッセージ設定: '{text}'")
-                else:
-                    logger.info(f"📮 RID[{rid}] メッセージ既存のため維持: '{self.letter_message}' (新規入力: '{text}')")
-                
-                friend_name = self.letter_target_friend
-                
-                # 友達を検索して送信
-                result = await self.find_and_send_letter(friend_name, self.letter_message, rid)
-                
-                if result["success"]:
-                    response_text = f"わかったよ！{result['friend_name']}にお手紙を送ったにゃん"
-                    # 状態をリセット
-                    self.letter_state = None
-                    self.letter_message = None
-                    self.letter_rid = None
-                    self.letter_target_friend = None
-                elif result["suggestion"]:
-                    response_text = f"もしかして{result['suggestion']}？"
-                    self.letter_suggested_friend = result['suggestion']
-                    self.letter_state = "confirming_friend"
-                else:
-                    # システムエラーまたは友達が見つからない場合は完全リセット
-                    response_text = f"ごめん、{friend_name}への送信に失敗したにゃん。もう一度最初からお願いします"
-                    # 状態を完全にリセット
-                    self.letter_state = None
-                    self.letter_message = None
-                    self.letter_rid = None
-                    self.letter_target_friend = None
-                    self.letter_suggested_friend = None
-                
-                await self.send_audio_response(response_text, rid)
-                return True
-                
-            # 友達選択受信状態
-            elif hasattr(self, 'letter_state') and self.letter_state == "waiting_friend":
-                logger.info(f"📮 RID[{rid}] 友達選択受信: '{text}'")
-                logger.info(f"📮 RID[{rid}] 現在の状態: letter_state={getattr(self, 'letter_state', None)}, letter_message={getattr(self, 'letter_message', None)}")
-                
-                # 文章から名前を抽出
-                friend_name = self._extract_name_from_text(text)
-                logger.info(f"📮 RID[{rid}] 抽出された名前: '{friend_name}' (元テキスト: '{text}')")
-                
-                result = await self.find_and_send_letter(friend_name, self.letter_message, rid)
-                
-                if result["success"]:
-                    response_text = f"わかったよ！{result['friend_name']}にお手紙を送ったにゃん"
-                    # 状態をリセット
-                    self.letter_state = None
-                    self.letter_message = None
-                    self.letter_rid = None
-                elif result["suggestion"]:
-                    response_text = f"もしかして{result['suggestion']}？"
-                    self.letter_suggested_friend = result['suggestion']
-                    self.letter_state = "confirming_friend"
-                else:
-                    # システムエラーまたは友達が見つからない場合は完全リセット
-                    response_text = f"ごめん、{friend_name}への送信に失敗したにゃん。もう一度最初からお願いします"
-                    # 状態を完全にリセット
-                    self.letter_state = None
-                    self.letter_message = None
-                    self.letter_rid = None
-                    self.letter_target_friend = None
-                    self.letter_suggested_friend = None
-                
-                await self.send_audio_response(response_text, rid)
-                return True
-                
-            # 友達確認状態
-            elif hasattr(self, 'letter_state') and self.letter_state == "confirming_friend":
-                logger.info(f"📮 RID[{rid}] 友達確認受信: '{text}'")
-                
-                if "はい" in text or "そう" in text or "うん" in text or "はい" in text:
-                    # 提案された友達に送信
-                    success = await self.send_letter_to_friend_direct(self.letter_suggested_friend, self.letter_message, rid)
-                    if success:
-                        response_text = f"わかったよ！{self.letter_suggested_friend}にお手紙を送ったにゃん"
-                    else:
-                        response_text = "ごめん、送信に失敗したにゃん"
-                    
-                    # 状態をリセット
-                    self.letter_state = None
-                    self.letter_message = None
-                    self.letter_rid = None
-                    self.letter_suggested_friend = None
-                else:
-                    # 他の友達を再質問
-                    response_text = "じゃあ、誰に送るにゃ？"
-                    self.letter_state = "waiting_friend"
-                
-                await self.send_audio_response(response_text, rid)
-                return True
-                
-            # 友達名リトライ状態
-            elif hasattr(self, 'letter_state') and self.letter_state == "waiting_friend_retry":
-                logger.info(f"📮 RID[{rid}] 友達名リトライ受信: '{text}'")
-                
-                friend_name = text.strip()
-                result = await self.find_and_send_letter(friend_name, self.letter_message, rid)
-                
-                if result["success"]:
-                    response_text = f"わかったよ！{result['friend_name']}にお手紙を送ったにゃん"
-                    # 状態をリセット
-                    self.letter_state = None
-                    self.letter_message = None
-                    self.letter_rid = None
-                elif result["suggestion"]:
-                    response_text = f"もしかして{result['suggestion']}？"
-                    self.letter_suggested_friend = result['suggestion']
-                    self.letter_state = "confirming_friend"
-                else:
-                    # システムエラーまたは友達が見つからない場合は完全リセット
-                    response_text = "やっぱり見つからないにゃん。もう一度最初からお願いします"
-                    # 状態を完全にリセット
-                    self.letter_state = None
-                    self.letter_message = None
-                    self.letter_rid = None
-                    self.letter_target_friend = None
-                    self.letter_suggested_friend = None
-                
-                await self.send_audio_response(response_text, rid)
-                return True
-                
-            return False
             
+            # 3. 友達名受信と送信実行
+            elif self.letter_state == "waiting_friend":
+                logger.info(f"📮 RID[{rid}] 友達名受信: '{text}'")
+                friend_name = self._extract_name_from_text(text)
+                result = await self.find_and_send_letter(friend_name, self.letter_message, rid)
+                
+                if result["success"]:
+                    await self.send_audio_response(f"わかったよ！{result['friend_name']}にお手紙を送ったにゃん", rid)
+                    self._reset_letter_state()
+                elif result["suggestion"]:
+                    await self.send_audio_response(f"もしかして{result['suggestion']}？", rid)
+                    self.letter_suggested_friend = result['suggestion']
+                    self.letter_state = "confirming_friend"
+                else:
+                    await self.send_audio_response("ごめん、送信に失敗したにゃん。もう一度最初からお願いします", rid)
+                    self._reset_letter_state()
+                return True
+            
+            # 4. 友達確認
+            elif self.letter_state == "confirming_friend":
+                logger.info(f"📮 RID[{rid}] 友達確認: '{text}'")
+                if "はい" in text or "うん" in text or "そう" in text:
+                    result = await self.find_and_send_letter(self.letter_suggested_friend, self.letter_message, rid)
+                    if result["success"]:
+                        await self.send_audio_response(f"わかったよ！{result['friend_name']}にお手紙を送ったにゃん", rid)
+                    else:
+                        await self.send_audio_response("送信に失敗したにゃん", rid)
+                else:
+                    await self.send_audio_response("じゃあ、誰に送るにゃ？", rid)
+                    self.letter_state = "waiting_friend"
+                    return True
+                
+                self._reset_letter_state()
+                return True
+            
+            return False
+        
         except Exception as e:
             logger.error(f"📮 RID[{rid}] レター処理エラー: {e}")
+            self._reset_letter_state()
             return False
 
     async def find_and_send_letter(self, friend_name: str, message: str, rid: str) -> dict:
