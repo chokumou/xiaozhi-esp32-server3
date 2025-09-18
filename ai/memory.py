@@ -24,6 +24,27 @@ class MemoryService:
         )
         logger.info(f"MemoryService initialized with nekota-server URL: {self.api_url}")
     
+    async def _convert_esp32_device_id_to_device_number(self, esp32_device_id: str) -> str:
+        """ESP32のMACベースdevice_idを正しいdevice_numberに変換"""
+        try:
+            # マッピングテーブルで変換
+            mapping = {
+                "ESP32_8:44": "327546",
+                "ESP32_9:58": "467731"
+            }
+            
+            device_number = mapping.get(esp32_device_id)
+            if device_number:
+                logger.info(f"🔄 [DEVICE_MAPPING] {esp32_device_id} → {device_number}")
+                return device_number
+            else:
+                logger.warning(f"🔄 [DEVICE_MAPPING] Unknown ESP32 device_id: {esp32_device_id}, using as-is")
+                return esp32_device_id
+                
+        except Exception as e:
+            logger.error(f"🔄 [DEVICE_MAPPING] Error converting device_id: {e}")
+            return esp32_device_id
+    
     async def _get_valid_jwt_and_user(self, device_number: str) -> tuple:
         """nekota-serverから正規JWTとユーザー情報を取得"""
         try:
@@ -42,10 +63,8 @@ class MemoryService:
     
     async def save_memory(self, device_id: str, text: str) -> bool:
         try:
-            # MACアドレスからデバイス番号に変換（一時的なハードコード）
-            # TODO: 動的にデバイス番号を取得する仕組みを実装
-            # WebSocketハンドラーから渡されたdevice_idを使用
-            device_number = device_id
+            # ESP32のMACベースdevice_idを正しいdevice_numberに変換
+            device_number = await self._convert_esp32_device_id_to_device_number(device_id)
             
             # 正規JWTとユーザーIDを取得
             jwt_token, user_id = await self._get_valid_jwt_and_user(device_number)
@@ -82,9 +101,8 @@ class MemoryService:
         nekota-serverからユーザーのメモリーを取得
         """
         try:
-            # MACアドレスからデバイス番号に変換（一時的なハードコード）
-            # WebSocketハンドラーから渡されたdevice_idを使用
-            device_number = device_id
+            # ESP32のMACベースdevice_idを正しいdevice_numberに変換
+            device_number = await self._convert_esp32_device_id_to_device_number(device_id)
             
             # 正規JWTとユーザーIDを取得
             jwt_token, user_id = await self._get_valid_jwt_and_user(device_number)
