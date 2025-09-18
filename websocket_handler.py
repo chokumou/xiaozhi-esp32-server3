@@ -1839,11 +1839,11 @@ class ConnectionHandler:
                 "type": "letter"
             }
             
-            logger.info(f"📮 RID[{rid}] レター送信開始: URL={nekota_server_url}/api/letter/send")
+            logger.info(f"📮 RID[{rid}] レター送信開始: URL={nekota_server_url}/api/message/send_letter")
             logger.info(f"📮 RID[{rid}] 送信データ: {letter_data}")
             
             message_response = await session.post(
-                f"{nekota_server_url}/api/letter/send",
+                f"{nekota_server_url}/api/message/send_letter",
                 json=letter_data,
                 headers=headers
             )
