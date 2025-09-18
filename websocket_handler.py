@@ -992,13 +992,15 @@ class ConnectionHandler:
                     logger.info(f"🔍 [DEBUG_SEND] WebSocket state after audio send: closed={self.websocket.closed}")
 
                     # Send TTS stop message with cooldown info (server2 style + 回り込み防止)
-                    tts_stop_msg = {"type": "tts", "state": "stop", "session_id": self.session_id, "cooldown_ms": 1200}  # 残響も含めた完全エコー除去のため1200msに延長
+                    # レター機能中は短縮クールダウンを使用
+                    cooldown_time = 600 if self.letter_state != "none" else 1200
+                    tts_stop_msg = {"type": "tts", "state": "stop", "session_id": self.session_id, "cooldown_ms": cooldown_time}  # レター中は600ms、通常は1200ms
                     logger.info(f"🔍 [DEBUG_SEND] About to send TTS stop message: {tts_stop_msg}")
                     if self.websocket.closed or getattr(self.websocket, '_writer', None) is None:
                         logger.error(f"💀 [WEBSOCKET_DEAD] Cannot send TTS stop - connection dead")
                         return
                     await self.websocket.send_str(json.dumps(tts_stop_msg))
-                    logger.info(f"🟡XIAOZHI_TTS_STOP🟡 ※ここを送ってver2_TTS_STOP※ 📢 [TTS] Sent TTS stop message with cooldown=1200ms")
+                    logger.info(f"🟡XIAOZHI_TTS_STOP🟡 ※ここを送ってver2_TTS_STOP※ 📢 [TTS] Sent TTS stop message with cooldown={cooldown_time}ms")
                     logger.info(f"🔍 [DEBUG_SEND] WebSocket state after TTS stop: closed={self.websocket.closed}")
                     
                     # Server2準拠: TTS完了後の接続制御
@@ -1024,7 +1026,8 @@ class ConnectionHandler:
             
             async def delayed_flag_off():
                 try:
-                    cooldown_ms = 1200  # ユーザー指摘の通り
+                    # レター機能中は短縮クールダウンを使用
+                    cooldown_ms = 600 if self.letter_state != "none" else 1200  # レター中は600ms、通常は1200ms
                     # 🎯 [MONOTONIC_TIME] 単一時基統一
                     cooldown_until = time.monotonic() * 1000 + cooldown_ms
                     
