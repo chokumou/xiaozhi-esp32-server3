@@ -1833,7 +1833,7 @@ class ConnectionHandler:
             }
             
             message_response = await session.post(
-                f"{nekota_server_url}/api/message/send",
+                f"{nekota_server_url}/api/message/send_letter",
                 json=letter_data,
                 headers=headers
             )
@@ -1842,7 +1842,9 @@ class ConnectionHandler:
                 logger.info(f"📮 RID[{rid}] レター送信成功: {target_friend['name']}")
                 return True
             else:
-                logger.error(f"📮 RID[{rid}] レター送信失敗: {message_response.status}")
+                error_text = await message_response.text()
+                logger.error(f"📮 RID[{rid}] レター送信失敗: {message_response.status} - {error_text}")
+                logger.error(f"📮 RID[{rid}] 送信データ: {letter_data}")
                 return False
                 
         except Exception as e:
