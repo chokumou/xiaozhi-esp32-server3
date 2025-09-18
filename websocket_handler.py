@@ -1839,11 +1839,16 @@ class ConnectionHandler:
                 "type": "letter"
             }
             
+            logger.info(f"📮 RID[{rid}] レター送信開始: URL={nekota_server_url}/api/letter/send")
+            logger.info(f"📮 RID[{rid}] 送信データ: {letter_data}")
+            
             message_response = await session.post(
-                f"{nekota_server_url}/api/message/send_letter",
+                f"{nekota_server_url}/api/letter/send",
                 json=letter_data,
                 headers=headers
             )
+            
+            logger.info(f"📮 RID[{rid}] レスポンス受信: status={message_response.status}")
             
             if message_response.status == 201:
                 logger.info(f"📮 RID[{rid}] レター送信成功: {target_friend['name']}")
