@@ -1572,7 +1572,13 @@ class ConnectionHandler:
             elif hasattr(self, 'letter_state') and self.letter_state == "waiting_message_with_friend":
                 logger.info(f"📮 RID[{rid}] 友達名付きメッセージ内容受信: '{text}'")
                 
-                self.letter_message = text
+                # メッセージが既に設定されている場合は上書きしない
+                if not hasattr(self, 'letter_message') or not self.letter_message:
+                    self.letter_message = text
+                    logger.info(f"📮 RID[{rid}] メッセージ設定: '{text}'")
+                else:
+                    logger.info(f"📮 RID[{rid}] メッセージ既存のため維持: '{self.letter_message}' (新規入力: '{text}')")
+                
                 friend_name = self.letter_target_friend
                 
                 # 友達を検索して送信
