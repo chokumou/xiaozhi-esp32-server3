@@ -44,7 +44,9 @@ class MemoryService:
         try:
             # MACアドレスからデバイス番号に変換（一時的なハードコード）
             # TODO: 動的にデバイス番号を取得する仕組みを実装
-            device_number = "327546"  # 登録済みデバイス番号
+            # TODO: 動的にデバイス番号を取得する仕組みが必要
+            # 暫定的に固定値を使用（後で修正が必要）
+            device_number = "327546"
             
             # 正規JWTとユーザーIDを取得
             jwt_token, user_id = await self._get_valid_jwt_and_user(device_number)
@@ -82,7 +84,9 @@ class MemoryService:
         """
         try:
             # MACアドレスからデバイス番号に変換（一時的なハードコード）
-            device_number = "327546"  # 登録済みデバイス番号
+            # TODO: 動的にデバイス番号を取得する仕組みが必要
+            # 暫定的に固定値を使用（後で修正が必要）
+            device_number = "327546"
             
             # 正規JWTとユーザーIDを取得
             jwt_token, user_id = await self._get_valid_jwt_and_user(device_number)

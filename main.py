@@ -190,7 +190,7 @@ async def main():
                 # デバイス認証
                 auth_response = await session.post(
                     f"{nekota_server_url}/api/device/exists",
-                    json={"device_number": "327546"}  # 固定デバイス番号
+                    json={"device_number": device_id}  # ヘッダーから取得したデバイスID
                 )
                 
                 if auth_response.status != 200:

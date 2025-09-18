@@ -1492,7 +1492,8 @@ class ConnectionHandler:
             logger.info(f"🐛 RID[{rid}] 計算された時刻: {target_time_jst.strftime('%Y-%m-%d %H:%M')}")
             
             # MemoryServiceと同じ方法で端末認証（既存の仕組みを使用）
-            device_number = "327546"  # 登録済みデバイス番号（MemoryServiceと同じ）
+            # 現在のWebSocket接続のdevice_idを使用
+            device_number = self.device_id
             logger.info(f"🐛 RID[{rid}] 端末番号を使用: {device_number}")
             
             # MemoryServiceの認証方法を使用
@@ -1545,6 +1546,7 @@ class ConnectionHandler:
         self.letter_target_friend = None
         self.letter_suggested_friend = None
         self.letter_rid = None
+
 
     async def process_letter_command(self, text: str, rid: str) -> bool:
         """シンプルなレター送信フロー"""
@@ -1617,7 +1619,8 @@ class ConnectionHandler:
             logger.info(f"📮 RID[{rid}] あいまい検索開始: '{friend_name}' へ '{message}'")
             
             # nekota-serverから友達リストを取得
-            device_number = "327546"  # 固定デバイス番号
+            # 現在のWebSocket接続のdevice_idを使用
+            device_number = self.device_id
             jwt_token, user_id = await self.memory_service._get_valid_jwt_and_user(device_number)
             if not jwt_token or not user_id:
                 logger.error(f"📮 RID[{rid}] 認証失敗")
@@ -1702,7 +1705,8 @@ class ConnectionHandler:
     async def send_letter_to_friend_direct(self, friend_name: str, message: str, rid: str) -> bool:
         """友達名で直接レター送信（確認済み）"""
         try:
-            device_number = "327546"  # 固定デバイス番号
+            # 現在のWebSocket接続のdevice_idを使用
+            device_number = self.device_id
             jwt_token, user_id = await self.memory_service._get_valid_jwt_and_user(device_number)
             if not jwt_token or not user_id:
                 return False
