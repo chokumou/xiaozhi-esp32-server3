@@ -1871,8 +1871,9 @@ class ConnectionHandler:
             
             logger.info(f"📮 RID[{rid}] レスポンス受信: status={message_response.status}")
             
-            if message_response.status == 201:
-                logger.info(f"📮 RID[{rid}] レター送信成功: {target_friend['name']}")
+            if message_response.status in [200, 201]:
+                success_text = await message_response.text()
+                logger.info(f"📮 RID[{rid}] レター送信成功: {target_friend['name']} - {success_text}")
                 return True
             else:
                 error_text = await message_response.text()
