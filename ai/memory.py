@@ -25,30 +25,37 @@ class MemoryService:
         logger.info(f"MemoryService initialized with nekota-server URL: {self.api_url}")
     
     async def _convert_esp32_device_id_to_device_number(self, esp32_device_id: str) -> str:
-        """ESP32のMACベースdevice_idを正しいdevice_numberに変換"""
+        """ESP32のdevice_idを正しいdevice_numberに変換（データベース検索方式）"""
         try:
-            # マッピングテーブルで変換（UUID、MACアドレス、unknown対応）
-            mapping = {
-                # UUID形式（最新・推奨）
-                "405fc146-3a70-4c35-9ed4-a245dd5a9ee0": "467731",  # 端末467731のUUID
-                "92b63e50-4f65-49dc-a259-35fe14bea832": "327546",  # 端末327546のUUID
-                # MACアドレス形式（後方互換性）
-                "ESP32_8:44": "467731",  # 現在テスト中の端末
-                "ESP32_9:58": "327546",  # もう一方の端末
-                "ESP32_8_44": "467731",  # アンダースコア版
-                "ESP32_9_58": "327546",  # アンダースコア版
-                "ESP328_44": "467731",   # コロン無し版
-                "ESP329_58": "327546",   # コロン無し版
-                # フォールバック
-                "unknown": "467731"      # 緊急対応
+            # UUIDの場合は直接nekota-serverのデバイステーブルで検索
+            if len(esp32_device_id) == 36 and esp32_device_id.count('-') == 4:
+                # UUID形式の場合、nekota-serverのAPIで検索
+                response = await self.client.post("/api/device/exists", 
+                                                json={"device_number": esp32_device_id})
+                if response.status_code == 200:
+                    data = response.json()
+                    if data.get("exists"):
+                        # UUIDが直接device_numberとして使用可能
+                        logger.info(f"🔄 [UUID_DIRECT] UUID直接使用: {esp32_device_id}")
+                        return esp32_device_id
+            
+            # レガシー形式の場合はマッピングテーブル使用
+            legacy_mapping = {
+                "ESP32_8:44": "467731",
+                "ESP32_9:58": "327546", 
+                "ESP32_8_44": "467731",
+                "ESP32_9_58": "327546",
+                "ESP328_44": "467731",
+                "ESP329_58": "327546",
+                "unknown": "467731"  # 緊急対応
             }
             
-            device_number = mapping.get(esp32_device_id)
+            device_number = legacy_mapping.get(esp32_device_id)
             if device_number:
-                logger.info(f"🔄 [DEVICE_MAPPING] {esp32_device_id} → {device_number}")
+                logger.info(f"🔄 [LEGACY_MAPPING] {esp32_device_id} → {device_number}")
                 return device_number
             else:
-                logger.warning(f"🔄 [DEVICE_MAPPING] Unknown ESP32 device_id: {esp32_device_id}, using as-is")
+                logger.warning(f"🔄 [DEVICE_MAPPING] Unknown device_id: {esp32_device_id}, using as-is")
                 return esp32_device_id
                 
         except Exception as e:
