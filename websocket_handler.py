@@ -1497,6 +1497,15 @@ class ConnectionHandler:
         try:
             from datetime import datetime, timedelta
             
+            logger.error(f"🚨 [ALARM_DEBUG] ★★★ アラーム保存呼び出し ★★★ RID[{rid}] seconds={seconds}, message='{message}'")
+            
+            # スタックトレースで呼び出し元を特定
+            import traceback
+            stack = traceback.format_stack()
+            logger.error(f"🚨 [ALARM_DEBUG] 呼び出し元スタックトレース:")
+            for line in stack[-5:]:  # 最後の5行のみ
+                logger.error(f"🚨 [ALARM_DEBUG] {line.strip()}")
+            
             logger.info(f"🐛 RID[{rid}] アラーム保存開始: seconds={seconds}, message='{message}'")
             
             # タイマー完了時刻を計算
