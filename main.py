@@ -171,10 +171,17 @@ async def main():
         接続中のデバイスにタイマー設定
         """
         try:
+            # 呼び出し元情報を詳細ログ
+            logger.error(f"🚨 [TIMER_DEBUG] ★★★ device_set_timer呼び出し ★★★")
+            logger.error(f"🚨 [TIMER_DEBUG] リクエスト元IP: {request.remote}")
+            logger.error(f"🚨 [TIMER_DEBUG] ヘッダー: {dict(request.headers)}")
+            
             data = await request.json()
             user_id = data.get('user_id')
             seconds = data.get('seconds')
             message = data.get('message', '')
+            
+            logger.error(f"🚨 [TIMER_DEBUG] リクエストデータ: user_id={user_id}, seconds={seconds}, message='{message}'")
             
             if not user_id or not seconds:
                 return web.json_response({"error": "user_id and seconds required"}, status=400)
