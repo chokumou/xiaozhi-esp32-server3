@@ -19,9 +19,13 @@ async def ota_endpoint(request):
         try:
             data = await request.json()
             mac_address = data.get("mac", "")
-        except:
+            logger.info(f"🔍 [OTA_DEBUG] JSON data received: {data}")
+            logger.info(f"🔍 [OTA_DEBUG] MAC from JSON: '{mac_address}'")
+        except Exception as e:
             # JSONでない場合はヘッダーから取得を試行
             mac_address = request.headers.get("Device-Id", "")
+            logger.info(f"🔍 [OTA_DEBUG] JSON parse failed: {e}")
+            logger.info(f"🔍 [OTA_DEBUG] MAC from header: '{mac_address}'")
         
         # MACアドレスから端末情報を自動取得
         mac_suffix = mac_address[-4:] if len(mac_address) >= 4 else ""
