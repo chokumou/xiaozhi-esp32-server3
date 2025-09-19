@@ -27,15 +27,20 @@ class MemoryService:
     async def _convert_esp32_device_id_to_device_number(self, esp32_device_id: str) -> str:
         """ESP32のMACベースdevice_idを正しいdevice_numberに変換"""
         try:
-            # マッピングテーブルで変換（コロンとアンダースコア両方対応）
+            # マッピングテーブルで変換（UUID、MACアドレス、unknown対応）
             mapping = {
+                # UUID形式（最新・推奨）
+                "405fc146-3a70-4c35-9ed4-a245dd5a9ee0": "467731",  # 端末467731のUUID
+                "92b63e50-4f65-49dc-a259-35fe14bea832": "327546",  # 端末327546のUUID
+                # MACアドレス形式（後方互換性）
                 "ESP32_8:44": "467731",  # 現在テスト中の端末
                 "ESP32_9:58": "327546",  # もう一方の端末
                 "ESP32_8_44": "467731",  # アンダースコア版
                 "ESP32_9_58": "327546",  # アンダースコア版
                 "ESP328_44": "467731",   # コロン無し版
                 "ESP329_58": "327546",   # コロン無し版
-                "unknown": "467731"      # 緊急対応: 現在の端末番号に変更
+                # フォールバック
+                "unknown": "467731"      # 緊急対応
             }
             
             device_number = mapping.get(esp32_device_id)
