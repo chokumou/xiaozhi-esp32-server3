@@ -61,6 +61,32 @@ class MemoryService:
             logger.error(f"❌ 正規JWT取得失敗: {e}")
         return None, None
     
+    async def save_memory_with_auth(self, jwt_token: str, user_id: str, text: str) -> bool:
+        """認証済みJWTとuser_idを使用してメモリを保存"""
+        try:
+            # デバッグ用の詳細ログ
+            logger.info(f"🔑 Using pre-authenticated JWT for user_id: {user_id}")
+            logger.info(f"📡 Sending to: {self.api_url}/api/memory/")
+            logger.info(f"📦 Payload: {{'text': '{text[:30]}...', 'user_id': '{user_id}'}}")
+            
+            # Authorizationヘッダーを設定
+            headers = {"Authorization": f"Bearer {jwt_token}"}
+            
+            response = await self.client.post(
+                "/api/memory/",
+                json={"text": text, "user_id": user_id},
+                headers=headers
+            )
+            response.raise_for_status()
+            logger.info(f"✅ Memory saved for user {user_id}: {text[:50]}...")
+            return True
+        except httpx.HTTPStatusError as e:
+            logger.error(f"❌ HTTP error saving memory: {e.response.status_code} - {e.response.text}")
+            return False
+        except Exception as e:
+            logger.error(f"❌ Unexpected error saving memory: {e}")
+            return False
+
     async def save_memory(self, device_id: str, text: str) -> bool:
         try:
             # ESP32のMACベースdevice_idを正しいdevice_numberに変換
@@ -96,6 +122,38 @@ class MemoryService:
             logger.error(f"❌ Unexpected error saving memory: {e}")
             return False
     
+    async def query_memory_with_auth(self, jwt_token: str, user_id: str, keyword: str) -> Optional[str]:
+        """認証済みJWTとuser_idを使用してメモリを検索"""
+        try:
+            # デバッグ用の詳細ログ
+            logger.info(f"🔍 Using pre-authenticated JWT for user_id: {user_id}")
+            logger.info(f"📡 Querying: {self.api_url}/api/memory/search")
+            logger.info(f"🔎 Search keyword: '{keyword}'")
+            
+            # Authorizationヘッダーを設定
+            headers = {"Authorization": f"Bearer {jwt_token}"}
+            
+            response = await self.client.get(
+                f"/api/memory/search?keyword={keyword}&user_id={user_id}",
+                headers=headers
+            )
+            response.raise_for_status()
+            
+            data = response.json()
+            if data.get("memories"):
+                combined_memory = " ".join([mem.get("text", "") for mem in data["memories"]])
+                logger.info(f"✅ Memory found for user {user_id}: {combined_memory[:50]}...")
+                return combined_memory
+            else:
+                logger.info(f"❌ No memory found for keyword: '{keyword}'")
+                return None
+        except httpx.HTTPStatusError as e:
+            logger.error(f"❌ HTTP error querying memory: {e.response.status_code} - {e.response.text}")
+            return None
+        except Exception as e:
+            logger.error(f"❌ Unexpected error querying memory: {e}")
+            return None
+
     async def query_memory(self, device_id: str, keyword: str) -> Optional[str]:
         """
         nekota-serverからユーザーのメモリーを取得

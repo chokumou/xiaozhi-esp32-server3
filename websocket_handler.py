@@ -583,7 +583,16 @@ class ConnectionHandler:
                 logger.info(f"🧠 [MEMORY_TRIGGER] Memory save triggered! Content: '{memory_to_save}'")
                 
                 if memory_to_save:
-                    success = await self.memory_service.save_memory(self.device_id, memory_to_save)
+                    # フレンド機能と同じ認証フローを使用
+                    device_number = self.device_id
+                    jwt_token, user_id = await self.memory_service._get_valid_jwt_and_user(device_number)
+                    
+                    if not jwt_token or not user_id:
+                        logger.error(f"🧠 [MEMORY_AUTH_FAIL] 認証失敗: device_number={device_number}")
+                        await self.send_audio_response("すみません、記憶の保存に失敗しました。")
+                        return
+                    
+                    success = await self.memory_service.save_memory_with_auth(jwt_token, user_id, memory_to_save)
                     if success:
                         logger.info(f"🧠 [MEMORY_SUCCESS] Memory saved successfully!")
                         await self.send_audio_response("はい、覚えました。")
@@ -598,7 +607,16 @@ class ConnectionHandler:
             llm_messages = list(self.chat_history)
             if memory_query:
                 logger.info(f"🔍 [MEMORY_SEARCH] Starting memory search for query: '{memory_query}'")
-                retrieved_memory = await self.memory_service.query_memory(self.device_id, memory_query)
+                
+                # フレンド機能と同じ認証フローを使用
+                device_number = self.device_id
+                jwt_token, user_id = await self.memory_service._get_valid_jwt_and_user(device_number)
+                
+                if not jwt_token or not user_id:
+                    logger.error(f"🔍 [MEMORY_SEARCH_AUTH_FAIL] 認証失敗: device_number={device_number}")
+                    retrieved_memory = None
+                else:
+                    retrieved_memory = await self.memory_service.query_memory_with_auth(jwt_token, user_id, memory_query)
                 if retrieved_memory:
                     llm_messages.insert(0, {"role": "system", "content": f"ユーザーの記憶: {retrieved_memory}"})
                     logger.info(f"✅ [MEMORY_FOUND] Retrieved memory for LLM: {retrieved_memory[:50]}...")
