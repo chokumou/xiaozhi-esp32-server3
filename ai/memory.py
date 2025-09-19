@@ -139,7 +139,7 @@ class MemoryService:
             logger.error(f"❌ Unexpected error saving memory: {e}")
             return False
     
-    async def query_memory_with_auth(self, jwt_token: str, user_id: str, keyword: str) -> Optional[str]:
+    async def query_memory_with_auth(self, jwt_token: str, user_id: str, keyword: str, device_uuid: str = None) -> Optional[str]:
         """認証済みJWTとuser_idを使用してメモリを検索"""
         try:
             # デバッグ用の詳細ログ
@@ -150,8 +150,14 @@ class MemoryService:
             # Authorizationヘッダーを設定
             headers = {"Authorization": f"Bearer {jwt_token}"}
             
+            # device_idパラメータにはデバイスUUIDを使用（APIの要求仕様）
+            # user_idではなく、実際のdevice_id（UUID）を送信
+            if not device_uuid:
+                # user_idからdevice_idを逆引きする必要があるが、簡易的にuser_idを使用
+                device_uuid = user_id
+                
             response = await self.client.get(
-                f"/api/memory/search?keyword={keyword}&user_id={user_id}",
+                f"/api/memory/search?keyword={keyword}&device_id={device_uuid}",
                 headers=headers
             )
             response.raise_for_status()
@@ -191,8 +197,8 @@ class MemoryService:
             # nekota-serverのメモリー検索APIを呼び出す
             headers = {"Authorization": f"Bearer {jwt_token}"}
             
-            # まずは全メモリーを取得してみる
-            response = await self.client.get(f"/api/memory/?user_id={user_id}", headers=headers)
+            # まずは全メモリーを取得してみる（device_idパラメータ追加）
+            response = await self.client.get(f"/api/memory/?user_id={user_id}&device_id={user_id}", headers=headers)
             response.raise_for_status()
             
             memories_data = response.json()

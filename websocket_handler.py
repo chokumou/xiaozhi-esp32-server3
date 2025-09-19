@@ -616,7 +616,7 @@ class ConnectionHandler:
                     logger.error(f"🔍 [MEMORY_SEARCH_AUTH_FAIL] 認証失敗: device_number={device_number}")
                     retrieved_memory = None
                 else:
-                    retrieved_memory = await self.memory_service.query_memory_with_auth(jwt_token, user_id, memory_query)
+                    retrieved_memory = await self.memory_service.query_memory_with_auth(jwt_token, user_id, memory_query, self.device_id)
                 if retrieved_memory:
                     llm_messages.insert(0, {"role": "system", "content": f"ユーザーの記憶: {retrieved_memory}"})
                     logger.info(f"✅ [MEMORY_FOUND] Retrieved memory for LLM: {retrieved_memory[:50]}...")
