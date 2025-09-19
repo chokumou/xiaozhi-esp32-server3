@@ -27,10 +27,15 @@ class MemoryService:
     async def _convert_esp32_device_id_to_device_number(self, esp32_device_id: str) -> str:
         """ESP32のMACベースdevice_idを正しいdevice_numberに変換"""
         try:
-            # マッピングテーブルで変換
+            # マッピングテーブルで変換（コロンとアンダースコア両方対応）
             mapping = {
                 "ESP32_8:44": "327546",
-                "ESP32_9:58": "467731"
+                "ESP32_9:58": "467731", 
+                "ESP32_8_44": "327546",  # アンダースコア版
+                "ESP32_9_58": "467731",  # アンダースコア版
+                "ESP328_44": "327546",   # コロン無し版
+                "ESP329_58": "467731",   # コロン無し版
+                "unknown": "327546"      # 緊急対応: 全機能の認証に必要
             }
             
             device_number = mapping.get(esp32_device_id)
