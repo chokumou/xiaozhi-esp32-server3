@@ -15,12 +15,40 @@ auth_manager = AuthManager()
 async def ota_endpoint(request):
     """OTA version check endpoint - ESP32 compatible response"""
     try:
+        # ESP32からのリクエストデータを取得
+        try:
+            data = await request.json()
+            mac_address = data.get("mac", "")
+        except:
+            # JSONでない場合はヘッダーから取得を試行
+            mac_address = request.headers.get("Device-Id", "")
+        
+        # MACアドレスから端末情報を自動取得
+        mac_suffix = mac_address[-4:] if len(mac_address) >= 4 else ""
+        
+        device_info = {}
+        if mac_suffix == "8:44":
+            device_info = {
+                "uuid": "405fc146-3a70-4c35-9ed4-a245dd5a9ee0", 
+                "device_number": "467731"
+            }
+            logger.info(f"🔍 [OTA_DEVICE] MAC {mac_suffix} → Device 467731")
+        elif mac_suffix == "9:58":
+            device_info = {
+                "uuid": "92b63e50-4f65-49dc-a259-35fe14bea832", 
+                "device_number": "327546"
+            }
+            logger.info(f"🔍 [OTA_DEVICE] MAC {mac_suffix} → Device 327546")
+        else:
+            logger.warning(f"🔍 [OTA_DEVICE] Unknown MAC suffix: {mac_suffix} (full: {mac_address})")
+        
         # Return ESP32-compatible response with websocket configuration
         version_info = {
             "version": "1.6.8",
             "update_available": False,
             "download_url": "",
             "changelog": "No updates available",
+            "device_info": device_info,  # デバイス情報を追加
             "websocket": {
                 "url": "wss://xiaozhi-esp32-server3-production.up.railway.app/xiaozhi/v1/",
                 "token": "",
@@ -197,11 +225,19 @@ async def main():
             nekota_server_url = "https://nekota-server-production.up.railway.app"
             
             # デバイス認証でuser_idを取得
+            # device_idをdevice_numberに変換（マッピング）
+            device_mapping = {
+                "ESP32_8:44": "467731",  # 現在テスト中の端末
+                "ESP32_9:58": "327546"   # もう一方の端末
+            }
+            device_number = device_mapping.get(device_id, device_id)
+            logger.info(f"📱 デバイスマッピング: {device_id} → {device_number}")
+            
             async with aiohttp.ClientSession() as session:
                 # デバイス認証
                 auth_response = await session.post(
                     f"{nekota_server_url}/api/device/exists",
-                    json={"device_number": device_id}  # ヘッダーから取得したデバイスID
+                    json={"device_number": device_number}  # マッピング後のdevice_number
                 )
                 
                 if auth_response.status != 200:
@@ -213,7 +249,11 @@ async def main():
                 logger.info(f"📱 認証レスポンス: {auth_data}")
                 
                 # 正しい構造でuser_idを取得
-                user_data = auth_data.get("user", {})
+                user_data = auth_data.get("user")
+                if user_data is None:
+                    logger.error(f"📱 認証失敗: ユーザーデータが見つかりません (device_id={device_id})")
+                    return web.json_response({"alarms": []})
+                
                 user_id = user_data.get("id")
                 jwt_token = auth_data.get("token")
                 
