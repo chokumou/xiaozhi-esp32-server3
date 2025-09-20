@@ -1558,8 +1558,8 @@ class ConnectionHandler:
                 "date": target_time_jst.strftime("%Y-%m-%d"),
                 "time": target_time_jst.strftime("%H:%M"),
                 "timezone": "Asia/Tokyo",
-                "text": message,
-                "esp32_notified": True  # 音声アラーム：既にESP32に設定済み
+                "text": message
+                # "esp32_notified": True  # 一時的にコメントアウト（500エラー対策）
             }
             
             logger.info(f"🐛 RID[{rid}] アラームデータ: {alarm_data}")
