@@ -10,3 +10,4 @@ opuslib-next
 numpy
 pydub
 edge-tts
+pytz
