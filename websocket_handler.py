@@ -1581,6 +1581,8 @@ class ConnectionHandler:
             else:
                 error_text = response.text
                 logger.error(f"💾 RID[{rid}] アラーム保存失敗: {response.status_code} - {error_text}")
+                logger.error(f"💾 RID[{rid}] 送信データ詳細: {alarm_data}")
+                logger.error(f"💾 RID[{rid}] ヘッダー詳細: {headers}")
                         
         except Exception as e:
             logger.warning(f"💾 RID[{rid}] nekota-serverアラーム保存エラー（動作は継続）: {e}")
