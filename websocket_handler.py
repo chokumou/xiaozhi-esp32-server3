@@ -1558,7 +1558,7 @@ class ConnectionHandler:
                 "date": target_time_jst.strftime("%Y-%m-%d"),
                 "time": target_time_jst.strftime("%H:%M"),
                 "timezone": "Asia/Tokyo",
-                "text": message
+                "text": message if message else "ネコ太からのアラーム"  # デフォルトメッセージ
                 # "esp32_notified": True  # 一時的にコメントアウト（500エラー対策）
             }
             
