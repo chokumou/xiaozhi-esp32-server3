@@ -323,8 +323,9 @@ async def main():
                 
                 # 未発火アラーム取得
                 headers = {"Authorization": f"Bearer {jwt_token}"}
+                # ESP32未通知のアラームのみ取得（重複防止）
                 alarm_response = await session.get(
-                    f"{nekota_server_url}/api/alarm/?user_id={user_id}&fired=false",
+                    f"{nekota_server_url}/api/alarm/?user_id={user_id}&fired=false&esp32_notified=false",
                     headers=headers
                 )
                 
@@ -389,6 +390,23 @@ async def main():
                             logger.error(f"📱 アラーム処理エラー: {e}, データ: {alarm}")
                     
                     logger.info(f"📱 有効アラーム: {len(pending_alarms)}件")
+                    
+                    # ESP32に送信するアラームを通知済みに更新
+                    if pending_alarms:
+                        alarm_ids = [alarm["id"] for alarm in pending_alarms]
+                        for alarm_id in alarm_ids:
+                            try:
+                                update_response = await session.patch(
+                                    f"{nekota_server_url}/api/alarm/{alarm_id}",
+                                    json={"esp32_notified": True},
+                                    headers=headers
+                                )
+                                if update_response.status == 200:
+                                    logger.info(f"📱 アラーム通知済み更新: {alarm_id}")
+                                else:
+                                    logger.warning(f"📱 アラーム更新失敗: {alarm_id}")
+                            except Exception as e:
+                                logger.error(f"📱 アラーム更新エラー: {alarm_id} - {e}")
                     
                     # 未読レター取得
                     letter_response = await session.get(
