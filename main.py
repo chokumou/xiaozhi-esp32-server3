@@ -177,7 +177,7 @@ async def main():
             seconds = data.get('seconds')
             message = data.get('message', '')
             
-            logger.error(f"🚨 [CULPRIT_DEBUG] ★★★ 犯人特定調査 ★★★")
+            logger.error(f"🔥🔥🔥 DEVICE_SET_TIMER_CALL 🔥🔥🔥")
             logger.error(f"🚨 [CULPRIT_DEBUG] IP: {request.remote}")
             logger.error(f"🚨 [CULPRIT_DEBUG] User-Agent: {request.headers.get('User-Agent', 'Unknown')}")
             logger.error(f"🚨 [CULPRIT_DEBUG] Referer: {request.headers.get('Referer', 'None')}")
@@ -201,7 +201,16 @@ async def main():
                     intervals.append(f"{interval:.2f}s")
                 logger.error(f"🚨 [CALL_INTERVAL] 呼び出し間隔: {', '.join(intervals)}")
             
-            # 処理を続行（調査のため）
+            # 詳細調査：1回の指令で6回実行される原因を特定
+            
+            # スタックトレース取得
+            import traceback
+            stack_trace = traceback.format_stack()
+            logger.error(f"🚨 [DETAILED_STACK] 詳細スタックトレース:")
+            for i, line in enumerate(stack_trace[-10:]):  # 最後の10行
+                logger.error(f"🔥🔥🔥 STACK_{i} 🔥🔥🔥 {line.strip()}")
+            
+            # 処理を続行（詳細調査のため）
             
             # 重複防止チェック（同じメッセージの重複実行を防止）
             cache_key = f"{user_id}_{message}_{seconds//60}"  # 分単位でキャッシュ
