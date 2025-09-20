@@ -156,17 +156,46 @@ class MemoryService:
                 # user_idからdevice_idを逆引きする必要があるが、簡易的にuser_idを使用
                 device_uuid = user_id
                 
+            # キーワードから主要な単語を抽出（柔軟検索のため）
+            # 「お尻のことを教えて」→「お尻」を抽出
+            search_keywords = []
+            if "教えて" in keyword or "覚えてる" in keyword or "知ってる" in keyword:
+                # 質問形式の場合、名詞を抽出
+                words = keyword.replace("教えて", "").replace("覚えてる", "").replace("知ってる", "").replace("？", "").replace("?", "").replace("の", "").replace("こと", "").replace("について", "").strip()
+                if words:
+                    search_keywords.append(words)
+            
+            search_keywords.append(keyword)  # 元のキーワードも追加
+            
+            logger.info(f"🔍 [KEYWORD_EXTRACTION] Extracted keywords: {search_keywords}")
+            
+            # 最初のキーワードで検索（より広範囲な検索）
+            primary_keyword = search_keywords[0] if search_keywords else keyword
+            
             response = await self.client.get(
-                f"/api/memory/search?keyword={keyword}&device_id={device_uuid}",
+                f"/api/memory/search?keyword={primary_keyword}&device_id={device_uuid}",
                 headers=headers
             )
             response.raise_for_status()
             
             data = response.json()
             if data.get("memories"):
-                combined_memory = " ".join([mem.get("text", "") for mem in data["memories"]])
-                logger.info(f"✅ Memory found for user {user_id}: {combined_memory[:50]}...")
-                return combined_memory
+                # 取得したメモリーに対して柔軟検索を適用
+                memory_texts = [mem.get("text", "") for mem in data.get("memories", [])]
+                logger.info(f"🔍 [FLEXIBLE_SEARCH] Applying flexible search to {len(memory_texts)} memories")
+                
+                # 柔軟検索でフィルタリング
+                relevant_memories = self._filter_memories_by_keyword(memory_texts, keyword)
+                
+                if relevant_memories:
+                    combined_memory = " ".join(relevant_memories)
+                    logger.info(f"✅ Memory found after flexible search: {combined_memory[:50]}...")
+                    return combined_memory
+                else:
+                    # 柔軟検索でも見つからない場合、全メモリーを返す（従来の動作）
+                    combined_memory = " ".join(memory_texts)
+                    logger.info(f"✅ No flexible match, returning all memories: {combined_memory[:50]}...")
+                    return combined_memory
             else:
                 logger.info(f"❌ No memory found for keyword: '{keyword}'")
                 return None
