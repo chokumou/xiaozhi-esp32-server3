@@ -1399,8 +1399,10 @@ class ConnectionHandler:
                         message = text
                         logger.debug(f"🐛 RID[{rid}] メッセージ設定: '{message}'")
                         
+                        logger.error(f"🚨 [TIMER_COMMAND_DEBUG] ★★★ send_timer_set_command呼び出し直前 ★★★ RID[{rid}]")
                         logger.info(f"⏰ RID[{rid}] タイマー設定コマンドを検出: {text} -> {seconds}秒, メッセージ: '{message}'")
                         await self.send_timer_set_command(rid, seconds, message)
+                        logger.error(f"🚨 [TIMER_COMMAND_DEBUG] ★★★ send_timer_set_command呼び出し完了 ★★★ RID[{rid}]")
                         return True
                 except Exception as e:
                     logger.error(f"RID[{rid}] タイマー時間計算エラー: {e}")
