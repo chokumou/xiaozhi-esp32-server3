@@ -1607,17 +1607,39 @@ class ConnectionHandler:
                 letter_keywords = ["メッセージ", "レター", "手紙", "送って", "送る", "伝えて", "連絡"]
                 if any(keyword in text for keyword in letter_keywords):
                     logger.info(f"📮 RID[{rid}] レター送信開始")
-                    await self.send_audio_response("なんのメッセージを送るにゃ？", rid)
-                    self.letter_state = "waiting_message"
+                    await self.send_audio_response("誰になんのメッセージを送るにゃ？", rid)
+                    self.letter_state = "waiting_complete_command"
                     return True
                 return False
             
-            # 2. メッセージ内容受信
-            elif self.letter_state == "waiting_message":
-                logger.info(f"📮 RID[{rid}] メッセージ受信: '{text}'")
-                self.letter_message = text
-                await self.send_audio_response("誰に送るにゃ？", rid)
-                self.letter_state = "waiting_friend"
+            # 2. 完全なコマンド受信（AI解析）
+            elif self.letter_state == "waiting_complete_command":
+                logger.info(f"📮 RID[{rid}] 完全コマンド受信: '{text}'")
+                
+                # AI解析を使用
+                from utils.nlp_parser import message_parser
+                parsed_message = await message_parser.parse_message_command(text)
+                
+                if parsed_message:
+                    friend_name = parsed_message["recipient"]
+                    message_content = parsed_message["message"]
+                    
+                    result = await self.find_and_send_letter(friend_name, message_content, rid)
+                    
+                    if result["success"]:
+                        await self.send_audio_response(f"わかったよ！{result['friend_name']}にお手紙を送ったにゃん", rid)
+                        self._reset_letter_state()
+                    elif result["suggestion"]:
+                        await self.send_audio_response(f"もしかして{result['suggestion']}？", rid)
+                        self.letter_suggested_friend = result['suggestion']
+                        self.letter_message = message_content
+                        self.letter_state = "confirming_friend"
+                    else:
+                        await self.send_audio_response("ごめん、送信に失敗したにゃん。もう一度お願いします", rid)
+                        self.letter_state = "waiting_complete_command"
+                else:
+                    await self.send_audio_response("うまく聞き取れなかったにゃ。もう一度お願いします", rid)
+                    self.letter_state = "waiting_complete_command"
                 return True
             
             # 3. 友達名受信と送信実行
