@@ -1312,6 +1312,13 @@ class ConnectionHandler:
             logger.error(f"Error in timeout check for {self.device_id}: {e}")
 
     async def process_timer_command(self, text: str, rid: str) -> bool:
+        logger.error(f"🚨 [TIMER_PROCESS_DEBUG] ★★★ process_timer_command呼び出し ★★★ RID[{rid}] text='{text}'")
+        
+        # 呼び出し回数カウント
+        if not hasattr(self, 'timer_process_count'):
+            self.timer_process_count = 0
+        self.timer_process_count += 1
+        logger.error(f"🚨 [TIMER_PROCESS_DEBUG] 呼び出し回数: {self.timer_process_count}回目")
         """
         自然言語からタイマー設定を解析し、ESP32に送信する
         戻り値: タイマー処理が成功した場合True、そうでなければFalse

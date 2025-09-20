@@ -168,20 +168,60 @@ async def main():
 
     async def device_set_timer(request):
         """
-        接続中のデバイスにタイマー設定
+        接続中のデバイスにタイマー設定（一時的に無効化）
         """
         try:
-            # 呼び出し元情報を詳細ログ
-            logger.error(f"🚨 [TIMER_DEBUG] ★★★ device_set_timer呼び出し ★★★")
-            logger.error(f"🚨 [TIMER_DEBUG] リクエスト元IP: {request.remote}")
-            logger.error(f"🚨 [TIMER_DEBUG] ヘッダー: {dict(request.headers)}")
-            
+            # 犯人特定のため詳細ログ（ブロックは一時解除）
             data = await request.json()
             user_id = data.get('user_id')
             seconds = data.get('seconds')
             message = data.get('message', '')
             
-            logger.error(f"🚨 [TIMER_DEBUG] リクエストデータ: user_id={user_id}, seconds={seconds}, message='{message}'")
+            logger.error(f"🚨 [CULPRIT_DEBUG] ★★★ 犯人特定調査 ★★★")
+            logger.error(f"🚨 [CULPRIT_DEBUG] IP: {request.remote}")
+            logger.error(f"🚨 [CULPRIT_DEBUG] User-Agent: {request.headers.get('User-Agent', 'Unknown')}")
+            logger.error(f"🚨 [CULPRIT_DEBUG] Referer: {request.headers.get('Referer', 'None')}")
+            logger.error(f"🚨 [CULPRIT_DEBUG] X-Forwarded-For: {request.headers.get('X-Forwarded-For', 'None')}")
+            logger.error(f"🚨 [CULPRIT_DEBUG] X-Railway-Request-Id: {request.headers.get('X-Railway-Request-Id', 'None')}")
+            logger.error(f"🚨 [CULPRIT_DEBUG] Content: user_id={user_id}, seconds={seconds}, message='{message}'")
+            
+            # 呼び出し間隔を調査
+            if not hasattr(device_set_timer, 'call_times'):
+                device_set_timer.call_times = []
+            
+            import time
+            current_time = time.time()
+            device_set_timer.call_times.append(current_time)
+            
+            # 最近10回の呼び出し間隔を分析
+            if len(device_set_timer.call_times) > 1:
+                intervals = []
+                for i in range(1, min(len(device_set_timer.call_times), 10)):
+                    interval = device_set_timer.call_times[i] - device_set_timer.call_times[i-1]
+                    intervals.append(f"{interval:.2f}s")
+                logger.error(f"🚨 [CALL_INTERVAL] 呼び出し間隔: {', '.join(intervals)}")
+            
+            # 処理を続行（調査のため）
+            
+            # 重複防止チェック（同じメッセージの重複実行を防止）
+            cache_key = f"{user_id}_{message}_{seconds//60}"  # 分単位でキャッシュ
+            
+            # 簡易キャッシュ（グローバル変数使用）
+            if not hasattr(device_set_timer, 'recent_requests'):
+                device_set_timer.recent_requests = {}
+            
+            import time
+            current_time = time.time()
+            
+            # 30秒以内の同じリクエストはブロック
+            if cache_key in device_set_timer.recent_requests:
+                last_time = device_set_timer.recent_requests[cache_key]
+                if current_time - last_time < 30:
+                    logger.error(f"🚨 [DUPLICATE_BLOCK] 重複リクエストをブロック: {cache_key}")
+                    return web.json_response({"status": "duplicate_blocked"}, status=409)
+            
+            # キャッシュに記録
+            device_set_timer.recent_requests[cache_key] = current_time
             
             if not user_id or not seconds:
                 return web.json_response({"error": "user_id and seconds required"}, status=400)
