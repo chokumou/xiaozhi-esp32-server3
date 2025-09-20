@@ -1469,8 +1469,8 @@ class ConnectionHandler:
             logger.info(f"⏰ RID[{rid}] ESP32にタイマー設定コマンドを送信: {json.dumps(timer_command)}")
             logger.info(f"🐛 RID[{rid}] WebSocket送信後: websocket.closed={self.websocket.closed}")
             
-            # nekota-serverのDBにアラームを保存
-            await self.save_alarm_to_nekota_server(rid, seconds, message)
+            # nekota-serverのDBにアラームを保存（一時的に無効化）
+            # await self.save_alarm_to_nekota_server(rid, seconds, message)
             
             # ユーザーに確認メッセージを送信（現地時間で表示）
             from datetime import datetime, timedelta, timezone, timedelta as td
