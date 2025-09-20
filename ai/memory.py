@@ -156,16 +156,16 @@ class MemoryService:
                 # user_idからdevice_idを逆引きする必要があるが、簡易的にuser_idを使用
                 device_uuid = user_id
                 
-            # キーワードから主要な単語を抽出（柔軟検索のため）
-            # 「お尻のことを教えて」→「お尻」を抽出
-            search_keywords = []
-            if "教えて" in keyword or "覚えてる" in keyword or "知ってる" in keyword:
-                # 質問形式の場合、名詞を抽出
-                words = keyword.replace("教えて", "").replace("覚えてる", "").replace("知ってる", "").replace("？", "").replace("?", "").replace("の", "").replace("こと", "").replace("について", "").strip()
-                if words:
-                    search_keywords.append(words)
-            
-            search_keywords.append(keyword)  # 元のキーワードも追加
+            # AI解析でより高度なキーワード抽出
+            search_keywords = await self._extract_search_keywords_ai(keyword)
+            if not search_keywords:
+                # フォールバック: 従来のキーワード抽出
+                search_keywords = []
+                if "教えて" in keyword or "覚えてる" in keyword or "知ってる" in keyword:
+                    words = keyword.replace("教えて", "").replace("覚えてる", "").replace("知ってる", "").replace("？", "").replace("?", "").replace("の", "").replace("こと", "").replace("について", "").strip()
+                    if words:
+                        search_keywords.append(words)
+                search_keywords.append(keyword)
             
             logger.info(f"🔍 [KEYWORD_EXTRACTION] Extracted keywords: {search_keywords}")
             
@@ -389,3 +389,66 @@ class MemoryService:
         
         logger.info(f"🔍 [MEMORY_FILTER] Found {len(relevant_memories)} relevant memories")
         return relevant_memories
+    
+    async def _extract_search_keywords_ai(self, query: str) -> list:
+        """AI APIを使用した高度なキーワード抽出"""
+        try:
+            import httpx
+            import json
+            import os
+            
+            # OpenAI API設定
+            api_key = os.getenv("OPENAI_API_KEY")
+            if not api_key:
+                logger.warning("⚠️ [AI_MEMORY] OpenAI API key not found, using traditional extraction")
+                return []
+            
+            prompt = f"""以下の質問から、メモリー検索に最適なキーワードを抽出してください。
+関連する概念や類義語も含めて、検索精度を向上させるキーワードリストを作成してください。
+
+質問: "{query}"
+
+期待される出力形式（JSON配列）:
+["主要キーワード", "関連キーワード1", "関連キーワード2"]
+
+例:
+質問: "お尻のことを教えて"
+出力: ["お尻", "臀部", "体の症状", "健康"]
+
+質問: "昨日の話覚えてる？"  
+出力: ["昨日", "前日", "会話", "記憶"]"""
+
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    "https://api.openai.com/v1/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {api_key}",
+                        "Content-Type": "application/json"
+                    },
+                    json={
+                        "model": "gpt-4o-mini",
+                        "messages": [{"role": "user", "content": prompt}],
+                        "max_tokens": 150,
+                        "temperature": 0.1
+                    },
+                    timeout=10.0
+                )
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    content = data["choices"][0]["message"]["content"]
+                    
+                    try:
+                        keywords = json.loads(content)
+                        if isinstance(keywords, list) and keywords:
+                            logger.info(f"✅ [AI_MEMORY] AI キーワード抽出成功: {keywords}")
+                            return keywords
+                    except json.JSONDecodeError:
+                        logger.error(f"❌ [AI_MEMORY] JSON解析失敗: {content}")
+                else:
+                    logger.error(f"❌ [AI_MEMORY] API呼び出し失敗: {response.status_code}")
+                    
+        except Exception as e:
+            logger.error(f"❌ [AI_MEMORY] AI キーワード抽出エラー: {e}")
+        
+        return []
