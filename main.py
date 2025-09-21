@@ -408,27 +408,41 @@ async def main():
                             except Exception as e:
                                 logger.error(f"📱 アラーム更新エラー: {alarm_id} - {e}")
                     
-                    # 未読レター取得
-                    letter_response = await session.get(
-                        f"{nekota_server_url}/api/message/list?friend_id=all&unread_only=true",
+                    # 未読レター取得（友達リストから個別に取得）
+                    # まず友達リストを取得
+                    friends_response = await session.get(
+                        f"{nekota_server_url}/api/friend/list",
                         headers=headers
                     )
                     
                     pending_letters = []
-                    if letter_response.status == 200:
-                        letter_data = await letter_response.json()
-                        letters = letter_data.get("messages", [])
+                    if friends_response.status == 200:
+                        friends_data = await friends_response.json()
+                        friends = friends_data.get("friends", [])
                         
-                        logger.info(f"📮 未読レター取得: {len(letters)}件")
-                        
-                        for letter in letters:
-                            pending_letters.append({
-                                "id": letter["id"],
-                                "from_user_name": letter.get("from_user_name", "誰か"),
-                                "message": letter.get("transcribed_text", letter.get("message", ""))
-                            })
+                        # 各友達から未読メッセージを取得
+                        for friend in friends:
+                            friend_id = friend.get("id")
+                            if friend_id:
+                                letter_response = await session.get(
+                                    f"{nekota_server_url}/api/message/list?friend_id={friend_id}&unread_only=true",
+                                    headers=headers
+                                )
+                                
+                                if letter_response.status == 200:
+                                    letter_data = await letter_response.json()
+                                    letters = letter_data.get("messages", [])
+                                    
+                                    for letter in letters:
+                                        pending_letters.append({
+                                            "id": letter["id"],
+                                            "from_user_name": letter.get("from_user_name", friend.get("name", "誰か")),
+                                            "message": letter.get("transcribed_text", letter.get("message", ""))
+                                        })
                     else:
-                        logger.error(f"📮 レター取得失敗: {letter_response.status}")
+                        logger.error(f"📮 友達リスト取得失敗: {friends_response.status}")
+                    
+                    logger.info(f"📮 未読レター取得: {len(pending_letters)}件")
                     
                     return web.json_response({
                         "alarms": pending_alarms,
