@@ -2075,11 +2075,11 @@ Examples:
                 # レター内容を読み上げ
                 logger.info(f"📮 RID[{rid}] レター読み上げ要求")
                 
-                # レター読み上げ指示をESP32に送信
-                # ESP32側でpending_letter_の内容を読み上げさせる
-                read_command = {"type": "letter_read_command", "action": "read"}
-                await self.websocket.send_str(json.dumps(read_command))
-                logger.info(f"📮 RID[{rid}] ESP32にレター読み上げ指示送信")
+                # サーバー側で実際のレター内容を取得して読み上げ
+                # TODO: 実際のレター内容をDBから取得
+                letter_content = "実際のお手紙の内容がここに入ります"  # 暫定
+                await self.send_audio_response(letter_content, rid)
+                logger.info(f"📮 RID[{rid}] レター内容読み上げ完了")
                 
                 # レター応答状態をリセット（グローバル状態）
                 device_letter_states[self.device_id] = False
