@@ -1710,42 +1710,19 @@ class ConnectionHandler:
                         if success:
                             return {"success": True, "friend_name": target_friend["name"], "suggestion": None}
                     
-                    # あいまい検索（部分一致）
-                    logger.info(f"📮 RID[{rid}] あいまい検索開始: 友達数={len(friends)}")
-                    suggestions = []
-                    for friend in friends:
-                        friend_name_lower = friend.get("name", "").lower()
-                        input_name_lower = friend_name.lower()
-                        
-                        logger.info(f"📮 RID[{rid}] 検索比較: '{input_name_lower}' vs '{friend_name_lower}'")
-                        
-                        # 部分一致または含む関係
-                        is_partial_match = (input_name_lower in friend_name_lower or 
-                                          friend_name_lower in input_name_lower)
-                        similarity = self._calculate_similarity(input_name_lower, friend_name_lower)
-                        
-                        logger.info(f"📮 RID[{rid}] マッチ結果: partial={is_partial_match}, similarity={similarity}")
-                        
-                        if is_partial_match or similarity > 0.3:  # 類似度閾値を下げる
-                            suggestions.append({
-                                "friend": friend,
-                                "similarity": similarity,
-                                "partial_match": is_partial_match
-                            })
-                            logger.info(f"📮 RID[{rid}] 候補追加: {friend['name']}")
+                    # AI-based友達検索
+                    logger.info(f"📮 RID[{rid}] AI友達検索開始: '{friend_name}' 友達数={len(friends)}")
+                    best_friend = await self._find_friend_with_ai(friend_name, friends, rid)
                     
-                    # 類似度でソート（部分一致を優先）
-                    suggestions.sort(key=lambda x: (x["partial_match"], x["similarity"]), reverse=True)
-                    
-                    # 最も類似度の高い友達を提案
-                    if suggestions:
-                        best_match = suggestions[0]["friend"]
-                        logger.info(f"📮 RID[{rid}] 最適候補: {best_match['name']}")
-                        return {"success": False, "suggestion": best_match["name"]}
-                    
-                    logger.info(f"📮 RID[{rid}] 候補なし")
-                    
-                    return {"success": False, "suggestion": None}
+                    if best_friend:
+                        success = await self._send_letter_api(best_friend, message, user_id, headers, session, rid)
+                        if success:
+                            return {"success": True, "friend_name": best_friend["name"], "suggestion": None}
+                        else:
+                            return {"success": False, "suggestion": None}
+                    else:
+                        logger.info(f"📮 RID[{rid}] AI検索でも候補なし")
+                        return {"success": False, "suggestion": None}
                 else:
                     logger.error(f"📮 RID[{rid}] 友達リスト取得失敗: {friend_response.status}")
                     return {"success": False, "suggestion": None}
@@ -1940,6 +1917,108 @@ class ConnectionHandler:
                     max_similarity = max(max_similarity, similarity)
         
         return max_similarity
+    
+    async def _find_friend_with_ai(self, search_name: str, friends: list, rid: str) -> dict:
+        """AI解析による友達検索"""
+        try:
+            import httpx
+            import json
+            import os
+            
+            # OpenAI API設定
+            api_key = os.getenv("OPENAI_API_KEY")
+            if not api_key:
+                logger.warning(f"📮 RID[{rid}] AI友達検索: API key not found, using fallback")
+                return self._find_friend_fallback(search_name, friends, rid)
+            
+            # 友達名リストを作成
+            friend_names = [friend.get("name", "") for friend in friends]
+            
+            prompt = f"""Find the best matching friend name from the list for the search query.
+Consider pronunciation variations, honorifics, and partial matches.
+
+Search query: "{search_name}"
+Friend list: {friend_names}
+
+Return JSON with the exact friend name from the list, or null if no reasonable match:
+{{"matched_name": "exact name from list or null"}}
+
+Examples:
+- Search: "うんち" → List: ["うんち君"] → {{"matched_name": "うんち君"}}
+- Search: "たなか" → List: ["田中さん"] → {{"matched_name": "田中さん"}}
+- Search: "john" → List: ["John Smith"] → {{"matched_name": "John Smith"}}"""
+
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    "https://api.openai.com/v1/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {api_key}",
+                        "Content-Type": "application/json"
+                    },
+                    json={
+                        "model": "gpt-4o-mini",
+                        "messages": [{"role": "user", "content": prompt}],
+                        "max_tokens": 50,
+                        "temperature": 0
+                    },
+                    timeout=10.0
+                )
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    content = data["choices"][0]["message"]["content"].strip()
+                    
+                    try:
+                        result = json.loads(content)
+                        matched_name = result.get("matched_name")
+                        
+                        if matched_name:
+                            # 友達リストから該当する友達を返す
+                            for friend in friends:
+                                if friend.get("name") == matched_name:
+                                    logger.info(f"📮 RID[{rid}] AI友達検索成功: {search_name} → {matched_name}")
+                                    return friend
+                        
+                        logger.info(f"📮 RID[{rid}] AI友達検索: マッチなし")
+                        return None
+                        
+                    except json.JSONDecodeError:
+                        logger.error(f"📮 RID[{rid}] AI友達検索: JSON解析失敗")
+                        
+        except Exception as e:
+            logger.error(f"📮 RID[{rid}] AI友達検索エラー: {e}")
+        
+        # フォールバック: 従来の検索
+        return self._find_friend_fallback(search_name, friends, rid)
+    
+    def _find_friend_fallback(self, search_name: str, friends: list, rid: str) -> dict:
+        """従来のあいまい検索（フォールバック）"""
+        suggestions = []
+        for friend in friends:
+            friend_name_lower = friend.get("name", "").lower()
+            input_name_lower = search_name.lower()
+            
+            # 部分一致または含む関係
+            is_partial_match = (input_name_lower in friend_name_lower or 
+                              friend_name_lower in input_name_lower)
+            similarity = self._calculate_similarity(input_name_lower, friend_name_lower)
+            
+            if is_partial_match or similarity > 0.3:
+                suggestions.append({
+                    "friend": friend,
+                    "similarity": similarity,
+                    "partial_match": is_partial_match
+                })
+        
+        # 類似度でソート（部分一致を優先）
+        suggestions.sort(key=lambda x: (not x["partial_match"], -x["similarity"]))
+        
+        if suggestions:
+            best_match = suggestions[0]["friend"]
+            logger.info(f"📮 RID[{rid}] フォールバック検索成功: {search_name} → {best_match['name']}")
+            return best_match
+        
+        return None
 
 # デバイス接続チェック関数
 def is_device_connected(device_id: str) -> bool:
