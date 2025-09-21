@@ -1669,6 +1669,7 @@ class ConnectionHandler:
                         await self.send_audio_response(f"わかったよ！{result['friend_name']}にお手紙を送ったにゃん", rid)
                     else:
                         await self.send_audio_response("送信に失敗したにゃん", rid)
+                    self._reset_letter_state()
                 else:
                     await self.send_audio_response("じゃあ、誰に送るにゃ？", rid)
                     self.letter_state = "waiting_friend"
