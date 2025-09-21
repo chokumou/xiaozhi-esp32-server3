@@ -69,47 +69,8 @@ class FlexibleTextParser:
         if half_width != text.lower():
             normalized_variants.append(half_width)
         
-        # 一般的な読み方パターン追加
-        common_readings = {
-            # 人名でよく使われる漢字の読み方
-            '君': ['くん', 'きみ'],
-            '太': ['た', 'ふとし'],
-            '太郎': ['たろう', 'たろ'],
-            '一郎': ['いちろう', 'いちろ'],
-            '花子': ['はなこ', 'はな'],
-            '美': ['み', 'び'],
-            '愛': ['あい', 'めぐみ'],
-            '恵': ['めぐみ', 'けい'],
-            '健': ['けん', 'たけし'],
-            '直': ['なお', 'ちょく'],
-            '正': ['まさ', 'せい'],
-            '和': ['かず', 'わ', 'やまと'],
-            '光': ['ひかり', 'みつ', 'こう'],
-            '明': ['あき', 'めい', 'あきら'],
-            '誠': ['まこと', 'せい'],
-            '勇': ['いさむ', 'ゆう'],
-            '雄': ['お', 'ゆう', 'おす'],
-            '博': ['ひろ', 'はく'],
-            '文': ['ふみ', 'あや'],
-            '子': ['こ', 'ね'],
-            '男': ['おとこ', 'だん'],
-            '女': ['おんな', 'じょ'],
-            '人': ['ひと', 'じん'],
-            '友': ['とも', 'ゆう'],
-            '親': ['おや', 'しん'],
-            '兄': ['あに', 'けい'],
-            '弟': ['おとうと', 'てい'],
-            '姉': ['あね', 'し'],
-            '妹': ['いもうと', 'まい'],
-        }
-        
-        # 各バリアントに対して読み方パターンを適用
-        for variant in normalized_variants.copy():
-            for kanji, readings in common_readings.items():
-                if kanji in variant:
-                    for reading in readings:
-                        new_variant = variant.replace(kanji, reading)
-                        normalized_variants.append(new_variant)
+        # AI解析を使用するため、基本的な正規化のみ実行
+        # 詳細な読み方パターンはAIに任せる
         
         return list(set(normalized_variants))  # 重複除去
     
@@ -284,8 +245,13 @@ class MessageTextParser(FlexibleTextParser):
 期待される出力形式:
 {{"recipient": "相手の名前", "message": "メッセージ内容"}}
 
-送信の意図がない場合はnullを返してください。
-敬称（さん、君、ちゃん）は除去してください。"""
+重要：名前の読み方は柔軟に認識してください。
+- 漢字、ひらがな、カタカナの違いは無視
+- 「君」「くん」「きみ」など読み方の違いは無視
+- 例えば「うんちくん」「うんち君」「うんちきみ」は全て同じ名前として認識
+- 敬称（さん、君、ちゃん、くん）は除去してください。
+
+送信の意図がない場合はnullを返してください。"""
 
             async with httpx.AsyncClient() as client:
                 response = await client.post(
