@@ -1629,13 +1629,9 @@ class ConnectionHandler:
                     if result["success"]:
                         await self.send_audio_response(f"わかったよ！{result['friend_name']}にお手紙を送ったにゃん", rid)
                         self._reset_letter_state()
-                    elif result["suggestion"]:
-                        await self.send_audio_response(f"もしかして{result['suggestion']}？", rid)
-                        self.letter_suggested_friend = result['suggestion']
-                        self.letter_message = message_content
-                        self.letter_state = "confirming_friend"
                     else:
-                        await self.send_audio_response("ごめん、送信に失敗したにゃん。もう一度お願いします", rid)
+                        # AI解析で名前が抽出できたが送信失敗 = 友達が見つからない
+                        await self.send_audio_response(f"ごめん、{friend_name}が友達リストに見つからないにゃ。正しい名前で教えてにゃ", rid)
                         self.letter_state = "waiting_complete_command"
                 else:
                     await self.send_audio_response("誰に何を送るか、もう少し詳しく教えてにゃ！例えば「田中さんにお疲れ様と送って」みたいに", rid)
@@ -1660,23 +1656,7 @@ class ConnectionHandler:
                     self._reset_letter_state()
                 return True
             
-            # 4. 友達確認
-            elif self.letter_state == "confirming_friend":
-                logger.info(f"📮 RID[{rid}] 友達確認: '{text}'")
-                if "はい" in text or "うん" in text or "そう" in text:
-                    result = await self.find_and_send_letter(self.letter_suggested_friend, self.letter_message, rid)
-                    if result["success"]:
-                        await self.send_audio_response(f"わかったよ！{result['friend_name']}にお手紙を送ったにゃん", rid)
-                    else:
-                        await self.send_audio_response("送信に失敗したにゃん", rid)
-                    self._reset_letter_state()
-                else:
-                    await self.send_audio_response("じゃあ、誰に送るにゃ？", rid)
-                    self.letter_state = "waiting_friend"
-                    return True
-                
-                self._reset_letter_state()
-                return True
+            # 友達確認処理は削除（AI解析で直接処理）
             
             return False
         
