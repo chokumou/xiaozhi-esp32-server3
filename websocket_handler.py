@@ -134,12 +134,13 @@ class ConnectionHandler:
                 # ESP32からのTTS依頼（直接音声合成、他の処理をスキップ）
                 text_input = msg_json.get("text", "")
                 if text_input:
-                    logger.info(f"📮 TTS依頼受信: '{text_input}' from {self.device_id}")
+                    logger.info(f"🔥🔥🔥 TTS依頼受信: '{text_input}' from {self.device_id} 🔥🔥🔥")
                     import uuid
                     rid = str(uuid.uuid4())[:8]
                     # 直接TTS音声合成（レター処理等をスキップ）
                     await self.send_audio_response(text_input, rid)
-                    logger.info(f"📮 TTS依頼処理完了: '{text_input}'")
+                    logger.info(f"🔥🔥🔥 TTS依頼処理完了: '{text_input}' 🔥🔥🔥")
+                return  # 他の処理をスキップ
             elif msg_type == "ack":
                 # 🎯 [ACK_HANDLER] ESP32からのACK受信処理
                 await self.handle_ack_message(msg_json)
