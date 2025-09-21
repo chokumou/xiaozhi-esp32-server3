@@ -1638,7 +1638,7 @@ class ConnectionHandler:
                         await self.send_audio_response("ごめん、送信に失敗したにゃん。もう一度お願いします", rid)
                         self.letter_state = "waiting_complete_command"
                 else:
-                    await self.send_audio_response("うまく聞き取れなかったにゃ。もう一度お願いします", rid)
+                    await self.send_audio_response("誰に何を送るか、もう少し詳しく教えてにゃ！例えば「田中さんにお疲れ様と送って」みたいに", rid)
                     self.letter_state = "waiting_complete_command"
                 return True
             
