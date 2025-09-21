@@ -112,6 +112,7 @@ class ConnectionHandler:
         try:
             msg_json = json.loads(message)
             msg_type = msg_json.get("type")
+            logger.info(f"🔍🔍🔍 DEBUG: Received message type: '{msg_type}' from {self.device_id} 🔍🔍🔍")
 
             if msg_type == "hello":
                 await self.handle_hello_message(msg_json)
