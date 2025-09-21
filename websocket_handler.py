@@ -132,11 +132,17 @@ class ConnectionHandler:
                 if text_input:
                     logger.info(f"📮 STTメッセージ受信: '{text_input}' from {self.device_id}")
                     
+                    # デバッグ: グローバル状態確認
+                    letter_state = device_letter_states.get(self.device_id, False)
+                    logger.info(f"🔍🔍🔍 DEBUG: device_letter_states[{self.device_id}] = {letter_state} 🔍🔍🔍")
+                    logger.info(f"🔍🔍🔍 DEBUG: device_letter_states全体 = {device_letter_states} 🔍🔍🔍")
+                    
                     # レター応答待ち状態の場合は、レター応答として処理（グローバル状態チェック）
-                    if device_letter_states.get(self.device_id, False):
-                        logger.info(f"📮 レター応答として処理: '{text_input}' (device: {self.device_id})")
+                    if letter_state:
+                        logger.info(f"🔥🔥🔥 レター応答として処理: '{text_input}' (device: {self.device_id}) 🔥🔥🔥")
                         await self.process_letter_response(text_input)
                     else:
+                        logger.info(f"📮 通常テキスト処理: '{text_input}' (device: {self.device_id})")
                         await self.process_text(text_input)
             elif msg_type == "tts_request":
                 # ESP32からのTTS依頼（直接音声合成、他の処理をスキップ）
