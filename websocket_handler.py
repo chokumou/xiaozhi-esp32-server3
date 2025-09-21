@@ -568,6 +568,12 @@ class ConnectionHandler:
             # 🎯 検索可能ログ: START_TO_CHAT
             logger.info(f"🔥 RID[{rid}] START_TO_CHAT: '{text}' (tts_active={getattr(self, 'tts_active', False)})")
 
+            # レター応答待ち状態チェック（最優先）
+            if device_letter_states.get(self.device_id, False):
+                logger.info(f"🔥🔥🔥 レター応答として処理（process_text経由）: '{text}' (device: {self.device_id}) 🔥🔥🔥")
+                await self.process_letter_response(text)
+                return
+
             # TTS中は新しいテキスト処理を拒否
             if hasattr(self, 'tts_active') and self.tts_active:
                 logger.warning(f"🔥 RID[{rid}] START_TO_CHAT_BLOCKED: TTS中のため拒否")
