@@ -124,6 +124,12 @@ class ConnectionHandler:
                 text_input = msg_json.get("data", "")
                 if text_input:
                     await self.process_text(text_input)
+            elif msg_type == "stt":
+                # ESP32からのSTTメッセージ（テキストを音声として処理）
+                text_input = msg_json.get("text", "")
+                if text_input:
+                    logger.info(f"📮 STTメッセージ受信: '{text_input}' from {self.device_id}")
+                    await self.process_text(text_input)
             elif msg_type == "ack":
                 # 🎯 [ACK_HANDLER] ESP32からのACK受信処理
                 await self.handle_ack_message(msg_json)
