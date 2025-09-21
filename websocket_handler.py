@@ -130,7 +130,13 @@ class ConnectionHandler:
                 text_input = msg_json.get("text", "")
                 if text_input:
                     logger.info(f"📮 STTメッセージ受信: '{text_input}' from {self.device_id}")
-                    await self.process_text(text_input)
+                    
+                    # レター応答待ち状態の場合は、レター応答として処理
+                    if hasattr(self, 'letter_waiting_response') and self.letter_waiting_response:
+                        logger.info(f"📮 レター応答として処理: '{text_input}'")
+                        await self.process_letter_response(text_input)
+                    else:
+                        await self.process_text(text_input)
             elif msg_type == "tts_request":
                 # ESP32からのTTS依頼（直接音声合成、他の処理をスキップ）
                 text_input = msg_json.get("text", "")
@@ -138,6 +144,12 @@ class ConnectionHandler:
                     logger.info(f"🔥🔥🔥 TTS依頼受信: '{text_input}' from {self.device_id} 🔥🔥🔥")
                     import uuid
                     rid = str(uuid.uuid4())[:8]
+                    
+                    # レター通知の場合は応答待ち状態に設定
+                    if "お手紙が届いている" in text_input and "聞く？後にする？" in text_input:
+                        self.letter_waiting_response = True
+                        logger.info(f"📮 RID[{rid}] レター応答待ち状態に設定")
+                    
                     # 直接TTS音声合成（レター処理等をスキップ）
                     await self.send_audio_response(text_input, rid)
                     logger.info(f"🔥🔥🔥 TTS依頼処理完了: '{text_input}' 🔥🔥🔥")
@@ -2037,6 +2049,45 @@ Examples:
             return best_match
         
         return None
+    
+    async def process_letter_response(self, response: str):
+        """レター応答の処理"""
+        import uuid
+        rid = str(uuid.uuid4())[:8]
+        
+        logger.info(f"📮 RID[{rid}] レター応答処理: '{response}'")
+        
+        if "聞く" in response or "はい" in response or "うん" in response or "読んで" in response:
+            # レター内容を読み上げ
+            logger.info(f"📮 RID[{rid}] レター読み上げ要求")
+            
+            # ESP32側のpending_letter_から内容を取得する必要があるが、
+            # サーバー側では内容が分からないため、一時的に固定メッセージ
+            letter_content = "レターの内容をお読みします"  # TODO: 実際のレター内容を取得
+            await self.send_audio_response(letter_content, rid)
+            
+            # レター応答状態をリセット
+            self.letter_waiting_response = False
+            
+        elif "後で" in response or "あとで" in response or "今はいい" in response or "いいえ" in response:
+            # 後で確認
+            logger.info(f"📮 RID[{rid}] レター後で確認")
+            await self.send_audio_response("わかったよ、後で確認してね", rid)
+            
+            # レター応答状態をリセット
+            self.letter_waiting_response = False
+            
+        elif "消して" in response or "消去" in response or "捨てて" in response or "削除" in response:
+            # レター削除
+            logger.info(f"📮 RID[{rid}] レター削除要求")
+            await self.send_audio_response("わかったよ、お手紙を削除したよ", rid)
+            
+            # レター応答状態をリセット
+            self.letter_waiting_response = False
+            
+        else:
+            # 不明な応答
+            await self.send_audio_response("聞く？後にする？消して？", rid)
 
 # デバイス接続チェック関数
 def is_device_connected(device_id: str) -> bool:
