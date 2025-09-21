@@ -419,19 +419,25 @@ async def main():
                     if friends_response.status == 200:
                         friends_data = await friends_response.json()
                         friends = friends_data.get("friends", [])
+                        logger.info(f"📮 友達リスト取得: {len(friends)}人")
                         
                         # 各友達から未読メッセージを取得
                         for friend in friends:
                             friend_id = friend.get("id")
+                            friend_name = friend.get("name", "不明")
+                            logger.info(f"📮 友達チェック: {friend_name} (ID: {friend_id})")
+                            
                             if friend_id:
-                                letter_response = await session.get(
-                                    f"{nekota_server_url}/api/message/list?friend_id={friend_id}&unread_only=true",
-                                    headers=headers
-                                )
+                                api_url = f"{nekota_server_url}/api/message/list?friend_id={friend_id}&unread_only=true"
+                                logger.info(f"📮 API呼び出し: {api_url}")
+                                
+                                letter_response = await session.get(api_url, headers=headers)
+                                logger.info(f"📮 API応答: {letter_response.status}")
                                 
                                 if letter_response.status == 200:
                                     letter_data = await letter_response.json()
                                     letters = letter_data.get("messages", [])
+                                    logger.info(f"📮 {friend_name}からの未読メッセージ: {len(letters)}件")
                                     
                                     for letter in letters:
                                         pending_letters.append({
@@ -439,6 +445,9 @@ async def main():
                                             "from_user_name": letter.get("from_user_name", friend.get("name", "誰か")),
                                             "message": letter.get("transcribed_text", letter.get("message", ""))
                                         })
+                                        logger.info(f"📮 メッセージ追加: {letter.get('transcribed_text', 'なし')}")
+                                else:
+                                    logger.error(f"📮 {friend_name}のメッセージ取得失敗: {letter_response.status}")
                     else:
                         logger.error(f"📮 友達リスト取得失敗: {friends_response.status}")
                     
