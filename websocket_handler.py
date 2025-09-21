@@ -130,6 +130,14 @@ class ConnectionHandler:
                 if text_input:
                     logger.info(f"📮 STTメッセージ受信: '{text_input}' from {self.device_id}")
                     await self.process_text(text_input)
+            elif msg_type == "tts_request":
+                # ESP32からのTTS依頼（直接音声合成）
+                text_input = msg_json.get("text", "")
+                if text_input:
+                    logger.info(f"📮 TTS依頼受信: '{text_input}' from {self.device_id}")
+                    import uuid
+                    rid = str(uuid.uuid4())[:8]
+                    await self.send_audio_response(text_input, rid)
             elif msg_type == "ack":
                 # 🎯 [ACK_HANDLER] ESP32からのACK受信処理
                 await self.handle_ack_message(msg_json)
