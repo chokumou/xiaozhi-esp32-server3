@@ -27,6 +27,7 @@ logger = setup_logger()
 
 # 接続中のデバイス管理（グローバル）
 connected_devices: Dict[str, 'ConnectionHandler'] = {}
+device_letter_states: Dict[str, bool] = {}  # デバイス別レター応答待ち状態
 
 class ConnectionHandler:
     def __init__(self, websocket: web.WebSocketResponse, headers: Dict[str, str]):
@@ -131,9 +132,9 @@ class ConnectionHandler:
                 if text_input:
                     logger.info(f"📮 STTメッセージ受信: '{text_input}' from {self.device_id}")
                     
-                    # レター応答待ち状態の場合は、レター応答として処理
-                    if hasattr(self, 'letter_waiting_response') and self.letter_waiting_response:
-                        logger.info(f"📮 レター応答として処理: '{text_input}'")
+                    # レター応答待ち状態の場合は、レター応答として処理（グローバル状態チェック）
+                    if device_letter_states.get(self.device_id, False):
+                        logger.info(f"📮 レター応答として処理: '{text_input}' (device: {self.device_id})")
                         await self.process_letter_response(text_input)
                     else:
                         await self.process_text(text_input)
@@ -145,10 +146,10 @@ class ConnectionHandler:
                     import uuid
                     rid = str(uuid.uuid4())[:8]
                     
-                    # レター通知の場合は応答待ち状態に設定
+                    # レター通知の場合は応答待ち状態に設定（グローバル状態）
                     if "お手紙が届いている" in text_input and "聞く？後にする？" in text_input:
-                        self.letter_waiting_response = True
-                        logger.info(f"📮 RID[{rid}] レター応答待ち状態に設定")
+                        device_letter_states[self.device_id] = True
+                        logger.info(f"📮 RID[{rid}] レター応答待ち状態に設定 (device: {self.device_id})")
                     
                     # 直接TTS音声合成（レター処理等をスキップ）
                     await self.send_audio_response(text_input, rid)
@@ -2066,24 +2067,24 @@ Examples:
             letter_content = "レターの内容をお読みします"  # TODO: 実際のレター内容を取得
             await self.send_audio_response(letter_content, rid)
             
-            # レター応答状態をリセット
-            self.letter_waiting_response = False
+            # レター応答状態をリセット（グローバル状態）
+            device_letter_states[self.device_id] = False
             
         elif "後で" in response or "あとで" in response or "今はいい" in response or "いいえ" in response:
             # 後で確認
             logger.info(f"📮 RID[{rid}] レター後で確認")
             await self.send_audio_response("わかったよ、後で確認してね", rid)
             
-            # レター応答状態をリセット
-            self.letter_waiting_response = False
+            # レター応答状態をリセット（グローバル状態）
+            device_letter_states[self.device_id] = False
             
         elif "消して" in response or "消去" in response or "捨てて" in response or "削除" in response:
             # レター削除
             logger.info(f"📮 RID[{rid}] レター削除要求")
             await self.send_audio_response("わかったよ、お手紙を削除したよ", rid)
             
-            # レター応答状態をリセット
-            self.letter_waiting_response = False
+            # レター応答状態をリセット（グローバル状態）
+            device_letter_states[self.device_id] = False
             
         else:
             # 不明な応答
