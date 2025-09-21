@@ -2065,22 +2065,25 @@ Examples:
     
     async def process_letter_response(self, response: str):
         """レター応答の処理"""
-        import uuid
-        rid = str(uuid.uuid4())[:8]
-        
-        logger.info(f"📮 RID[{rid}] レター応答処理: '{response}'")
+        try:
+            import uuid
+            rid = str(uuid.uuid4())[:8]
+            
+            logger.info(f"📮 RID[{rid}] レター応答処理開始: '{response}' (device: {self.device_id})")
         
         if "聞く" in response or "はい" in response or "うん" in response or "読んで" in response:
             # レター内容を読み上げ
             logger.info(f"📮 RID[{rid}] レター読み上げ要求")
             
-            # ESP32側のpending_letter_から内容を取得する必要があるが、
-            # サーバー側では内容が分からないため、一時的に固定メッセージ
-            letter_content = "レターの内容をお読みします"  # TODO: 実際のレター内容を取得
-            await self.send_audio_response(letter_content, rid)
+            # レター読み上げ指示をESP32に送信
+            # ESP32側でpending_letter_の内容を読み上げさせる
+            read_command = {"type": "letter_read_command", "action": "read"}
+            await self.websocket.send_str(json.dumps(read_command))
+            logger.info(f"📮 RID[{rid}] ESP32にレター読み上げ指示送信")
             
             # レター応答状態をリセット（グローバル状態）
             device_letter_states[self.device_id] = False
+            logger.info(f"📮 RID[{rid}] レター応答状態リセット完了 (device: {self.device_id})")
             
         elif "後で" in response or "あとで" in response or "今はいい" in response or "いいえ" in response:
             # 後で確認
@@ -2089,6 +2092,7 @@ Examples:
             
             # レター応答状態をリセット（グローバル状態）
             device_letter_states[self.device_id] = False
+            logger.info(f"📮 RID[{rid}] レター応答状態リセット完了 (device: {self.device_id})")
             
         elif "消して" in response or "消去" in response or "捨てて" in response or "削除" in response:
             # レター削除
@@ -2097,10 +2101,16 @@ Examples:
             
             # レター応答状態をリセット（グローバル状態）
             device_letter_states[self.device_id] = False
+            logger.info(f"📮 RID[{rid}] レター応答状態リセット完了 (device: {self.device_id})")
             
         else:
             # 不明な応答
             await self.send_audio_response("聞く？後にする？消して？", rid)
+            
+        except Exception as e:
+            logger.error(f"📮 レター応答処理エラー: {e}")
+            # エラー時も状態をリセット
+            device_letter_states[self.device_id] = False
 
 # デバイス接続チェック関数
 def is_device_connected(device_id: str) -> bool:
