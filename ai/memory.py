@@ -403,20 +403,21 @@ class MemoryService:
                 logger.warning("⚠️ [AI_MEMORY] OpenAI API key not found, using traditional extraction")
                 return []
             
-            prompt = f"""以下の質問から、メモリー検索に最適なキーワードを抽出してください。
-関連する概念や類義語も含めて、検索精度を向上させるキーワードリストを作成してください。
+            prompt = f"""Extract optimal keywords for memory search from the following query in any language (Japanese, English, Chinese, etc.).
+Include related concepts and synonyms to improve search accuracy.
 
-質問: "{query}"
+Query: "{query}"
 
-期待される出力形式（JSON配列）:
-["主要キーワード", "関連キーワード1", "関連キーワード2"]
+Expected output format (JSON array):
+["main keyword", "related keyword1", "related keyword2"]
 
-例:
-質問: "お尻のことを教えて"
-出力: ["お尻", "臀部", "体の症状", "健康"]
+Examples:
+Query: "Tell me about yesterday" → ["yesterday", "previous day", "past", "memory"]
+Query: "お尻のことを教えて" → ["お尻", "臀部", "体の症状", "健康"]  
+Query: "昨日の話覚えてる？" → ["昨日", "前日", "会話", "記憶"]
+Query: "给我说说小明的事" → ["小明", "朋友", "人物", "关系"]
 
-質問: "昨日の話覚えてる？"  
-出力: ["昨日", "前日", "会話", "記憶"]"""
+Support multiple languages and cultural contexts."""
 
             async with httpx.AsyncClient() as client:
                 response = await client.post(

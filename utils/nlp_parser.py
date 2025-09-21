@@ -237,21 +237,24 @@ class MessageTextParser(FlexibleTextParser):
                 self.logger.warning("⚠️ [AI_PARSE] OpenAI API key not found, falling back to regex")
                 return self.parse_message_command_legacy(text)
             
-            prompt = f"""以下のテキストからメッセージ送信の意図を解析してください。
-送信相手の名前とメッセージ内容をJSONで返してください。
+            prompt = f"""Analyze the following text for message sending intent in any language (Japanese, English, Chinese, etc.).
+Extract the recipient name and message content, then return as JSON.
 
-テキスト: "{text}"
+Text: "{text}"
 
-期待される出力形式:
-{{"recipient": "相手の名前", "message": "メッセージ内容"}}
+Expected output format:
+{{"recipient": "recipient name", "message": "message content"}}
 
-重要：名前の読み方は柔軟に認識してください。
-- 漢字、ひらがな、カタカナの違いは無視
-- 「君」「くん」「きみ」など読み方の違いは無視
-- 例えば「うんちくん」「うんち君」「うんちきみ」は全て同じ名前として認識
-- 敬称（さん、君、ちゃん、くん）は除去してください。
+Important guidelines:
+- Support multiple languages: Japanese, English, Chinese, Korean, etc.
+- For Japanese: ignore differences between kanji/hiragana/katakana (e.g., "うんちくん"="うんち君"="うんちきみ")
+- For all languages: remove honorifics (san, kun, chan, Mr., Mrs., etc.)
+- Examples:
+  - "Send hello to John" → {{"recipient": "John", "message": "hello"}}
+  - "うんちくんにおはようと送って" → {{"recipient": "うんち", "message": "おはよう"}}
+  - "给小明发个消息说你好" → {{"recipient": "小明", "message": "你好"}}
 
-送信の意図がない場合はnullを返してください。"""
+Return null if no message sending intent is detected."""
 
             async with httpx.AsyncClient() as client:
                 response = await client.post(
