@@ -273,12 +273,26 @@ async def main():
         """
         try:
             data = await request.json()
-            device_id = data.get('device_id')
+            request_device_id = data.get('device_id')
             
-            if not device_id:
+            if not request_device_id:
                 return web.json_response({"error": "device_id required"}, status=400)
             
-            logger.info(f"📱 アラームチェック要求: device_id={device_id}")
+            # 実際のWebSocket接続時のデバイスIDを使用
+            from websocket_handler import connected_devices
+            actual_device_id = None
+            
+            # 接続中のデバイスから該当するものを探す
+            for connected_device_id, handler in connected_devices.items():
+                if connected_device_id == request_device_id or handler.device_id == request_device_id:
+                    actual_device_id = connected_device_id
+                    break
+            
+            if not actual_device_id:
+                logger.warning(f"📱 接続中のデバイスが見つかりません: request={request_device_id}, connected={list(connected_devices.keys())}")
+                actual_device_id = request_device_id  # フォールバック
+            
+            logger.info(f"📱 アラームチェック要求: request_device_id={request_device_id}, actual_device_id={actual_device_id}")
             
             # nekota-serverから未発火アラーム取得
             import aiohttp
@@ -290,8 +304,8 @@ async def main():
                 "ESP32_8:44": "467731",  # 現在テスト中の端末
                 "ESP32_9:58": "327546"   # もう一方の端末
             }
-            device_number = device_mapping.get(device_id, device_id)
-            logger.info(f"📱 デバイスマッピング: {device_id} → {device_number}")
+            device_number = device_mapping.get(actual_device_id, actual_device_id)
+            logger.info(f"📱 デバイスマッピング: {actual_device_id} → {device_number}")
             
             async with aiohttp.ClientSession() as session:
                 # デバイス認証
@@ -311,7 +325,7 @@ async def main():
                 # 正しい構造でuser_idを取得
                 user_data = auth_data.get("user")
                 if user_data is None:
-                    logger.error(f"📱 認証失敗: ユーザーデータが見つかりません (device_id={device_id})")
+                    logger.error(f"📱 認証失敗: ユーザーデータが見つかりません (device_id={actual_device_id})")
                     return web.json_response({"alarms": []})
                 
                 user_id = user_data.get("id")
@@ -455,8 +469,8 @@ async def main():
                     
                     # デバイス別にレター情報を保存
                     from websocket_handler import device_pending_letters
-                    device_pending_letters[device_id] = pending_letters
-                    logger.info(f"📮 デバイス別レター保存完了: {device_id} = {len(pending_letters)}件")
+                    device_pending_letters[actual_device_id] = pending_letters
+                    logger.info(f"📮 デバイス別レター保存完了: {actual_device_id} = {len(pending_letters)}件")
                     logger.info(f"🔍🔍🔍 [DEBUG_LETTER_SAVE] デバイス別レター保存: {pending_letters} 🔍🔍🔍")
                     
                     return web.json_response({
