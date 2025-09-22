@@ -3220,13 +3220,14 @@ Examples:
         
         if pending_letters:
             first_letter = pending_letters[0]
-            # メッセージ内容の取得（複数フィールドを試行）
-            letter_content = first_letter.get("transcribed_text") or first_letter.get("message") or first_letter.get("content", "メッセージ内容がありません")
+            letter_content = first_letter.get("transcribed_text", "メッセージ内容がありません")
             from_user_name = first_letter.get("from_user_name", "誰か")
             letter_id = first_letter.get("id")
             
             # デバッグ用ログ
             logger.info(f"📮 RID[{rid}] レター内容デバッグ: {first_letter}")
+            logger.info(f"📮 RID[{rid}] transcribed_text: '{first_letter.get('transcribed_text')}'")
+            logger.info(f"📮 RID[{rid}] message: '{first_letter.get('message')}'")
             logger.info(f"📮 RID[{rid}] 取得した内容: '{letter_content}'")
             
             # 送信者名も含めて読み上げ
