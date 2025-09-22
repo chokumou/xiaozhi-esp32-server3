@@ -587,6 +587,12 @@ class ConnectionHandler:
             # 🎯 検索可能ログ: START_TO_CHAT
             logger.info(f"🔥 RID[{rid}] START_TO_CHAT: '{text}' (tts_active={getattr(self, 'tts_active', False)})")
 
+            # メッセージ確認コマンドチェック
+            if any(keyword in text for keyword in ["メッセージ来てる", "メッセージ来てる？", "お手紙来てる", "お手紙来てる？", "新着", "新着メッセージ"]):
+                logger.info(f"📮 RID[{rid}] メッセージ確認要求: '{text}'")
+                await self.check_new_messages_manual(rid)
+                return
+
             # レター応答待ち状態チェック（最優先）
             if device_letter_states.get(self.device_id, False):
                 logger.info(f"🔥🔥🔥 レター応答として処理（process_text経由）: '{text}' (device: {self.device_id}) 🔥🔥🔥")
@@ -3004,6 +3010,14 @@ Examples:
                 logger.info(f"🔍🔍🔍 [DEBUG_LETTER_LATER] 後で応答を検出 🔍🔍🔍")
                 await self.send_audio_response("わかったよ、後で確認してね", rid)
                 
+                # 特定のメッセージをスルー状態に設定
+                pending_letters = device_pending_letters.get(self.device_id, [])
+                if pending_letters:
+                    first_letter = pending_letters[0]
+                    letter_id = first_letter.get("id")
+                    if letter_id:
+                        await self.snooze_letter(letter_id, rid)
+                
                 # レター応答状態をリセット（グローバル状態）
                 device_letter_states[self.device_id] = False
                 logger.info(f"📮 RID[{rid}] レター応答状態リセット完了 (device: {self.device_id})")
@@ -3031,6 +3045,75 @@ Examples:
             logger.error(f"📮 レター応答処理エラー: {e}")
             # エラー時も状態をリセット
             device_letter_states[self.device_id] = False
+
+    async def snooze_letter(self, letter_id: str, rid: str):
+        """特定のメッセージをスルー状態に設定"""
+        try:
+            import httpx
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    f"{Config.MANAGER_API_URL}/api/message/snooze",
+                    json={"message_id": letter_id},
+                    headers={
+                        "Authorization": f"Bearer {Config.MANAGER_API_SECRET}"
+                    }
+                )
+                
+                if response.status_code == 200:
+                    logger.info(f"📮 RID[{rid}] レタースルー設定成功: {letter_id}")
+                else:
+                    logger.error(f"📮 RID[{rid}] レタースルー設定失敗: {response.status_code}")
+                    
+        except Exception as e:
+            logger.error(f"📮 RID[{rid}] レタースルー設定エラー: {e}")
+
+    async def check_new_messages_manual(self, rid: str):
+        """手動でのメッセージ確認（スルー分も含む）"""
+        try:
+            import httpx
+            
+            # nekota-serverから未読メッセージを取得（スルー分も含む）
+            async with httpx.AsyncClient() as client:
+                response = await client.get(
+                    f"{Config.MANAGER_API_URL}/api/message/list",
+                    params={
+                        "device_id": self.device_id,
+                        "unread_only": True,
+                        "include_snoozed": True  # スルー分も含める
+                    },
+                    headers={
+                        "Authorization": f"Bearer {Config.MANAGER_API_SECRET}"
+                    }
+                )
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    messages = data.get("messages", [])
+                    
+                    if messages:
+                        # 最新のメッセージを通知
+                        latest_message = messages[0]
+                        from_user_name = latest_message.get("from_user_name", "誰か")
+                        message_content = latest_message.get("transcribed_text", "メッセージ")
+                        
+                        notification_text = f"{from_user_name}からお手紙が来てるよ。「{message_content}」"
+                        await self.send_audio_response(notification_text, rid)
+                        
+                        # レター応答状態に設定
+                        device_letter_states[self.device_id] = True
+                        device_pending_letters[self.device_id] = messages
+                        
+                        logger.info(f"📮 RID[{rid}] 手動メッセージ確認: {len(messages)}件の未読メッセージ")
+                    else:
+                        await self.send_audio_response("新しいお手紙はないよ", rid)
+                        logger.info(f"📮 RID[{rid}] 手動メッセージ確認: 未読メッセージなし")
+                else:
+                    logger.error(f"📮 RID[{rid}] 手動メッセージ確認エラー: {response.status_code}")
+                    await self.send_audio_response("メッセージの確認でエラーが発生したよ", rid)
+                    
+        except Exception as e:
+            logger.error(f"📮 RID[{rid}] 手動メッセージ確認エラー: {e}")
+            await self.send_audio_response("メッセージの確認でエラーが発生したよ", rid)
 
 # デバイス接続チェック関数
 def is_device_connected(device_id: str) -> bool:
