@@ -5,6 +5,7 @@ import uuid
 import io
 import threading
 import time
+import aiohttp
 from typing import Dict, Any, Optional
 from datetime import datetime, timedelta
 import pytz
@@ -26,11 +27,18 @@ from audio_handler_server2 import AudioHandlerServer2
 
 logger = setup_logger()
 
+# 接続中のデバイス管理（グローバル）
+connected_devices: Dict[str, 'ConnectionHandler'] = {}
+device_letter_states: Dict[str, bool] = {}  # デバイス別レター応答待ち状態
+device_pending_letters: Dict[str, list] = {}  # デバイス別未読レター情報
+
 class ConnectionHandler:
     def __init__(self, websocket: web.WebSocketResponse, headers: Dict[str, str]):
+        logger.info(f"🐛 ConnectionHandler.__init__ 開始")
         self.websocket = websocket
         self.headers = headers
         self.device_id = headers.get("device-id") or "unknown"
+        logger.info(f"🐛 device_id設定: {self.device_id}")
         self.client_id = headers.get("client-id") or str(uuid.uuid4())
         self.protocol_version = int(headers.get("protocol-version", "1"))
         import time as time_module  # スコープエラー回避
@@ -46,6 +54,18 @@ class ConnectionHandler:
         self.stop_event = threading.Event() # For graceful shutdown (server2 style)
         self.session_id = str(uuid.uuid4())
         self.audio_format = "opus"  # Default format (ESP32 sends Opus like server2)
+        
+        # レター機能の状態管理
+        self.letter_state = "none"
+        self.letter_message = None
+        self.letter_target_friend = None
+        self.letter_suggested_friend = None
+        
+        # 接続時にデバイスを登録
+        connected_devices[self.device_id] = self
+        logger.info(f"📱 RID[{self.device_id}] デバイス接続登録完了")
+        logger.info(f"🐛 現在の接続デバイス一覧: {list(connected_devices.keys())}")
+        logger.info(f"🐛 接続デバイス数: {len(connected_devices)}")
         self.features = {}
         self.close_after_chat = False  # Server2準拠: チャット後の接続制御
         
@@ -101,6 +121,7 @@ class ConnectionHandler:
         try:
             msg_json = json.loads(message)
             msg_type = msg_json.get("type")
+            logger.info(f"🔍🔍🔍 DEBUG: Received message type: '{msg_type}' from {self.device_id} 🔍🔍🔍")
 
             if msg_type == "hello":
                 await self.handle_hello_message(msg_json)
@@ -113,9 +134,56 @@ class ConnectionHandler:
                 text_input = msg_json.get("data", "")
                 if text_input:
                     await self.process_text(text_input)
+            elif msg_type == "stt":
+                # ESP32からのSTTメッセージ（テキストを音声として処理）
+                text_input = msg_json.get("text", "")
+                if text_input:
+                    logger.info(f"📮 STTメッセージ受信: '{text_input}' from {self.device_id}")
+                    
+                    # デバッグ: グローバル状態確認
+                    letter_state = device_letter_states.get(self.device_id, False)
+                    logger.info(f"🔍🔍🔍 DEBUG: device_letter_states[{self.device_id}] = {letter_state} 🔍🔍🔍")
+                    logger.info(f"🔍🔍🔍 DEBUG: device_letter_states全体 = {device_letter_states} 🔍🔍🔍")
+                    
+                    # レター応答待ち状態の場合は、レター応答として処理（グローバル状態チェック）
+                    if letter_state:
+                        logger.info(f"🔥🔥🔥 レター応答として処理: '{text_input}' (device: {self.device_id}) 🔥🔥🔥")
+                        await self.process_letter_response(text_input)
+                    else:
+                        logger.info(f"📮 通常テキスト処理: '{text_input}' (device: {self.device_id})")
+                        await self.process_text(text_input)
+            elif msg_type == "tts_request":
+                # ESP32からのTTS依頼（直接音声合成、他の処理をスキップ）
+                text_input = msg_json.get("text", "")
+                if text_input:
+                    logger.info(f"🔥🔥🔥 TTS依頼受信: '{text_input}' from {self.device_id} 🔥🔥🔥")
+                    import uuid
+                    rid = str(uuid.uuid4())[:8]
+                    
+                    # レター通知の場合は応答待ち状態に設定（グローバル状態）
+                    if "お手紙が届いている" in text_input and "聞く？後にする？" in text_input:
+                        device_letter_states[self.device_id] = True
+                        logger.info(f"📮 RID[{rid}] レター応答待ち状態に設定 (device: {self.device_id})")
+                        logger.info(f"🔍🔍🔍 [DEBUG_LETTER_STATE_SET] レター応答待ち状態に設定 🔍🔍🔍")
+                    
+                    # 直接TTS音声合成（レター処理等をスキップ）
+                    await self.send_audio_response(text_input, rid)
+                    logger.info(f"🔥🔥🔥 TTS依頼処理完了: '{text_input}' 🔥🔥🔥")
+                return  # 他の処理をスキップ
             elif msg_type == "ack":
                 # 🎯 [ACK_HANDLER] ESP32からのACK受信処理
                 await self.handle_ack_message(msg_json)
+            elif msg_type == "timer_expired":
+                # タイマー完了通知の処理
+                timer_message = msg_json.get("message", "")
+                logger.info(f"⏰ タイマー完了通知を受信: '{timer_message}'")
+                
+                # タイマー完了をユーザーに通知
+                response_text = f"時間だよ！{timer_message}にゃん"
+                import uuid
+                rid = str(uuid.uuid4())[:8]
+                await self.send_audio_response(response_text, rid)
+                logger.info(f"⏰ タイマー完了通知を送信: {response_text}")
             else:
                 logger.warning(f"Unknown message type from {self.device_id}: {msg_type}")
 
@@ -194,7 +262,11 @@ class ConnectionHandler:
             is_ai_speaking = hasattr(self, 'audio_handler') and getattr(self.audio_handler, 'client_is_speaking', False)
             is_cooldown = hasattr(self, 'audio_handler') and now_ms < getattr(self.audio_handler, 'tts_cooldown_until', 0)
             
-            if is_ai_speaking or is_cooldown:
+            # レター機能中はクールダウンをスキップして音声データを通す
+            is_letter_active = self.letter_state != "none"
+            should_block = (is_ai_speaking or (is_cooldown and not is_letter_active))
+            
+            if should_block:
                 # B. WebSocket入口で必ず落とす（最重要）
                 # 同一の時基でガード（ユーザー指摘の通り）
                 if not hasattr(self, 'ws_gate_drops'):
@@ -212,6 +284,14 @@ class ConnectionHandler:
                 if self._ws_block_count % 30 == 0:
                     logger.info(f"🚪 [WS_ENTRANCE_BLOCK] {block_reason}入口ブロック: {size_category}({msg_size}B) 過去30フレーム完全破棄 (累計={self.ws_gate_drops})")
                 return  # 即座に破棄
+            
+            # レター機能中でクールダウンをスキップした場合のログ
+            if is_cooldown and is_letter_active:
+                if not hasattr(self, '_letter_cooldown_skip_count'):
+                    self._letter_cooldown_skip_count = 0
+                self._letter_cooldown_skip_count += 1
+                if self._letter_cooldown_skip_count % 10 == 0:
+                    logger.info(f"📮 [LETTER_COOLDOWN_SKIP] レター機能中のクールダウンスキップ: {self._letter_cooldown_skip_count}回")
             
             # Server2準拠: 小パケットでも活動時間を更新（ESP32からの継続通信を認識）
             self.last_activity_time = time.time()
@@ -507,6 +587,13 @@ class ConnectionHandler:
             # 🎯 検索可能ログ: START_TO_CHAT
             logger.info(f"🔥 RID[{rid}] START_TO_CHAT: '{text}' (tts_active={getattr(self, 'tts_active', False)})")
 
+            # レター応答待ち状態チェック（最優先）
+            if device_letter_states.get(self.device_id, False):
+                logger.info(f"🔥🔥🔥 レター応答として処理（process_text経由）: '{text}' (device: {self.device_id}) 🔥🔥🔥")
+                logger.info(f"🔍🔍🔍 [DEBUG_LETTER_RESPONSE] process_text経由でレター応答処理開始 🔍🔍🔍")
+                await self.process_letter_response(text)
+                return
+
             # TTS中は新しいテキスト処理を拒否
             if hasattr(self, 'tts_active') and self.tts_active:
                 logger.warning(f"🔥 RID[{rid}] START_TO_CHAT_BLOCKED: TTS中のため拒否")
@@ -524,6 +611,24 @@ class ConnectionHandler:
                 self.audio_handler.active_tts_rid = rid
             
             logger.info(f"🔥 RID[{rid}] LLM_START: Processing '{text}'")
+            
+            # タイマー機能の自然言語処理
+            timer_processed = await self.process_timer_command(text, rid)
+            if timer_processed:
+                # タイマー処理が成功した場合は、LLM処理をスキップ
+                self._processing_text = False
+                return
+            
+            # レター機能の自然言語処理
+            logger.info(f"📮 RID[{rid}] レター処理チェック開始: '{text}'")
+            letter_processed = await self.process_letter_command(text, rid)
+            logger.info(f"📮 RID[{rid}] レター処理結果: {letter_processed}")
+            if letter_processed:
+                # レター処理が成功した場合は、LLM処理をスキップ
+                logger.info(f"📮 RID[{rid}] レター処理完了、LLM処理をスキップ")
+                self._processing_text = False
+                return
+            
             self.chat_history.append({"role": "user", "content": text})
 
             # Check for alarm-related keywords first (highest priority)
@@ -549,13 +654,22 @@ class ConnectionHandler:
                 "何が好き" in text or "誕生日はいつ" in text or "知ってる" in text or "記憶してる" in text):
                 memory_query = text
                 logger.info(f"🧠 [MEMORY_QUERY_TRIGGER] Memory query triggered! Query: '{text}'")
-            elif "覚えて" in text or "覚えといて" in text or "記憶して" in text:
+            elif "覚えて" in text or "覚えといて" in text or "記憶して" in text or "おぼえて" in text or "おぼえといて" in text:
                 # Extract what to remember
-                memory_to_save = text.replace("覚えて", "").replace("覚えといて", "").replace("記憶して", "").strip()
+                memory_to_save = text.replace("覚えて", "").replace("覚えといて", "").replace("記憶して", "").replace("おぼえて", "").replace("おぼえといて", "").strip()
                 logger.info(f"🧠 [MEMORY_TRIGGER] Memory save triggered! Content: '{memory_to_save}'")
                 
                 if memory_to_save:
-                    success = await self.memory_service.save_memory(self.device_id, memory_to_save)
+                    # フレンド機能と同じ認証フローを使用
+                    device_number = self.device_id
+                    jwt_token, user_id = await self.memory_service._get_valid_jwt_and_user(device_number)
+                    
+                    if not jwt_token or not user_id:
+                        logger.error(f"🧠 [MEMORY_AUTH_FAIL] 認証失敗: device_number={device_number}")
+                        await self.send_audio_response("すみません、記憶の保存に失敗しました。")
+                        return
+                    
+                    success = await self.memory_service.save_memory_with_auth(jwt_token, user_id, memory_to_save)
                     if success:
                         logger.info(f"🧠 [MEMORY_SUCCESS] Memory saved successfully!")
                         await self.send_audio_response("はい、覚えました。")
@@ -570,7 +684,16 @@ class ConnectionHandler:
             llm_messages = list(self.chat_history)
             if memory_query:
                 logger.info(f"🔍 [MEMORY_SEARCH] Starting memory search for query: '{memory_query}'")
-                retrieved_memory = await self.memory_service.query_memory(self.device_id, memory_query)
+                
+                # フレンド機能と同じ認証フローを使用
+                device_number = self.device_id
+                jwt_token, user_id = await self.memory_service._get_valid_jwt_and_user(device_number)
+                
+                if not jwt_token or not user_id:
+                    logger.error(f"🔍 [MEMORY_SEARCH_AUTH_FAIL] 認証失敗: device_number={device_number}")
+                    retrieved_memory = None
+                else:
+                    retrieved_memory = await self.memory_service.query_memory_with_auth(jwt_token, user_id, memory_query, self.device_id)
                 if retrieved_memory:
                     llm_messages.insert(0, {"role": "system", "content": f"ユーザーの記憶: {retrieved_memory}"})
                     logger.info(f"✅ [MEMORY_FOUND] Retrieved memory for LLM: {retrieved_memory[:50]}...")
@@ -1616,13 +1739,15 @@ class ConnectionHandler:
                     logger.info(f"🔍 [DEBUG_SEND] WebSocket state after audio send: closed={self.websocket.closed}")
 
                     # Send TTS stop message with cooldown info (server2 style + 回り込み防止)
-                    tts_stop_msg = {"type": "tts", "state": "stop", "session_id": self.session_id, "cooldown_ms": 1200}  # 残響も含めた完全エコー除去のため1200msに延長
+                    # レター機能中は短縮クールダウンを使用
+                    cooldown_time = 600 if self.letter_state != "none" else 1200
+                    tts_stop_msg = {"type": "tts", "state": "stop", "session_id": self.session_id, "cooldown_ms": cooldown_time}  # レター中は600ms、通常は1200ms
                     logger.info(f"🔍 [DEBUG_SEND] About to send TTS stop message: {tts_stop_msg}")
                     if self.websocket.closed or getattr(self.websocket, '_writer', None) is None:
                         logger.error(f"💀 [WEBSOCKET_DEAD] Cannot send TTS stop - connection dead")
                         return
                     await self.websocket.send_str(json.dumps(tts_stop_msg))
-                    logger.info(f"🟡XIAOZHI_TTS_STOP🟡 ※ここを送ってver2_TTS_STOP※ 📢 [TTS] Sent TTS stop message with cooldown=1200ms")
+                    logger.info(f"🟡XIAOZHI_TTS_STOP🟡 ※ここを送ってver2_TTS_STOP※ 📢 [TTS] Sent TTS stop message with cooldown={cooldown_time}ms")
                     logger.info(f"🔍 [DEBUG_SEND] WebSocket state after TTS stop: closed={self.websocket.closed}")
                     
                     # Server2準拠: TTS完了後の接続制御
@@ -1648,7 +1773,8 @@ class ConnectionHandler:
             
             async def delayed_flag_off():
                 try:
-                    cooldown_ms = 1200  # ユーザー指摘の通り
+                    # レター機能中は短縮クールダウンを使用
+                    cooldown_ms = 600 if self.letter_state != "none" else 1200  # レター中は600ms、通常は1200ms
                     # 🎯 [MONOTONIC_TIME] 単一時基統一
                     cooldown_until = time.monotonic() * 1000 + cooldown_ms
                     
@@ -1859,6 +1985,15 @@ class ConnectionHandler:
         except Exception as e:
             logger.error(f"❌ [WEBSOCKET] Unhandled error in connection handler for {self.device_id}: {e}")
         finally:
+            # 切断時にデバイスを削除
+            if self.device_id in connected_devices:
+                del connected_devices[self.device_id]
+                logger.info(f"📱 RID[{self.device_id}] デバイス接続削除完了")
+                logger.info(f"🐛 残りの接続デバイス一覧: {list(connected_devices.keys())}")
+                logger.info(f"🐛 残りの接続デバイス数: {len(connected_devices)}")
+            else:
+                logger.warning(f"📱 RID[{self.device_id}] デバイスが接続リストに存在しません")
+            
             # Server2準拠: タイムアウト監視タスク終了
             if self.timeout_task and not self.timeout_task.done():
                 self.timeout_task.cancel()
@@ -1893,6 +2028,7 @@ class ConnectionHandler:
                 
         except Exception as e:
             logger.error(f"Error in timeout check for {self.device_id}: {e}")
+<<<<<<< HEAD
     
     async def start_alarm_checker(self):
         """アラーム時刻チェックタスクを開始"""
@@ -2103,3 +2239,819 @@ class ConnectionHandler:
                             
         except Exception as e:
             logger.error(f"🔄 [PENDING_ALARM] Error checking pending alarms: {e}")
+=======
+
+    async def process_timer_command(self, text: str, rid: str) -> bool:
+        logger.error(f"🔥🔥🔥 TIMER_PROCESS_CALL 🔥🔥🔥 RID[{rid}] text='{text}'")
+        
+        # 呼び出し回数カウント
+        if not hasattr(self, 'timer_process_count'):
+            self.timer_process_count = 0
+        self.timer_process_count += 1
+        logger.error(f"🔥🔥🔥 TIMER_COUNT_{self.timer_process_count} 🔥🔥🔥")
+        
+        # 同じテキストの重複処理チェック
+        if not hasattr(self, 'last_timer_text'):
+            self.last_timer_text = None
+        
+        if self.last_timer_text == text:
+            logger.error(f"🔥🔥🔥 DUPLICATE_TEXT_DETECTED 🔥🔥🔥 '{text}'")
+        else:
+            logger.error(f"🔥🔥🔥 NEW_TEXT_PROCESSING 🔥🔥🔥 '{text}'")
+            self.last_timer_text = text
+        """
+        自然言語からタイマー設定を解析し、ESP32に送信する
+        戻り値: タイマー処理が成功した場合True、そうでなければFalse
+        """
+        try:
+            import re
+            from datetime import datetime, timedelta
+            
+            # タイマー設定のパターンマッチング（アラーム関連キーワードも含める）
+            timer_patterns = [
+                # "X秒後" パターン（アラーム関連キーワード付き）
+                (r'(\d+)秒後.*(?:アラーム|タイマー|お知らせ)', lambda m: int(m.group(1))),
+                # "X分後" パターン（アラーム関連キーワード付き）
+                (r'(\d+)分後.*(?:アラーム|タイマー|お知らせ)', lambda m: int(m.group(1)) * 60),
+                # "X時間後" パターン（アラーム関連キーワード付き）
+                (r'(\d+)時間後.*(?:アラーム|タイマー|お知らせ)', lambda m: int(m.group(1)) * 3600),
+                # "X時Y分" パターン（今日の時刻、アラーム関連キーワード付き）
+                (r'(\d+)時(\d+)分.*(?:アラーム|タイマー|お知らせ)', lambda m: self.calculate_time_until_today(int(m.group(1)), int(m.group(2)))),
+                # "X時" パターン（今日の時刻、分は0、アラーム関連キーワード付き）
+                (r'(\d+)時.*(?:アラーム|タイマー|お知らせ)', lambda m: self.calculate_time_until_today(int(m.group(1)), 0)),
+                # 従来のパターン（後方互換性のため）
+                (r'(\d+)秒後', lambda m: int(m.group(1))),
+                (r'(\d+)分後', lambda m: int(m.group(1)) * 60),
+                (r'(\d+)時間後', lambda m: int(m.group(1)) * 3600),
+                (r'(\d+)時(\d+)分', lambda m: self.calculate_time_until_today(int(m.group(1)), int(m.group(2)))),
+                (r'(\d+)時', lambda m: self.calculate_time_until_today(int(m.group(1)), 0)),
+            ]
+            
+            # タイマー停止のパターン
+            stop_patterns = [
+                r'タイマー.*停止',
+                r'タイマー.*キャンセル', 
+                r'タイマー.*やめる',
+                r'アラーム.*停止',
+                r'アラーム.*キャンセル',
+            ]
+            
+            # 停止コマンドのチェック
+            for pattern in stop_patterns:
+                if re.search(pattern, text):
+                    logger.info(f"⏹️ RID[{rid}] タイマー停止コマンドを検出: {text}")
+                    await self.send_timer_stop_command(rid)
+                    return True
+            
+            # タイマー設定コマンドのチェック（2つのキーワード分離方式）
+            logger.info(f"🐛 RID[{rid}] タイマーパターンマッチング開始: '{text}'")
+            
+            # 1. アラーム/タイマー関連キーワードがあるかチェック
+            has_alarm_keyword = re.search(r'(?:アラーム|タイマー|お知らせ)', text)
+            logger.debug(f"🐛 RID[{rid}] アラーム関連キーワード: {has_alarm_keyword is not None}")
+            
+            # 2. 時間表現があるかチェック
+            time_patterns = [
+                (r'(\d+)秒後', lambda m: int(m.group(1))),
+                (r'(\d+)分後', lambda m: int(m.group(1)) * 60),
+                (r'(\d+)時間後', lambda m: int(m.group(1)) * 3600),
+                (r'(\d+)時(\d+)分', lambda m: self.calculate_time_until_today(int(m.group(1)), int(m.group(2)))),
+                (r'(\d+)時', lambda m: self.calculate_time_until_today(int(m.group(1)), 0)),
+            ]
+            
+            time_match = None
+            matched_pattern = None
+            for pattern, time_calculator in time_patterns:
+                match = re.search(pattern, text)
+                logger.debug(f"🐛 RID[{rid}] 時間パターン '{pattern}' チェック: {match is not None}")
+                if match:
+                    time_match = match
+                    matched_pattern = pattern
+                    matched_calculator = time_calculator
+                    break
+            
+            # 3. 両方のキーワードがある場合のみタイマー設定
+            if has_alarm_keyword and time_match:
+                try:
+                    logger.info(f"🎯 RID[{rid}] タイマー条件マッチ: アラーム関連=True, 時間表現='{matched_pattern}'")
+                    
+                    # 時刻指定の場合はタイムゾーンを考慮
+                    if "時" in matched_pattern:
+                        seconds = matched_calculator(time_match)
+                    else:
+                        seconds = matched_calculator(time_match)
+                    
+                    if seconds > 0:
+                        # メッセージを元のテキストに設定（抽出処理を削除）
+                        message = text
+                        logger.debug(f"🐛 RID[{rid}] メッセージ設定: '{message}'")
+                        
+                        logger.error(f"🚨 [TIMER_COMMAND_DEBUG] ★★★ send_timer_set_command呼び出し直前 ★★★ RID[{rid}]")
+                        logger.info(f"⏰ RID[{rid}] タイマー設定コマンドを検出: {text} -> {seconds}秒, メッセージ: '{message}'")
+                        await self.send_timer_set_command(rid, seconds, message)
+                        logger.error(f"🚨 [TIMER_COMMAND_DEBUG] ★★★ send_timer_set_command呼び出し完了 ★★★ RID[{rid}]")
+                        return True
+                except Exception as e:
+                    logger.error(f"RID[{rid}] タイマー時間計算エラー: {e}")
+            else:
+                logger.debug(f"🐛 RID[{rid}] タイマー条件不一致: アラーム関連={has_alarm_keyword is not None}, 時間表現={time_match is not None}")
+            
+            return False
+            
+        except Exception as e:
+            logger.error(f"RID[{rid}] タイマーコマンド処理エラー: {e}")
+            return False
+
+    def calculate_time_until_today(self, hour: int, minute: int) -> int:
+        """
+        今日の指定時刻までの秒数を計算
+        """
+        try:
+            now = datetime.now()
+            target_time = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+            
+            # 今日の時刻が既に過ぎている場合は明日の時刻にする
+            if target_time <= now:
+                target_time += timedelta(days=1)
+            
+            delta = target_time - now
+            return int(delta.total_seconds())
+        except Exception as e:
+            logger.error(f"時刻計算エラー: {e}")
+            return 0
+
+    async def send_timer_set_command(self, rid: str, seconds: int, message: str):
+        """
+        ESP32にタイマー設定コマンドを送信 + nekota-serverのDBに保存
+        """
+        try:
+            logger.info(f"🐛 RID[{rid}] send_timer_set_command開始: seconds={seconds}, message='{message}'")
+            # ESP32に送信するメッセージ
+            timer_command = {
+                "type": "set_timer",
+                "seconds": seconds,
+                "message": message
+            }
+            
+            # WebSocketでESP32に送信
+            logger.info(f"🐛 RID[{rid}] WebSocket送信前: websocket.closed={self.websocket.closed}")
+            await self.websocket.send_str(json.dumps(timer_command))
+            logger.info(f"⏰ RID[{rid}] ESP32にタイマー設定コマンドを送信: {json.dumps(timer_command)}")
+            logger.info(f"🐛 RID[{rid}] WebSocket送信後: websocket.closed={self.websocket.closed}")
+            
+            # nekota-serverのDBにアラームを保存（一時的に無効化）
+            # await self.save_alarm_to_nekota_server(rid, seconds, message)
+            
+            # ユーザーに確認メッセージを送信（現地時間で表示）
+            from datetime import datetime, timedelta, timezone, timedelta as td
+            
+            # 現地時間（日本時間）で計算
+            jst = timezone(td(hours=9))  # JST = UTC+9
+            now_jst = datetime.now(jst)
+            target_time_jst = now_jst + timedelta(seconds=seconds)
+            time_str = target_time_jst.strftime("%H時%M分")
+            response_text = f"わかったよ！{time_str}にお知らせするにゃん"
+            await self.send_audio_response(response_text, rid)
+            logger.info(f"⏰ RID[{rid}] タイマー設定確認メッセージを送信: {response_text}")
+            
+        except Exception as e:
+            logger.error(f"RID[{rid}] タイマー設定コマンド送信エラー: {e}")
+
+    async def send_timer_stop_command(self, rid: str):
+        """
+        ESP32にタイマー停止コマンドを送信
+        """
+        try:
+            # ESP32に送信するメッセージ
+            stop_command = {
+                "type": "stop_timer"
+            }
+            
+            # WebSocketでESP32に送信
+            await self.websocket.send_str(json.dumps(stop_command))
+            logger.info(f"⏹️ RID[{rid}] ESP32にタイマー停止コマンドを送信: {json.dumps(stop_command)}")
+            
+            # ユーザーに確認メッセージを送信
+            response_text = "わかったよ！タイマーをやめたにゃん"
+            await self.send_audio_response(response_text, rid)
+            logger.info(f"⏹️ RID[{rid}] タイマー停止確認メッセージを送信: {response_text}")
+            
+        except Exception as e:
+            logger.error(f"RID[{rid}] タイマー停止コマンド送信エラー: {e}")
+
+    async def save_alarm_to_nekota_server(self, rid: str, seconds: int, message: str):
+        """
+        nekota-serverのDBにアラームを保存（MemoryServiceのパターンを使用）
+        """
+        try:
+            from datetime import datetime, timedelta
+            
+            logger.error(f"🚨 [ALARM_DEBUG] ★★★ アラーム保存呼び出し ★★★ RID[{rid}] seconds={seconds}, message='{message}'")
+            
+            # スタックトレースで呼び出し元を特定
+            import traceback
+            stack = traceback.format_stack()
+            logger.error(f"🚨 [ALARM_DEBUG] 呼び出し元スタックトレース:")
+            for line in stack[-5:]:  # 最後の5行のみ
+                logger.error(f"🚨 [ALARM_DEBUG] {line.strip()}")
+            
+            logger.info(f"🐛 RID[{rid}] アラーム保存開始: seconds={seconds}, message='{message}'")
+            
+            # タイマー完了時刻を計算
+            target_time = datetime.now() + timedelta(seconds=seconds)
+            
+            # 日本時間で計算（標準ライブラリのみ使用）
+            from datetime import timezone, timedelta as td
+            jst = timezone(td(hours=9))  # JST = UTC+9
+            target_time_jst = target_time.replace(tzinfo=timezone.utc).astimezone(jst)
+            
+            logger.info(f"🐛 RID[{rid}] 計算された時刻: {target_time_jst.strftime('%Y-%m-%d %H:%M')}")
+            
+            # MemoryServiceと同じ方法で端末認証（既存の仕組みを使用）
+            # 現在のWebSocket接続のdevice_idを使用
+            device_number = self.device_id
+            logger.info(f"🐛 RID[{rid}] 端末番号を使用: {device_number}")
+            
+            # MemoryServiceの認証方法を使用
+            jwt_token, user_id = await self.memory_service._get_valid_jwt_and_user(device_number)
+            
+            if not jwt_token or not user_id:
+                logger.error(f"🐛 RID[{rid}] 認証失敗: device_number={device_number}")
+                return
+            
+            logger.info(f"🐛 RID[{rid}] 認証成功: user_id={user_id}, token={jwt_token[:20]}...")
+            logger.info(f"🐛 RID[{rid}] device_id={rid}, user_id={user_id} の関係を確認")
+            
+            # アラームデータを準備
+            alarm_data = {
+                "user_id": user_id,
+                "date": target_time_jst.strftime("%Y-%m-%d"),
+                "time": target_time_jst.strftime("%H:%M"),
+                "timezone": "Asia/Tokyo",
+                "text": message if message else "ネコ太からのアラーム"  # デフォルトメッセージ
+                # "esp32_notified": True  # 一時的にコメントアウト（500エラー対策）
+            }
+            
+            logger.info(f"🐛 RID[{rid}] アラームデータ: {alarm_data}")
+            
+            # MemoryServiceと同じhttpxクライアントを使用
+            headers = {"Authorization": f"Bearer {jwt_token}"}
+            
+            response = await self.memory_service.client.post(
+                "/api/alarm",
+                json=alarm_data,
+                headers=headers
+            )
+            
+            logger.info(f"🐛 RID[{rid}] アラーム保存レスポンス: {response.status_code}")
+            
+            if response.status_code == 201:
+                result = response.json()
+                logger.info(f"💾 RID[{rid}] アラームをnekota-serverのDBに保存成功: {result}")
+            else:
+                error_text = response.text
+                logger.error(f"💾 RID[{rid}] アラーム保存失敗: {response.status_code} - {error_text}")
+                logger.error(f"💾 RID[{rid}] 送信データ詳細: {alarm_data}")
+                logger.error(f"💾 RID[{rid}] ヘッダー詳細: {headers}")
+                        
+        except Exception as e:
+            logger.warning(f"💾 RID[{rid}] nekota-serverアラーム保存エラー（動作は継続）: {e}")
+            # DB保存に失敗してもタイマー機能は正常動作
+
+    def _reset_letter_state(self):
+        """レター状態を完全リセット"""
+        self.letter_state = "none"
+        self.letter_message = None
+        self.letter_target_friend = None
+        self.letter_suggested_friend = None
+        self.letter_rid = None
+
+
+    async def process_letter_command(self, text: str, rid: str) -> bool:
+        """シンプルなレター送信フロー"""
+        try:
+            logger.info(f"📮 RID[{rid}] レター処理: '{text}' (状態: {self.letter_state})")
+            
+            # 1. 送信開始
+            if self.letter_state == "none":
+                letter_keywords = ["メッセージ", "レター", "手紙", "送って", "送る", "伝えて", "連絡"]
+                if any(keyword in text for keyword in letter_keywords):
+                    logger.info(f"📮 RID[{rid}] レター送信開始")
+                    await self.send_audio_response("誰になんのメッセージを送るにゃ？", rid)
+                    self.letter_state = "waiting_complete_command"
+                    return True
+                return False
+            
+            # 2. 完全なコマンド受信（AI解析）
+            elif self.letter_state == "waiting_complete_command":
+                logger.info(f"📮 RID[{rid}] 完全コマンド受信: '{text}'")
+                
+                # AI解析を使用
+                from utils.nlp_parser import message_parser
+                parsed_message = await message_parser.parse_message_command(text)
+                
+                if parsed_message:
+                    friend_name = parsed_message["recipient"]
+                    message_content = parsed_message["message"]
+                    
+                    result = await self.find_and_send_letter(friend_name, message_content, rid)
+                    
+                    if result["success"]:
+                        await self.send_audio_response(f"わかったよ！{result['friend_name']}にお手紙を送ったにゃん", rid)
+                        self._reset_letter_state()
+                    else:
+                        # AI解析で名前が抽出できたが送信失敗 = 友達が見つからない
+                        await self.send_audio_response(f"ごめん、{friend_name}が友達リストに見つからないにゃ。正しい名前で教えてにゃ", rid)
+                        self.letter_state = "waiting_complete_command"
+                else:
+                    await self.send_audio_response("誰に何を送るか、もう少し詳しく教えてにゃ！例えば「田中さんにお疲れ様と送って」みたいに", rid)
+                    self.letter_state = "waiting_complete_command"
+                return True
+            
+            # 3. 友達名受信と送信実行
+            elif self.letter_state == "waiting_friend":
+                logger.info(f"📮 RID[{rid}] 友達名受信: '{text}'")
+                friend_name = self._extract_name_from_text(text)
+                result = await self.find_and_send_letter(friend_name, self.letter_message, rid)
+                
+                if result["success"]:
+                    await self.send_audio_response(f"わかったよ！{result['friend_name']}にお手紙を送ったにゃん", rid)
+                    self._reset_letter_state()
+                elif result["suggestion"]:
+                    await self.send_audio_response(f"もしかして{result['suggestion']}？", rid)
+                    self.letter_suggested_friend = result['suggestion']
+                    self.letter_state = "confirming_friend"
+                else:
+                    await self.send_audio_response("ごめん、送信に失敗したにゃん。もう一度最初からお願いします", rid)
+                    self._reset_letter_state()
+                return True
+            
+            # 友達確認処理は削除（AI解析で直接処理）
+            
+            return False
+        
+        except Exception as e:
+            logger.error(f"📮 RID[{rid}] レター処理エラー: {e}")
+            self._reset_letter_state()
+            return False
+
+    async def find_and_send_letter(self, friend_name: str, message: str, rid: str) -> dict:
+        """友達をあいまい検索してレターを送信"""
+        try:
+            logger.info(f"📮 RID[{rid}] あいまい検索開始: '{friend_name}' へ '{message}'")
+            
+            # nekota-serverから友達リストを取得
+            # 現在のWebSocket接続のdevice_idを使用
+            device_number = self.device_id
+            jwt_token, user_id = await self.memory_service._get_valid_jwt_and_user(device_number)
+            if not jwt_token or not user_id:
+                logger.error(f"📮 RID[{rid}] 認証失敗")
+                return {"success": False, "suggestion": None}
+            
+            import aiohttp
+            nekota_server_url = "https://nekota-server-production.up.railway.app"
+            
+            async with aiohttp.ClientSession() as session:
+                # 友達リスト取得
+                headers = {"Authorization": f"Bearer {jwt_token}"}
+                friend_response = await session.get(
+                    f"{nekota_server_url}/api/friend/list?user_id={user_id}",
+                    headers=headers
+                )
+                
+                if friend_response.status == 200:
+                    friend_data = await friend_response.json()
+                    friends = friend_data.get("friends", [])
+                    
+                    logger.info(f"📮 RID[{rid}] 友達リスト取得成功: {len(friends)}人")
+                    for i, friend in enumerate(friends):
+                        logger.info(f"📮 RID[{rid}] 友達{i+1}: {friend.get('name', 'Unknown')}")
+                    
+                    # 完全一致検索
+                    target_friend = None
+                    for friend in friends:
+                        if friend.get("name", "").lower() == friend_name.lower():
+                            target_friend = friend
+                            break
+                    
+                    # 完全一致した場合は送信
+                    if target_friend:
+                        success = await self._send_letter_api(target_friend, message, user_id, headers, session, rid)
+                        if success:
+                            return {"success": True, "friend_name": target_friend["name"], "suggestion": None}
+                    
+                    # AI-based友達検索
+                    logger.info(f"📮 RID[{rid}] AI友達検索開始: '{friend_name}' 友達数={len(friends)}")
+                    best_friend = await self._find_friend_with_ai(friend_name, friends, rid)
+                    
+                    if best_friend:
+                        success = await self._send_letter_api(best_friend, message, user_id, headers, session, rid)
+                        if success:
+                            return {"success": True, "friend_name": best_friend["name"], "suggestion": None}
+                        else:
+                            return {"success": False, "suggestion": None}
+                    else:
+                        logger.info(f"📮 RID[{rid}] AI検索でも候補なし")
+                        return {"success": False, "suggestion": None}
+                else:
+                    logger.error(f"📮 RID[{rid}] 友達リスト取得失敗: {friend_response.status}")
+                    return {"success": False, "suggestion": None}
+                    
+        except Exception as e:
+            logger.error(f"📮 RID[{rid}] あいまい検索エラー: {e}")
+            return {"success": False, "suggestion": None}
+
+    async def send_letter_to_friend_direct(self, friend_name: str, message: str, rid: str) -> bool:
+        """友達名で直接レター送信（確認済み）"""
+        try:
+            # 現在のWebSocket接続のdevice_idを使用
+            device_number = self.device_id
+            jwt_token, user_id = await self.memory_service._get_valid_jwt_and_user(device_number)
+            if not jwt_token or not user_id:
+                return False
+            
+            import aiohttp
+            nekota_server_url = "https://nekota-server-production.up.railway.app"
+            
+            async with aiohttp.ClientSession() as session:
+                headers = {"Authorization": f"Bearer {jwt_token}"}
+                friend_response = await session.get(
+                    f"{nekota_server_url}/api/friend/list?user_id={user_id}",
+                    headers=headers
+                )
+                
+                if friend_response.status == 200:
+                    friend_data = await friend_response.json()
+                    friends = friend_data.get("friends", [])
+                    
+                    target_friend = None
+                    for friend in friends:
+                        if friend.get("name", "").lower() == friend_name.lower():
+                            target_friend = friend
+                            break
+                    
+                    if target_friend:
+                        return await self._send_letter_api(target_friend, message, user_id, headers, session, rid)
+                        
+            return False
+        except Exception as e:
+            logger.error(f"📮 RID[{rid}] 直接送信エラー: {e}")
+            return False
+
+    async def _send_letter_api(self, target_friend: dict, message: str, user_id: str, headers: dict, session, rid: str) -> bool:
+        """レター送信API呼び出し"""
+        try:
+            nekota_server_url = "https://nekota-server-production.up.railway.app"
+            
+            letter_data = {
+                "from_user_id": user_id,
+                "to_user_id": target_friend["user_id"],
+                "message": message,
+                "type": "letter",
+                "source": "voice"  # 音声登録を明示
+            }
+            
+            logger.info(f"📮 RID[{rid}] レター送信開始: URL={nekota_server_url}/api/message/send_letter")
+            logger.info(f"📮 RID[{rid}] 送信データ: {letter_data}")
+            
+            message_response = await session.post(
+                f"{nekota_server_url}/api/message/send_letter",
+                json=letter_data,
+                headers=headers
+            )
+            
+            logger.info(f"📮 RID[{rid}] レスポンス受信: status={message_response.status}")
+            
+            if message_response.status in [200, 201]:
+                success_text = await message_response.text()
+                logger.info(f"📮 RID[{rid}] レター送信成功: {target_friend['name']} - {success_text}")
+                return True
+            else:
+                error_text = await message_response.text()
+                logger.error(f"📮 RID[{rid}] レター送信失敗: {message_response.status} - {error_text}")
+                logger.error(f"📮 RID[{rid}] 送信データ: {letter_data}")
+                logger.error(f"📮 RID[{rid}] リクエストURL: {nekota_server_url}/api/message/send_letter")
+                logger.error(f"📮 RID[{rid}] リクエストヘッダー: {headers}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"📮 RID[{rid}] API送信エラー: {e}")
+            return False
+
+    def _normalize_japanese_text(self, text: str) -> list:
+        """日本語テキストを正規化（ひらがな・カタカナ・漢字変換）"""
+        import unicodedata
+        
+        normalized_variants = [text.lower()]
+        
+        # ひらがな→カタカナ変換
+        hiragana_to_katakana = ""
+        for char in text:
+            if 'ひ' <= char <= 'ゖ':  # ひらがな範囲
+                hiragana_to_katakana += chr(ord(char) + 0x60)
+            else:
+                hiragana_to_katakana += char
+        if hiragana_to_katakana != text:
+            normalized_variants.append(hiragana_to_katakana.lower())
+        
+        # カタカナ→ひらがな変換
+        katakana_to_hiragana = ""
+        for char in text:
+            if 'ア' <= char <= 'ヶ':  # カタカナ範囲
+                katakana_to_hiragana += chr(ord(char) - 0x60)
+            else:
+                katakana_to_hiragana += char
+        if katakana_to_hiragana != text:
+            normalized_variants.append(katakana_to_hiragana.lower())
+        
+        # 全角→半角変換
+        half_width = unicodedata.normalize('NFKC', text).lower()
+        if half_width != text.lower():
+            normalized_variants.append(half_width)
+        
+        # AI解析を使用するため、基本的な正規化のみ実行
+        # 詳細な読み方パターンはAIに任せる
+        
+        return list(set(normalized_variants))  # 重複除去
+
+    def _extract_name_from_text(self, text: str) -> str:
+        """文章から名前を抽出"""
+        import re
+        
+        # 不要な語句を除去するパターン
+        noise_patterns = [
+            r'に送って$',
+            r'に送る$', 
+            r'を探して$',
+            r'に連絡$',
+            r'にメッセージ$',
+            r'にレター$',
+            r'に手紙$',
+            r'へ送って$',
+            r'へ送る$',
+            r'に伝えて$',
+            r'に教えて$'
+        ]
+        
+        extracted_name = text.strip()
+        
+        # 各パターンで不要部分を除去
+        for pattern in noise_patterns:
+            extracted_name = re.sub(pattern, '', extracted_name, flags=re.IGNORECASE)
+        
+        # 前後の空白を除去
+        extracted_name = extracted_name.strip()
+        
+        # 空文字列の場合は元のテキストを返す
+        if not extracted_name:
+            extracted_name = text.strip()
+        
+        return extracted_name
+
+    def _calculate_similarity(self, str1: str, str2: str) -> float:
+        """文字列の類似度を計算（日本語対応改良版）"""
+        if not str1 or not str2:
+            return 0.0
+        
+        # 正規化バリアントを生成
+        str1_variants = self._normalize_japanese_text(str1)
+        str2_variants = self._normalize_japanese_text(str2)
+        
+        max_similarity = 0.0
+        
+        # 全組み合わせで最高類似度を計算
+        for v1 in str1_variants:
+            for v2 in str2_variants:
+                # 完全一致
+                if v1 == v2:
+                    return 1.0
+                
+                # 部分一致（含まれる関係）
+                if v1 in v2 or v2 in v1:
+                    max_similarity = max(max_similarity, 0.8)
+                    continue
+                
+                # 共通文字数を計算
+                len1, len2 = len(v1), len(v2)
+                common = 0
+                v2_chars = list(v2)
+                
+                for char in v1:
+                    if char in v2_chars:
+                        v2_chars.remove(char)  # 重複カウントを防ぐ
+                        common += 1
+                
+                # ジャッカード係数的な計算
+                union_size = len1 + len2 - common
+                if union_size > 0:
+                    similarity = common / union_size
+                    max_similarity = max(max_similarity, similarity)
+        
+        return max_similarity
+    
+    async def _find_friend_with_ai(self, search_name: str, friends: list, rid: str) -> dict:
+        """AI解析による友達検索"""
+        try:
+            import httpx
+            import json
+            import os
+            
+            # OpenAI API設定
+            api_key = os.getenv("OPENAI_API_KEY")
+            if not api_key:
+                logger.warning(f"📮 RID[{rid}] AI友達検索: API key not found, using fallback")
+                return self._find_friend_fallback(search_name, friends, rid)
+            
+            # 友達名リストを作成
+            friend_names = [friend.get("name", "") for friend in friends]
+            
+            prompt = f"""Find the best matching friend name from the list for the search query.
+Consider pronunciation variations, honorifics, and partial matches.
+
+Search query: "{search_name}"
+Friend list: {friend_names}
+
+Return JSON with the exact friend name from the list, or null if no reasonable match:
+{{"matched_name": "exact name from list or null"}}
+
+Examples:
+- Search: "うんち" → List: ["うんち君"] → {{"matched_name": "うんち君"}}
+- Search: "たなか" → List: ["田中さん"] → {{"matched_name": "田中さん"}}
+- Search: "john" → List: ["John Smith"] → {{"matched_name": "John Smith"}}"""
+
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    "https://api.openai.com/v1/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {api_key}",
+                        "Content-Type": "application/json"
+                    },
+                    json={
+                        "model": "gpt-4o-mini",
+                        "messages": [{"role": "user", "content": prompt}],
+                        "max_tokens": 50,
+                        "temperature": 0
+                    },
+                    timeout=10.0
+                )
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    content = data["choices"][0]["message"]["content"].strip()
+                    
+                    try:
+                        result = json.loads(content)
+                        matched_name = result.get("matched_name")
+                        
+                        if matched_name:
+                            # 友達リストから該当する友達を返す
+                            for friend in friends:
+                                if friend.get("name") == matched_name:
+                                    logger.info(f"📮 RID[{rid}] AI友達検索成功: {search_name} → {matched_name}")
+                                    return friend
+                        
+                        logger.info(f"📮 RID[{rid}] AI友達検索: マッチなし")
+                        return None
+                        
+                    except json.JSONDecodeError:
+                        logger.error(f"📮 RID[{rid}] AI友達検索: JSON解析失敗")
+                        
+        except Exception as e:
+            logger.error(f"📮 RID[{rid}] AI友達検索エラー: {e}")
+        
+        # フォールバック: 従来の検索
+        return self._find_friend_fallback(search_name, friends, rid)
+    
+    def _find_friend_fallback(self, search_name: str, friends: list, rid: str) -> dict:
+        """従来のあいまい検索（フォールバック）"""
+        suggestions = []
+        for friend in friends:
+            friend_name_lower = friend.get("name", "").lower()
+            input_name_lower = search_name.lower()
+            
+            # 部分一致または含む関係
+            is_partial_match = (input_name_lower in friend_name_lower or 
+                              friend_name_lower in input_name_lower)
+            similarity = self._calculate_similarity(input_name_lower, friend_name_lower)
+            
+            if is_partial_match or similarity > 0.3:
+                suggestions.append({
+                    "friend": friend,
+                    "similarity": similarity,
+                    "partial_match": is_partial_match
+                })
+        
+        # 類似度でソート（部分一致を優先）
+        suggestions.sort(key=lambda x: (not x["partial_match"], -x["similarity"]))
+        
+        if suggestions:
+            best_match = suggestions[0]["friend"]
+            logger.info(f"📮 RID[{rid}] フォールバック検索成功: {search_name} → {best_match['name']}")
+            return best_match
+        
+        return None
+    
+    async def process_letter_response(self, response: str):
+        """レター応答の処理"""
+        try:
+            import uuid
+            rid = str(uuid.uuid4())[:8]
+            
+            # レター応答状態でない場合は処理をスキップ
+            if not device_letter_states.get(self.device_id, False):
+                logger.info(f"📮 RID[{rid}] レター応答状態ではないため処理をスキップ (device: {self.device_id})")
+                logger.info(f"🔍🔍🔍 [DEBUG_LETTER_SKIP] レター応答状態ではないためスキップ 🔍🔍🔍")
+                return
+            
+            logger.info(f"📮 RID[{rid}] レター応答処理開始: '{response}' (device: {self.device_id})")
+            logger.info(f"🔍🔍🔍 [DEBUG_LETTER_START] レター応答処理開始 🔍🔍🔍")
+            
+            if "聞く" in response or "はい" in response or "うん" in response or "読んで" in response:
+                # レター内容を読み上げ
+                logger.info(f"📮 RID[{rid}] レター読み上げ要求")
+                logger.info(f"🔍🔍🔍 [DEBUG_LETTER_READ] 聞く応答を検出 🔍🔍🔍")
+                
+                # 実際のレター内容を取得
+                letter_content = "レターが見つかりませんでした"
+                pending_letters = device_pending_letters.get(self.device_id, [])
+                logger.info(f"🔍🔍🔍 [DEBUG_LETTER_CHECK] device_pending_letters内容: {device_pending_letters} 🔍🔍🔍")
+                logger.info(f"🔍🔍🔍 [DEBUG_LETTER_CHECK] 現在のデバイス({self.device_id})のレター: {pending_letters} 🔍🔍🔍")
+                
+                if pending_letters:
+                    # 最初の未読レターを読み上げ
+                    first_letter = pending_letters[0]
+                    letter_content = first_letter.get("message", "メッセージ内容がありません")
+                    from_user_name = first_letter.get("from_user_name", "誰か")
+                    
+                    # 送信者名も含めて読み上げ
+                    full_content = f"{from_user_name}から「{letter_content}」"
+                    letter_content = full_content
+                    
+                    logger.info(f"📮 RID[{rid}] レター内容取得: {letter_content}")
+                else:
+                    logger.warning(f"📮 RID[{rid}] 未読レターが見つかりません (device: {self.device_id})")
+                    logger.info(f"🔍🔍🔍 [DEBUG_LETTER_NOT_FOUND] 未読レターが見つかりません 🔍🔍🔍")
+                
+                await self.send_audio_response(letter_content, rid)
+                logger.info(f"📮 RID[{rid}] レター内容読み上げ完了")
+                
+                # レター応答状態をリセット（グローバル状態）
+                device_letter_states[self.device_id] = False
+                logger.info(f"📮 RID[{rid}] レター応答状態リセット完了 (device: {self.device_id})")
+                logger.info(f"🔍🔍🔍 [DEBUG_LETTER_STATE_RESET] レター応答状態リセット完了 🔍🔍🔍")
+                
+            elif "後で" in response or "あとで" in response or "今はいい" in response or "いいえ" in response:
+                # 後で確認
+                logger.info(f"📮 RID[{rid}] レター後で確認")
+                logger.info(f"🔍🔍🔍 [DEBUG_LETTER_LATER] 後で応答を検出 🔍🔍🔍")
+                await self.send_audio_response("わかったよ、後で確認してね", rid)
+                
+                # レター応答状態をリセット（グローバル状態）
+                device_letter_states[self.device_id] = False
+                logger.info(f"📮 RID[{rid}] レター応答状態リセット完了 (device: {self.device_id})")
+                
+            elif "消して" in response or "消去" in response or "捨てて" in response or "削除" in response:
+                # レター削除
+                logger.info(f"📮 RID[{rid}] レター削除要求")
+                logger.info(f"🔍🔍🔍 [DEBUG_LETTER_DELETE] 削除応答を検出 🔍🔍🔍")
+                await self.send_audio_response("わかったよ、お手紙を削除したよ", rid)
+                
+                # レター応答状態をリセット（グローバル状態）
+                device_letter_states[self.device_id] = False
+                logger.info(f"📮 RID[{rid}] レター応答状態リセット完了 (device: {self.device_id})")
+                
+            else:
+                # 不明な応答
+                logger.info(f"🔍🔍🔍 [DEBUG_LETTER_UNKNOWN] 不明な応答を検出: '{response}' 🔍🔍🔍")
+                logger.info(f"🔍🔍🔍 [DEBUG_LETTER_UNKNOWN] レター応答状態: {device_letter_states.get(self.device_id, False)} 🔍🔍🔍")
+                await self.send_audio_response("聞く？後にする？消して？", rid)
+                
+        except Exception as e:
+            logger.error(f"📮 レター応答処理エラー: {e}")
+            # エラー時も状態をリセット
+            device_letter_states[self.device_id] = False
+
+# デバイス接続チェック関数
+def is_device_connected(device_id: str) -> bool:
+    """
+    指定されたデバイスが接続中かチェック
+    """
+    return device_id in connected_devices
+
+async def send_timer_to_connected_device(device_id: str, seconds: int, message: str) -> bool:
+    """
+    接続中のデバイスにタイマー設定コマンドを送信
+    """
+    if device_id not in connected_devices:
+        logger.warning(f"📱 デバイス {device_id} は接続されていません")
+        return False
+    
+    try:
+        handler = connected_devices[device_id]
+        await handler.send_timer_set_command(device_id, seconds, message)
+        logger.info(f"📱 デバイス {device_id} にタイマー設定コマンドを送信成功")
+        return True
+    except Exception as e:
+        logger.error(f"📱 デバイス {device_id} へのタイマー送信エラー: {e}")
+        return False
+>>>>>>> f352d55fce2fb38b1d871ca5b9b3922b75e76231

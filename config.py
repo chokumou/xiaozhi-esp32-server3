@@ -8,7 +8,7 @@ load_dotenv()
 class Config:
     # サーバー設定
     HOST: str = os.getenv("HOST", "0.0.0.0")
-    PORT: int = int(os.getenv("PORT", "8080"))
+    PORT: int = int(os.getenv("PORT", "8000"))
     
     # OpenAI設定
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
