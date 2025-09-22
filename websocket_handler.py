@@ -28,6 +28,7 @@ logger = setup_logger()
 # 接続中のデバイス管理（グローバル）
 connected_devices: Dict[str, 'ConnectionHandler'] = {}
 device_letter_states: Dict[str, bool] = {}  # デバイス別レター応答待ち状態
+device_pending_letters: Dict[str, list] = {}  # デバイス別未読レター情報
 
 class ConnectionHandler:
     def __init__(self, websocket: web.WebSocketResponse, headers: Dict[str, str]):
@@ -2076,9 +2077,24 @@ Examples:
                 # レター内容を読み上げ
                 logger.info(f"📮 RID[{rid}] レター読み上げ要求")
                 
-                # サーバー側で実際のレター内容を取得して読み上げ
-                # TODO: 実際のレター内容をDBから取得
-                letter_content = "実際のお手紙の内容がここに入ります"  # 暫定
+                # 実際のレター内容を取得
+                letter_content = "レターが見つかりませんでした"
+                pending_letters = device_pending_letters.get(self.device_id, [])
+                
+                if pending_letters:
+                    # 最初の未読レターを読み上げ
+                    first_letter = pending_letters[0]
+                    letter_content = first_letter.get("message", "メッセージ内容がありません")
+                    from_user_name = first_letter.get("from_user_name", "誰か")
+                    
+                    # 送信者名も含めて読み上げ
+                    full_content = f"{from_user_name}から「{letter_content}」"
+                    letter_content = full_content
+                    
+                    logger.info(f"📮 RID[{rid}] レター内容取得: {letter_content}")
+                else:
+                    logger.warning(f"📮 RID[{rid}] 未読レターが見つかりません (device: {self.device_id})")
+                
                 await self.send_audio_response(letter_content, rid)
                 logger.info(f"📮 RID[{rid}] レター内容読み上げ完了")
                 
