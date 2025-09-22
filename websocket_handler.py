@@ -157,6 +157,7 @@ class ConnectionHandler:
                     if "お手紙が届いている" in text_input and "聞く？後にする？" in text_input:
                         device_letter_states[self.device_id] = True
                         logger.info(f"📮 RID[{rid}] レター応答待ち状態に設定 (device: {self.device_id})")
+                        logger.info(f"🔍🔍🔍 [DEBUG_LETTER_STATE_SET] レター応答待ち状態に設定 🔍🔍🔍")
                     
                     # 直接TTS音声合成（レター処理等をスキップ）
                     await self.send_audio_response(text_input, rid)
@@ -572,6 +573,7 @@ class ConnectionHandler:
             # レター応答待ち状態チェック（最優先）
             if device_letter_states.get(self.device_id, False):
                 logger.info(f"🔥🔥🔥 レター応答として処理（process_text経由）: '{text}' (device: {self.device_id}) 🔥🔥🔥")
+                logger.info(f"🔍🔍🔍 [DEBUG_LETTER_RESPONSE] process_text経由でレター応答処理開始 🔍🔍🔍")
                 await self.process_letter_response(text)
                 return
 
@@ -2074,13 +2076,16 @@ Examples:
             # レター応答状態でない場合は処理をスキップ
             if not device_letter_states.get(self.device_id, False):
                 logger.info(f"📮 RID[{rid}] レター応答状態ではないため処理をスキップ (device: {self.device_id})")
+                logger.info(f"🔍🔍🔍 [DEBUG_LETTER_SKIP] レター応答状態ではないためスキップ 🔍🔍🔍")
                 return
             
             logger.info(f"📮 RID[{rid}] レター応答処理開始: '{response}' (device: {self.device_id})")
+            logger.info(f"🔍🔍🔍 [DEBUG_LETTER_START] レター応答処理開始 🔍🔍🔍")
             
             if "聞く" in response or "はい" in response or "うん" in response or "読んで" in response:
                 # レター内容を読み上げ
                 logger.info(f"📮 RID[{rid}] レター読み上げ要求")
+                logger.info(f"🔍🔍🔍 [DEBUG_LETTER_READ] 聞く応答を検出 🔍🔍🔍")
                 
                 # 実際のレター内容を取得
                 letter_content = "レターが見つかりませんでした"
@@ -2110,6 +2115,7 @@ Examples:
             elif "後で" in response or "あとで" in response or "今はいい" in response or "いいえ" in response:
                 # 後で確認
                 logger.info(f"📮 RID[{rid}] レター後で確認")
+                logger.info(f"🔍🔍🔍 [DEBUG_LETTER_LATER] 後で応答を検出 🔍🔍🔍")
                 await self.send_audio_response("わかったよ、後で確認してね", rid)
                 
                 # レター応答状態をリセット（グローバル状態）
@@ -2119,6 +2125,7 @@ Examples:
             elif "消して" in response or "消去" in response or "捨てて" in response or "削除" in response:
                 # レター削除
                 logger.info(f"📮 RID[{rid}] レター削除要求")
+                logger.info(f"🔍🔍🔍 [DEBUG_LETTER_DELETE] 削除応答を検出 🔍🔍🔍")
                 await self.send_audio_response("わかったよ、お手紙を削除したよ", rid)
                 
                 # レター応答状態をリセット（グローバル状態）
@@ -2127,6 +2134,7 @@ Examples:
                 
             else:
                 # 不明な応答
+                logger.info(f"🔍🔍🔍 [DEBUG_LETTER_UNKNOWN] 不明な応答を検出: '{response}' 🔍🔍🔍")
                 await self.send_audio_response("聞く？後にする？消して？", rid)
                 
         except Exception as e:
