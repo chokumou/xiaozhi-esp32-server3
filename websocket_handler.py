@@ -3220,7 +3220,12 @@ Examples:
         
         if pending_letters:
             first_letter = pending_letters[0]
-            letter_content = first_letter.get("transcribed_text", "メッセージ内容がありません")
+            # transcribed_textがNoneや'None'の場合はmessageフィールドを使用
+            transcribed_text = first_letter.get("transcribed_text")
+            if transcribed_text and transcribed_text != "None" and transcribed_text.strip():
+                letter_content = transcribed_text
+            else:
+                letter_content = first_letter.get("message", "メッセージ内容がありません")
             from_user_name = first_letter.get("from_user_name", "誰か")
             letter_id = first_letter.get("id")
             
