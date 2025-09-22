@@ -3341,18 +3341,26 @@ Examples:
         """レターを既読状態にマーク"""
         try:
             import httpx
+            
+            api_url = f"{Config.MANAGER_API_URL}/api/message/internal/read/{letter_id}"
+            logger.info(f"📮 RID[{rid}] 既読API呼び出し開始: {api_url}")
+            
             async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    f"{Config.MANAGER_API_URL}/api/message/internal/read/{letter_id}"
-                )
+                response = await client.post(api_url)
+                
+                logger.info(f"📮 RID[{rid}] 既読API応答: status={response.status_code}")
                 
                 if response.status_code == 200:
-                    logger.info(f"📮 RID[{rid}] レター既読マーク成功: {letter_id}")
+                    response_data = response.json()
+                    logger.info(f"📮 RID[{rid}] レター既読マーク成功: {letter_id} - {response_data}")
                 else:
-                    logger.error(f"📮 RID[{rid}] レター既読マーク失敗: {response.status_code} - {response.text}")
+                    response_text = response.text
+                    logger.error(f"📮 RID[{rid}] レター既読マーク失敗: {response.status_code} - {response_text}")
                     
         except Exception as e:
             logger.error(f"📮 RID[{rid}] レター既読マークエラー: {e}")
+            import traceback
+            logger.error(f"📮 RID[{rid}] スタックトレース: {traceback.format_exc()}")
 
 # デバイス接続チェック関数
 def is_device_connected(device_id: str) -> bool:
