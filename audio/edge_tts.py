@@ -14,6 +14,8 @@ class EdgeTTSService:
 
     async def generate_speech(self, text: str) -> bytes:
         try:
+            logger.info(f"🔄 [EDGE_TTS] Starting TTS generation for: '{text}'")
+            
             # EdgeTTSで音声生成（Server2互換）
             communicate = edge_tts.Communicate(text, self.voice)
             audio_bytes = b""
@@ -23,7 +25,7 @@ class EdgeTTSService:
                 if chunk["type"] == "audio":
                     audio_bytes += chunk["data"]
             
-            logger.debug(f"EdgeTTS generated audio for text: {text[:50]}... ({len(audio_bytes)} bytes)")
+            logger.info(f"🔄 [EDGE_TTS] Generated {len(audio_bytes)} bytes audio for text: '{text[:50]}...'")
             
             # Server2準拠: MP3 → PCM → Opus フレーム分割処理
             opus_frames = await self._convert_to_opus_frames(audio_bytes, "mp3")
@@ -31,7 +33,9 @@ class EdgeTTSService:
             return opus_frames
             
         except Exception as e:
-            logger.error(f"EdgeTTS generation failed: {e}")
+            logger.error(f"❌ [EDGE_TTS] Generation failed: {e}")
+            import traceback
+            logger.error(f"❌ [EDGE_TTS] Stack trace: {traceback.format_exc()}")
             return b""
     
     async def _convert_to_opus_frames(self, audio_bytes: bytes, file_type: str) -> bytes:
@@ -107,8 +111,8 @@ class EdgeTTSService:
             return opus_frames_list
             
         except Exception as e:
-            logger.error(f"Opus encoding failed: {e}")
+            logger.error(f"❌ [EDGE_TTS] Opus encoding failed: {e}")
             import traceback
-            logger.error(f"Opus encoding traceback: {traceback.format_exc()}")
+            logger.error(f"❌ [EDGE_TTS] Opus encoding traceback: {traceback.format_exc()}")
             return []
 
