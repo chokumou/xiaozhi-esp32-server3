@@ -2139,6 +2139,7 @@ Examples:
             else:
                 # 不明な応答
                 logger.info(f"🔍🔍🔍 [DEBUG_LETTER_UNKNOWN] 不明な応答を検出: '{response}' 🔍🔍🔍")
+                logger.info(f"🔍🔍🔍 [DEBUG_LETTER_UNKNOWN] レター応答状態: {device_letter_states.get(self.device_id, False)} 🔍🔍🔍")
                 await self.send_audio_response("聞く？後にする？消して？", rid)
                 
         except Exception as e:

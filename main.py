@@ -290,6 +290,7 @@ async def main():
             
             if not actual_device_id:
                 logger.warning(f"📱 接続中のデバイスが見つかりません: request={request_device_id}, connected={list(connected_devices.keys())}")
+                logger.info(f"🔍🔍🔍 [DEBUG_DEVICE_NOT_FOUND] 接続中デバイスが見つからないため、request_device_idを使用: {request_device_id} 🔍🔍🔍")
                 actual_device_id = request_device_id  # フォールバック
             
             logger.info(f"📱 アラームチェック要求: request_device_id={request_device_id}, actual_device_id={actual_device_id}")
