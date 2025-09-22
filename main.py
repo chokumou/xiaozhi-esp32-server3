@@ -457,6 +457,7 @@ async def main():
                     from websocket_handler import device_pending_letters
                     device_pending_letters[device_id] = pending_letters
                     logger.info(f"📮 デバイス別レター保存完了: {device_id} = {len(pending_letters)}件")
+                    logger.info(f"🔍🔍🔍 [DEBUG_LETTER_SAVE] デバイス別レター保存: {pending_letters} 🔍🔍🔍")
                     
                     return web.json_response({
                         "alarms": pending_alarms,

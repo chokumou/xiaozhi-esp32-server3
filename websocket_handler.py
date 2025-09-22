@@ -2090,6 +2090,8 @@ Examples:
                 # 実際のレター内容を取得
                 letter_content = "レターが見つかりませんでした"
                 pending_letters = device_pending_letters.get(self.device_id, [])
+                logger.info(f"🔍🔍🔍 [DEBUG_LETTER_CHECK] device_pending_letters内容: {device_pending_letters} 🔍🔍🔍")
+                logger.info(f"🔍🔍🔍 [DEBUG_LETTER_CHECK] 現在のデバイス({self.device_id})のレター: {pending_letters} 🔍🔍🔍")
                 
                 if pending_letters:
                     # 最初の未読レターを読み上げ
@@ -2104,6 +2106,7 @@ Examples:
                     logger.info(f"📮 RID[{rid}] レター内容取得: {letter_content}")
                 else:
                     logger.warning(f"📮 RID[{rid}] 未読レターが見つかりません (device: {self.device_id})")
+                    logger.info(f"🔍🔍🔍 [DEBUG_LETTER_NOT_FOUND] 未読レターが見つかりません 🔍🔍🔍")
                 
                 await self.send_audio_response(letter_content, rid)
                 logger.info(f"📮 RID[{rid}] レター内容読み上げ完了")
@@ -2111,6 +2114,7 @@ Examples:
                 # レター応答状態をリセット（グローバル状態）
                 device_letter_states[self.device_id] = False
                 logger.info(f"📮 RID[{rid}] レター応答状態リセット完了 (device: {self.device_id})")
+                logger.info(f"🔍🔍🔍 [DEBUG_LETTER_STATE_RESET] レター応答状態リセット完了 🔍🔍🔍")
                 
             elif "後で" in response or "あとで" in response or "今はいい" in response or "いいえ" in response:
                 # 後で確認
