@@ -293,6 +293,8 @@ async def main():
                 actual_device_id = request_device_id  # フォールバック
             
             logger.info(f"📱 アラームチェック要求: request_device_id={request_device_id}, actual_device_id={actual_device_id}")
+            logger.info(f"🔍🔍🔍 [DEBUG_DEVICE_MAPPING] 接続中デバイス: {list(connected_devices.keys())} 🔍🔍🔍")
+            logger.info(f"🔍🔍🔍 [DEBUG_DEVICE_MAPPING] 各デバイスのhandler.device_id: {[(k, v.device_id) for k, v in connected_devices.items()]} 🔍🔍🔍")
             
             # nekota-serverから未発火アラーム取得
             import aiohttp
