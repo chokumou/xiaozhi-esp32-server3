@@ -3287,7 +3287,7 @@ Examples:
         
         if pending_letters:
             first_letter = pending_letters[0]
-            letter_content = first_letter.get("message", "メッセージ内容がありません")
+            letter_content = first_letter.get("transcribed_text", "メッセージ内容がありません")
             from_user_name = first_letter.get("from_user_name", "誰か")
             letter_id = first_letter.get("id")
             
@@ -3297,13 +3297,21 @@ Examples:
             
             # レターを既読状態に更新
             if letter_id:
+                logger.info(f"📮 RID[{rid}] レター既読処理開始: letter_id={letter_id}")
                 await self.mark_letter_as_read(letter_id, rid)
+            else:
+                logger.error(f"📮 RID[{rid}] レターIDが見つかりません: {first_letter}")
         
         await self.send_audio_response(letter_content, rid)
         
         # レター応答状態をリセット
         device_letter_states[self.device_id] = False
         logger.info(f"📮 RID[{rid}] レター応答状態リセット完了 (device: {self.device_id})")
+        
+        # pending_lettersもクリア（既読後は不要）
+        if self.device_id in device_pending_letters:
+            device_pending_letters.pop(self.device_id, None)
+            logger.info(f"📮 RID[{rid}] pending_lettersクリア完了 (device: {self.device_id})")
 
     async def _process_letter_later(self, rid: str):
         """レター後で処理"""
