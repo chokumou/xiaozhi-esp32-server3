@@ -3343,16 +3343,13 @@ Examples:
             import httpx
             async with httpx.AsyncClient() as client:
                 response = await client.post(
-                    f"{Config.MANAGER_API_URL}/api/message/read/{letter_id}",
-                    headers={
-                        "Authorization": f"Bearer {Config.MANAGER_API_SECRET}"
-                    }
+                    f"{Config.MANAGER_API_URL}/api/message/internal/read/{letter_id}"
                 )
                 
                 if response.status_code == 200:
                     logger.info(f"📮 RID[{rid}] レター既読マーク成功: {letter_id}")
                 else:
-                    logger.error(f"📮 RID[{rid}] レター既読マーク失敗: {response.status_code}")
+                    logger.error(f"📮 RID[{rid}] レター既読マーク失敗: {response.status_code} - {response.text}")
                     
         except Exception as e:
             logger.error(f"📮 RID[{rid}] レター既読マークエラー: {e}")
