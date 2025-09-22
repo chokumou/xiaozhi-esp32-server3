@@ -593,6 +593,16 @@ class ConnectionHandler:
                 await self.check_new_messages_manual(rid)
                 return
 
+            # 特定の友達からのメッセージ確認コマンドチェック
+            import re
+            friend_message_pattern = r'(.+?)からの?(メッセージ|お手紙).*?(なに|何|ある|来てる)'
+            match = re.search(friend_message_pattern, text)
+            if match:
+                friend_name = match.group(1).strip()
+                logger.info(f"📮 RID[{rid}] 特定友達メッセージ確認要求: '{friend_name}' from '{text}'")
+                await self.check_friend_messages(friend_name, rid)
+                return
+
             # レター応答待ち状態チェック（最優先）
             if device_letter_states.get(self.device_id, False):
                 logger.info(f"🔥🔥🔥 レター応答として処理（process_text経由）: '{text}' (device: {self.device_id}) 🔥🔥🔥")
@@ -2970,7 +2980,7 @@ Examples:
             logger.info(f"📮 RID[{rid}] レター応答処理開始: '{response}' (device: {self.device_id})")
             logger.info(f"🔍🔍🔍 [DEBUG_LETTER_START] レター応答処理開始 🔍🔍🔍")
             
-            if "聞く" in response or "はい" in response or "うん" in response or "読んで" in response:
+            if "聞く" in response or "効く" in response or "きく" in response or "はい" in response or "うん" in response or "読んで" in response:
                 # レター内容を読み上げ
                 logger.info(f"📮 RID[{rid}] レター読み上げ要求")
                 logger.info(f"🔍🔍🔍 [DEBUG_LETTER_READ] 聞く応答を検出 🔍🔍🔍")
@@ -3033,13 +3043,30 @@ Examples:
                 logger.info(f"📮 RID[{rid}] レター応答状態リセット完了 (device: {self.device_id})")
                 
             else:
-                # 不明な応答 - レター応答状態をリセット
+                # 不明な応答 - AI判断を試行してからユーザーフレンドリーな対応
                 logger.info(f"🔍🔍🔍 [DEBUG_LETTER_UNKNOWN] 不明な応答を検出: '{response}' 🔍🔍🔍")
                 logger.info(f"🔍🔍🔍 [DEBUG_LETTER_UNKNOWN] レター応答状態: {device_letter_states.get(self.device_id, False)} 🔍🔍🔍")
                 
-                # 不明な応答の場合、レター応答状態をリセット
-                logger.info(f"🔍🔍🔍 [DEBUG_LETTER_UNKNOWN] 不明な応答のためレター応答状態をリセット 🔍🔍🔍")
-                device_letter_states[self.device_id] = False
+                # AI判断による応答分類を試行
+                ai_action = await self._classify_letter_response_with_ai(response, rid)
+                
+                if ai_action == "listen":
+                    # 「聞く」として処理
+                    logger.info(f"📮 RID[{rid}] AI判定: 聞く応答として処理")
+                    await self._process_letter_listen(rid)
+                elif ai_action == "later":
+                    # 「後で」として処理
+                    logger.info(f"📮 RID[{rid}] AI判定: 後で応答として処理")
+                    await self._process_letter_later(rid)
+                elif ai_action == "delete":
+                    # 「削除」として処理
+                    logger.info(f"📮 RID[{rid}] AI判定: 削除応答として処理")
+                    await self._process_letter_delete(rid)
+                else:
+                    # 本当に不明な場合はユーザーフレンドリーな対応
+                    logger.info(f"🔍🔍🔍 [DEBUG_LETTER_UNKNOWN] AI判定でも不明な応答 🔍🔍🔍")
+                    await self.send_audio_response("ごめん、分からなかった。お手紙を聞く？後にする？それとも消す？", rid)
+                    # レター応答状態は維持（再度応答を待つ）
                 
         except Exception as e:
             logger.error(f"📮 レター応答処理エラー: {e}")
@@ -3114,6 +3141,213 @@ Examples:
         except Exception as e:
             logger.error(f"📮 RID[{rid}] 手動メッセージ確認エラー: {e}")
             await self.send_audio_response("メッセージの確認でエラーが発生したよ", rid)
+
+    async def check_friend_messages(self, friend_name: str, rid: str):
+        """特定の友達からのメッセージを確認"""
+        try:
+            import httpx
+            
+            # まず友達リストを取得
+            async with httpx.AsyncClient() as client:
+                friends_response = await client.get(
+                    f"{Config.MANAGER_API_URL}/api/friend/list",
+                    params={"device_id": self.device_id},
+                    headers={
+                        "Authorization": f"Bearer {Config.MANAGER_API_SECRET}"
+                    }
+                )
+                
+                if friends_response.status_code == 200:
+                    friends_data = friends_response.json()
+                    friends = friends_data.get("friends", [])
+                    
+                    # AI友達検索で該当する友達を見つける
+                    matched_friend = await self._find_friend_with_ai(friend_name, friends, rid)
+                    
+                    if matched_friend:
+                        friend_id = matched_friend.get("id")
+                        matched_name = matched_friend.get("name", friend_name)
+                        
+                        # その友達からのメッセージを取得
+                        messages_response = await client.get(
+                            f"{Config.MANAGER_API_URL}/api/message/list",
+                            params={
+                                "friend_id": friend_id,
+                                "unread_only": True,
+                                "include_snoozed": True  # スルー分も含める
+                            },
+                            headers={
+                                "Authorization": f"Bearer {Config.MANAGER_API_SECRET}"
+                            }
+                        )
+                        
+                        if messages_response.status_code == 200:
+                            messages_data = messages_response.json()
+                            messages = messages_data.get("messages", [])
+                            
+                            if messages:
+                                # 最新のメッセージを読み上げ
+                                latest_message = messages[0]
+                                message_content = latest_message.get("transcribed_text", "メッセージ")
+                                
+                                response_text = f"{matched_name}からのお手紙は「{message_content}」だよ"
+                                await self.send_audio_response(response_text, rid)
+                                
+                                # レター応答状態に設定
+                                device_letter_states[self.device_id] = True
+                                device_pending_letters[self.device_id] = messages
+                                
+                                logger.info(f"📮 RID[{rid}] 特定友達メッセージ確認成功: {matched_name} - {len(messages)}件")
+                            else:
+                                await self.send_audio_response(f"{matched_name}からの新しいお手紙はないよ", rid)
+                                logger.info(f"📮 RID[{rid}] 特定友達メッセージ確認: {matched_name} - メッセージなし")
+                        else:
+                            logger.error(f"📮 RID[{rid}] メッセージ取得エラー: {messages_response.status_code}")
+                            await self.send_audio_response(f"{matched_name}のメッセージ確認でエラーが発生したよ", rid)
+                    else:
+                        await self.send_audio_response(f"{friend_name}という友達が見つからないよ", rid)
+                        logger.info(f"📮 RID[{rid}] 友達が見つからない: {friend_name}")
+                else:
+                    logger.error(f"📮 RID[{rid}] 友達リスト取得エラー: {friends_response.status_code}")
+                    await self.send_audio_response("友達リストの確認でエラーが発生したよ", rid)
+                    
+        except Exception as e:
+            logger.error(f"📮 RID[{rid}] 特定友達メッセージ確認エラー: {e}")
+            await self.send_audio_response(f"{friend_name}のメッセージ確認でエラーが発生したよ", rid)
+
+    async def _classify_letter_response_with_ai(self, response: str, rid: str) -> str:
+        """AI判断によるレター応答分類（多言語対応）"""
+        try:
+            import httpx
+            from config import Config
+            
+            # OpenAI APIキーを取得
+            api_key = getattr(Config, 'OPENAI_API_KEY', None)
+            if not api_key:
+                logger.warning(f"📮 RID[{rid}] OpenAI API key not found, skipping AI classification")
+                return "unknown"
+            
+            prompt = f"""ユーザーがお手紙（メッセージ）に対する応答を言いました。
+以下の応答を分類してください：
+
+ユーザーの応答: "{response}"
+
+分類カテゴリ:
+- "listen": お手紙を聞きたい（例：聞く、効く、きく、読んで、教えて、内容は、なに、何、聞かせて、話して、言って、yes、listen、read、tell me、など）
+- "later": 後で聞く（例：後で、あとで、後にする、あとにする、今はいい、今度、また今度、later、not now、など）  
+- "delete": 削除したい（例：消して、削除、捨てて、いらない、要らない、delete、remove、など）
+- "unknown": 上記に該当しない
+
+多言語（日本語、英語、中国語、韓国語等）に対応してください。
+音声認識の誤変換も考慮してください（例：「効く」→「聞く」、「きく」→「聞く」）。
+
+回答は分類カテゴリのみを返してください（例：listen）"""
+
+            async with httpx.AsyncClient() as client:
+                response_api = await client.post(
+                    "https://api.openai.com/v1/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {api_key}",
+                        "Content-Type": "application/json"
+                    },
+                    json={
+                        "model": "gpt-4o-mini",
+                        "messages": [{"role": "user", "content": prompt}],
+                        "max_tokens": 50,
+                        "temperature": 0.1
+                    },
+                    timeout=10.0
+                )
+                
+                if response_api.status_code == 200:
+                    data = response_api.json()
+                    content = data["choices"][0]["message"]["content"].strip().lower()
+                    
+                    # 有効な分類カテゴリかチェック
+                    valid_categories = ["listen", "later", "delete", "unknown"]
+                    if content in valid_categories:
+                        logger.info(f"📮 RID[{rid}] AI分類成功: '{response}' → {content}")
+                        return content
+                    else:
+                        logger.warning(f"📮 RID[{rid}] AI分類結果が無効: {content}")
+                        return "unknown"
+                else:
+                    logger.error(f"📮 RID[{rid}] AI分類API呼び出し失敗: {response_api.status_code}")
+                    return "unknown"
+                    
+        except Exception as e:
+            logger.error(f"📮 RID[{rid}] AI分類エラー: {e}")
+            return "unknown"
+
+    async def _process_letter_listen(self, rid: str):
+        """レター聞く処理"""
+        # 実際のレター内容を取得
+        letter_content = "レターが見つかりませんでした"
+        pending_letters = device_pending_letters.get(self.device_id, [])
+        
+        if pending_letters:
+            first_letter = pending_letters[0]
+            letter_content = first_letter.get("message", "メッセージ内容がありません")
+            from_user_name = first_letter.get("from_user_name", "誰か")
+            letter_id = first_letter.get("id")
+            
+            # 送信者名も含めて読み上げ
+            full_content = f"{from_user_name}から「{letter_content}」"
+            letter_content = full_content
+            
+            # レターを既読状態に更新
+            if letter_id:
+                await self.mark_letter_as_read(letter_id, rid)
+        
+        await self.send_audio_response(letter_content, rid)
+        
+        # レター応答状態をリセット
+        device_letter_states[self.device_id] = False
+        logger.info(f"📮 RID[{rid}] レター応答状態リセット完了 (device: {self.device_id})")
+
+    async def _process_letter_later(self, rid: str):
+        """レター後で処理"""
+        await self.send_audio_response("わかったよ、後で確認してね", rid)
+        
+        # 特定のメッセージをスルー状態に設定
+        pending_letters = device_pending_letters.get(self.device_id, [])
+        if pending_letters:
+            first_letter = pending_letters[0]
+            letter_id = first_letter.get("id")
+            if letter_id:
+                await self.snooze_letter(letter_id, rid)
+        
+        # レター応答状態をリセット
+        device_letter_states[self.device_id] = False
+        logger.info(f"📮 RID[{rid}] レター応答状態リセット完了 (device: {self.device_id})")
+
+    async def _process_letter_delete(self, rid: str):
+        """レター削除処理"""
+        await self.send_audio_response("わかったよ、お手紙を削除したよ", rid)
+        
+        # レター応答状態をリセット
+        device_letter_states[self.device_id] = False
+        logger.info(f"📮 RID[{rid}] レター応答状態リセット完了 (device: {self.device_id})")
+
+    async def mark_letter_as_read(self, letter_id: str, rid: str):
+        """レターを既読状態にマーク"""
+        try:
+            import httpx
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    f"{Config.MANAGER_API_URL}/api/message/read/{letter_id}",
+                    headers={
+                        "Authorization": f"Bearer {Config.MANAGER_API_SECRET}"
+                    }
+                )
+                
+                if response.status_code == 200:
+                    logger.info(f"📮 RID[{rid}] レター既読マーク成功: {letter_id}")
+                else:
+                    logger.error(f"📮 RID[{rid}] レター既読マーク失敗: {response.status_code}")
+                    
+        except Exception as e:
+            logger.error(f"📮 RID[{rid}] レター既読マークエラー: {e}")
 
 # デバイス接続チェック関数
 def is_device_connected(device_id: str) -> bool:
