@@ -1820,7 +1820,8 @@ class ConnectionHandler:
                 "from_user_id": user_id,
                 "to_user_id": target_friend["user_id"],
                 "message": message,
-                "type": "letter"
+                "type": "letter",
+                "source": "voice"  # 音声登録を明示
             }
             
             logger.info(f"📮 RID[{rid}] レター送信開始: URL={nekota_server_url}/api/message/send_letter")
