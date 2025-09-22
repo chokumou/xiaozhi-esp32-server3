@@ -2028,7 +2028,6 @@ class ConnectionHandler:
                 
         except Exception as e:
             logger.error(f"Error in timeout check for {self.device_id}: {e}")
-<<<<<<< HEAD
     
     async def start_alarm_checker(self):
         """アラーム時刻チェックタスクを開始"""
@@ -2239,7 +2238,6 @@ class ConnectionHandler:
                             
         except Exception as e:
             logger.error(f"🔄 [PENDING_ALARM] Error checking pending alarms: {e}")
-=======
 
     async def process_timer_command(self, text: str, rid: str) -> bool:
         logger.error(f"🔥🔥🔥 TIMER_PROCESS_CALL 🔥🔥🔥 RID[{rid}] text='{text}'")
@@ -3054,4 +3052,3 @@ async def send_timer_to_connected_device(device_id: str, seconds: int, message: 
     except Exception as e:
         logger.error(f"📱 デバイス {device_id} へのタイマー送信エラー: {e}")
         return False
->>>>>>> f352d55fce2fb38b1d871ca5b9b3922b75e76231
