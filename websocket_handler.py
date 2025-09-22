@@ -2071,6 +2071,11 @@ Examples:
             import uuid
             rid = str(uuid.uuid4())[:8]
             
+            # レター応答状態でない場合は処理をスキップ
+            if not device_letter_states.get(self.device_id, False):
+                logger.info(f"📮 RID[{rid}] レター応答状態ではないため処理をスキップ (device: {self.device_id})")
+                return
+            
             logger.info(f"📮 RID[{rid}] レター応答処理開始: '{response}' (device: {self.device_id})")
             
             if "聞く" in response or "はい" in response or "うん" in response or "読んで" in response:
