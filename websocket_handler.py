@@ -2980,93 +2980,26 @@ Examples:
             logger.info(f"📮 RID[{rid}] レター応答処理開始: '{response}' (device: {self.device_id})")
             logger.info(f"🔍🔍🔍 [DEBUG_LETTER_START] レター応答処理開始 🔍🔍🔍")
             
-            if "聞く" in response or "効く" in response or "きく" in response or "はい" in response or "うん" in response or "読んで" in response:
-                # レター内容を読み上げ
-                logger.info(f"📮 RID[{rid}] レター読み上げ要求")
-                logger.info(f"🔍🔍🔍 [DEBUG_LETTER_READ] 聞く応答を検出 🔍🔍🔍")
-                
-                # 実際のレター内容を取得
-                letter_content = "レターが見つかりませんでした"
-                pending_letters = device_pending_letters.get(self.device_id, [])
-                logger.info(f"🔍🔍🔍 [DEBUG_LETTER_CHECK] device_pending_letters内容: {device_pending_letters} 🔍🔍🔍")
-                logger.info(f"🔍🔍🔍 [DEBUG_LETTER_CHECK] 現在のデバイス({self.device_id})のレター: {pending_letters} 🔍🔍🔍")
-                
-                if pending_letters:
-                    # 最初の未読レターを読み上げ
-                    first_letter = pending_letters[0]
-                    letter_content = first_letter.get("message", "メッセージ内容がありません")
-                    from_user_name = first_letter.get("from_user_name", "誰か")
-                    
-                    # 送信者名も含めて読み上げ
-                    full_content = f"{from_user_name}から「{letter_content}」"
-                    letter_content = full_content
-                    
-                    logger.info(f"📮 RID[{rid}] レター内容取得: {letter_content}")
-                else:
-                    logger.warning(f"📮 RID[{rid}] 未読レターが見つかりません (device: {self.device_id})")
-                    logger.info(f"🔍🔍🔍 [DEBUG_LETTER_NOT_FOUND] 未読レターが見つかりません 🔍🔍🔍")
-                
-                await self.send_audio_response(letter_content, rid)
-                logger.info(f"📮 RID[{rid}] レター内容読み上げ完了")
-                
-                # レター応答状態をリセット（グローバル状態）
-                device_letter_states[self.device_id] = False
-                logger.info(f"📮 RID[{rid}] レター応答状態リセット完了 (device: {self.device_id})")
-                logger.info(f"🔍🔍🔍 [DEBUG_LETTER_STATE_RESET] レター応答状態リセット完了 🔍🔍🔍")
-                
-            elif "後で" in response or "あとで" in response or "あとにする" in response or "後にする" in response or "今はいい" in response or "いいえ" in response:
-                # 後で確認
-                logger.info(f"📮 RID[{rid}] レター後で確認")
-                logger.info(f"🔍🔍🔍 [DEBUG_LETTER_LATER] 後で応答を検出 🔍🔍🔍")
-                await self.send_audio_response("わかったよ、後で確認してね", rid)
-                
-                # 特定のメッセージをスルー状態に設定
-                pending_letters = device_pending_letters.get(self.device_id, [])
-                if pending_letters:
-                    first_letter = pending_letters[0]
-                    letter_id = first_letter.get("id")
-                    if letter_id:
-                        await self.snooze_letter(letter_id, rid)
-                
-                # レター応答状態をリセット（グローバル状態）
-                device_letter_states[self.device_id] = False
-                logger.info(f"📮 RID[{rid}] レター応答状態リセット完了 (device: {self.device_id})")
-                
-            elif "消して" in response or "消去" in response or "捨てて" in response or "削除" in response:
-                # レター削除
-                logger.info(f"📮 RID[{rid}] レター削除要求")
-                logger.info(f"🔍🔍🔍 [DEBUG_LETTER_DELETE] 削除応答を検出 🔍🔍🔍")
-                await self.send_audio_response("わかったよ、お手紙を削除したよ", rid)
-                
-                # レター応答状態をリセット（グローバル状態）
-                device_letter_states[self.device_id] = False
-                logger.info(f"📮 RID[{rid}] レター応答状態リセット完了 (device: {self.device_id})")
-                
+            # AI判断による応答分類を試行
+            ai_action = await self._classify_letter_response_with_ai(response, rid)
+            
+            if ai_action == "listen":
+                # 「聞く」として処理
+                logger.info(f"📮 RID[{rid}] AI判定: 聞く応答として処理")
+                await self._process_letter_listen(rid)
+            elif ai_action == "later":
+                # 「後で」として処理
+                logger.info(f"📮 RID[{rid}] AI判定: 後で応答として処理")
+                await self._process_letter_later(rid)
+            elif ai_action == "delete":
+                # 「削除」として処理
+                logger.info(f"📮 RID[{rid}] AI判定: 削除応答として処理")
+                await self._process_letter_delete(rid)
             else:
-                # 不明な応答 - AI判断を試行してからユーザーフレンドリーな対応
-                logger.info(f"🔍🔍🔍 [DEBUG_LETTER_UNKNOWN] 不明な応答を検出: '{response}' 🔍🔍🔍")
-                logger.info(f"🔍🔍🔍 [DEBUG_LETTER_UNKNOWN] レター応答状態: {device_letter_states.get(self.device_id, False)} 🔍🔍🔍")
-                
-                # AI判断による応答分類を試行
-                ai_action = await self._classify_letter_response_with_ai(response, rid)
-                
-                if ai_action == "listen":
-                    # 「聞く」として処理
-                    logger.info(f"📮 RID[{rid}] AI判定: 聞く応答として処理")
-                    await self._process_letter_listen(rid)
-                elif ai_action == "later":
-                    # 「後で」として処理
-                    logger.info(f"📮 RID[{rid}] AI判定: 後で応答として処理")
-                    await self._process_letter_later(rid)
-                elif ai_action == "delete":
-                    # 「削除」として処理
-                    logger.info(f"📮 RID[{rid}] AI判定: 削除応答として処理")
-                    await self._process_letter_delete(rid)
-                else:
-                    # 本当に不明な場合はユーザーフレンドリーな対応
-                    logger.info(f"🔍🔍🔍 [DEBUG_LETTER_UNKNOWN] AI判定でも不明な応答 🔍🔍🔍")
-                    await self.send_audio_response("ごめん、分からなかった。お手紙を聞く？後にする？それとも消す？", rid)
-                    # レター応答状態は維持（再度応答を待つ）
+                # 本当に不明な場合はユーザーフレンドリーな対応
+                logger.info(f"🔍🔍🔍 [DEBUG_LETTER_UNKNOWN] AI判定でも不明な応答 🔍🔍🔍")
+                await self.send_audio_response("ごめん、分からなかった。お手紙を聞く？後にする？それとも消す？", rid)
+                # レター応答状態は維持（再度応答を待つ）
                 
         except Exception as e:
             logger.error(f"📮 レター応答処理エラー: {e}")
