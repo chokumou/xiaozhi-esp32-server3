@@ -3240,8 +3240,8 @@ Examples:
             logger.info(f"📮 RID[{rid}] message: '{first_letter.get('message')}'")
             logger.info(f"📮 RID[{rid}] 取得した内容: '{letter_content}'")
             
-            # 送信者名も含めて読み上げ
-            full_content = f"{from_user_name}から「{letter_content}」"
+            # 送信者名も含めて読み上げ（文章と名前の間に間を開ける）
+            full_content = f"{letter_content}。　　{from_user_name}より"
             letter_content = full_content
             
             # レターを既読状態に更新
