@@ -3226,6 +3226,11 @@ Examples:
                 letter_content = transcribed_text
             else:
                 letter_content = first_letter.get("message", "メッセージ内容がありません")
+            
+            # 指示語を除去（「伝えて」「言って」など）
+            import re
+            # 末尾の指示語を除去
+            letter_content = re.sub(r'(伝えて|言って|って言って|って伝えて)$', '', letter_content).strip()
             from_user_name = first_letter.get("from_user_name", "誰か")
             letter_id = first_letter.get("id")
             
