@@ -2998,7 +2998,7 @@ Examples:
                 logger.info(f"📮 RID[{rid}] レター応答状態リセット完了 (device: {self.device_id})")
                 logger.info(f"🔍🔍🔍 [DEBUG_LETTER_STATE_RESET] レター応答状態リセット完了 🔍🔍🔍")
                 
-            elif "後で" in response or "あとで" in response or "今はいい" in response or "いいえ" in response:
+            elif "後で" in response or "あとで" in response or "あとにする" in response or "後にする" in response or "今はいい" in response or "いいえ" in response:
                 # 後で確認
                 logger.info(f"📮 RID[{rid}] レター後で確認")
                 logger.info(f"🔍🔍🔍 [DEBUG_LETTER_LATER] 後で応答を検出 🔍🔍🔍")
@@ -3019,10 +3019,13 @@ Examples:
                 logger.info(f"📮 RID[{rid}] レター応答状態リセット完了 (device: {self.device_id})")
                 
             else:
-                # 不明な応答
+                # 不明な応答 - レター応答状態をリセット
                 logger.info(f"🔍🔍🔍 [DEBUG_LETTER_UNKNOWN] 不明な応答を検出: '{response}' 🔍🔍🔍")
                 logger.info(f"🔍🔍🔍 [DEBUG_LETTER_UNKNOWN] レター応答状態: {device_letter_states.get(self.device_id, False)} 🔍🔍🔍")
-                await self.send_audio_response("聞く？後にする？消して？", rid)
+                
+                # 不明な応答の場合、レター応答状態をリセット
+                logger.info(f"🔍🔍🔍 [DEBUG_LETTER_UNKNOWN] 不明な応答のためレター応答状態をリセット 🔍🔍🔍")
+                device_letter_states[self.device_id] = False
                 
         except Exception as e:
             logger.error(f"📮 レター応答処理エラー: {e}")
