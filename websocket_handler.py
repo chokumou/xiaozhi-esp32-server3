@@ -1724,9 +1724,9 @@ class ConnectionHandler:
                                     # フレーム送信失敗時は即座に終了
                                     break
                                 
-                                # 最後のフレーム以外は待機（WebSocket安定性のため少し短めに）
+                                # 最後のフレーム以外は待機（60ms間隔で正常速度）
                                 if frame_index < len(opus_frames_list) - 1:
-                                    await asyncio.sleep(0.040)  # 40ms（60ms→40msで高速化＋安定性向上）
+                                    await asyncio.sleep(0.060)  # 60ms（正常速度に修正）
                             
                             send_end_time = time.monotonic()
                             total_send_time = (send_end_time - send_start_time) * 1000  # ms
