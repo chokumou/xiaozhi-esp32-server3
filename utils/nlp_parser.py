@@ -395,8 +395,8 @@ Return null if no message sending intent is detected."""
             for variation in variations:
                 message = message.replace(variation, "")
         
-        # 助詞・接続詞を除去
-        particles = ["に", "へ", "と", "って", "を"]
+        # 助詞・接続詞を除去（「って」を優先的に除去）
+        particles = ["って", "に", "へ", "と", "を"]
         for particle in particles:
             message = message.replace(particle, "")
         
