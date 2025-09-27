@@ -289,8 +289,8 @@ async def main():
                     break
             
             if not actual_device_id:
-                logger.warning(f"📱 接続中のデバイスが見つかりません: request={request_device_id}, connected={list(connected_devices.keys())}")
-                logger.info(f"🔍🔍🔍 [DEBUG_DEVICE_NOT_FOUND] 接続中デバイスが見つからないため、request_device_idを使用: {request_device_id} 🔍🔍🔍")
+                # デバッグログを削減（警告レベルを下げる）
+                logger.debug(f"📱 接続中のデバイスが見つかりません: request={request_device_id}, connected={list(connected_devices.keys())}")
                 actual_device_id = request_device_id  # フォールバック
             
             logger.info(f"📱 アラームチェック要求: request_device_id={request_device_id}, actual_device_id={actual_device_id}")
@@ -319,7 +319,11 @@ async def main():
                 
                 if auth_response.status != 200:
                     error_text = await auth_response.text()
-                    logger.error(f"📱 デバイス認証失敗: {auth_response.status} - {error_text}")
+                    # 502エラーは一時的なサーバー問題の可能性があるため、警告レベルを下げる
+                    if auth_response.status == 502:
+                        logger.warning(f"📱 デバイス認証失敗（一時的）: {auth_response.status} - {error_text}")
+                    else:
+                        logger.error(f"📱 デバイス認証失敗: {auth_response.status} - {error_text}")
                     return web.json_response({"alarms": []})
                 
                 auth_data = await auth_response.json()

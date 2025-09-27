@@ -18,9 +18,9 @@ class EdgeTTSService:
             logger.info(f"🔄 [EDGE_TTS] Starting TTS generation for: '{text}'")
             
             # テキスト長制限と分割処理（早口防止）
-            if len(text) > 100:
+            if len(text) > 40:
                 logger.info(f"🔄 [EDGE_TTS] Text too long ({len(text)} chars), splitting...")
-                text_segments = self._split_text_by_length(text, 100)
+                text_segments = self._split_text_by_length(text, 40)
                 all_opus_frames = []
                 
                 for i, segment in enumerate(text_segments):
@@ -28,9 +28,9 @@ class EdgeTTSService:
                     segment_frames = await self._generate_single_segment(segment)
                     if segment_frames:
                         all_opus_frames.extend(segment_frames)
-                        # セグメント間の短い間隔
+                        # セグメント間の短い間隔（早口防止のため少し長めに）
                         if i < len(text_segments) - 1:
-                            await asyncio.sleep(0.1)
+                            await asyncio.sleep(0.3)
                 
                 logger.info(f"🔄 [EDGE_TTS] Generated {len(all_opus_frames)} total frames from {len(text_segments)} segments")
                 return all_opus_frames
@@ -75,7 +75,7 @@ class EdgeTTSService:
         current_pos = 0
         
         # 句読点の優先順位（分割しやすい順）- より細かく分割
-        punctuation_priority = ["。", "？", "！", "?", "!", "；", ":", "，", "、", ",", " ", "　"]
+        punctuation_priority = ["。", "？", "！", "?", "!", "；", ":", "，", "、", ",", " ", "　", "にゃん", "だね", "だよ", "です", "ます", "かな"]
         
         while current_pos < len(text):
             remaining_text = text[current_pos:]
