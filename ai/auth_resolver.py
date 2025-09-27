@@ -124,9 +124,9 @@ class AuthResolver:
             return None
     
     async def _resolve_uuid_to_device_number(self, uuid: str) -> Optional[str]:
-        """UUIDを端末番号に解決"""
+        """UUIDを端末番号に解決（DBから動的取得）"""
         try:
-            # まずレガシーマッピングテーブルを確認
+            # まずレガシーマッピングテーブルを確認（ESP32_*形式のみ）
             legacy_mapping = self._get_legacy_mapping(uuid)
             if legacy_mapping:
                 logger.info(f"🔑 [AUTH_RESOLVER] Found legacy mapping: {uuid} -> {legacy_mapping}")
@@ -134,29 +134,33 @@ class AuthResolver:
             
             # nekota-serverのデバイス情報取得APIを使用（UUIDで検索）
             try:
+                logger.info(f"🔑 [AUTH_RESOLVER] Querying DB for UUID: {uuid}")
                 response = await self.client.get(f"/api/devices/by-id/{uuid}")
                 
                 if response.status_code == 200:
                     device_data = response.json()
                     device_number = device_data.get("device_number")
                     if device_number:
-                        logger.info(f"🔑 [AUTH_RESOLVER] Found device mapping: {uuid} -> {device_number}")
+                        logger.info(f"🔑 [AUTH_RESOLVER] DB lookup successful: {uuid} -> {device_number}")
+                        # キャッシュに保存
+                        self._uuid_to_device_cache[uuid] = device_number
+                        self._device_to_uuid_cache[device_number] = uuid
                         return device_number
                     else:
-                        logger.warning(f"🔑 [AUTH_RESOLVER] Device found but no device_number: {uuid}")
+                        logger.warning(f"🔑 [AUTH_RESOLVER] Device found but no device_number in DB: {uuid}")
                         return None
                 elif response.status_code == 404:
-                    logger.warning(f"🔑 [AUTH_RESOLVER] Device not found: {uuid}")
+                    logger.warning(f"🔑 [AUTH_RESOLVER] Device not found in DB: {uuid}")
                     return None
                 else:
-                    logger.error(f"🔑 [AUTH_RESOLVER] Failed to get device info: {response.status_code}")
+                    logger.error(f"🔑 [AUTH_RESOLVER] Failed to get device info from DB: {response.status_code}")
                     return None
                     
             except httpx.HTTPStatusError as e:
-                logger.error(f"🔑 [AUTH_RESOLVER] HTTP error getting device info: {e.response.status_code}")
+                logger.error(f"🔑 [AUTH_RESOLVER] HTTP error getting device info from DB: {e.response.status_code}")
                 return None
             except httpx.RequestError as e:
-                logger.error(f"🔑 [AUTH_RESOLVER] Request error getting device info: {e}")
+                logger.error(f"🔑 [AUTH_RESOLVER] Request error getting device info from DB: {e}")
                 return None
             
         except Exception as e:
@@ -164,12 +168,9 @@ class AuthResolver:
             return None
     
     def _get_legacy_mapping(self, identifier: str) -> Optional[str]:
-        """レガシーマッピングテーブルから端末番号を取得"""
+        """レガシーマッピングテーブルから端末番号を取得（レガシー形式のみ）"""
+        # レガシー形式のみハードコード（ESP32_*形式）
         legacy_mappings = {
-            # UUID直接マッピング（devicesテーブルから取得）
-            "92b63e50-4f65-49dc-a259-35fe14bea832": "327546",
-            "405fc146-3a70-4c35-9ed4-a245dd5a9ee0": "467731",
-            # レガシー形式
             "ESP32_8:44": "467731",
             "ESP32_9:58": "327546", 
             "ESP32_8_44": "467731",
