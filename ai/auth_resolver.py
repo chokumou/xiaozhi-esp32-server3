@@ -126,6 +126,12 @@ class AuthResolver:
     async def _resolve_uuid_to_device_number(self, uuid: str) -> Optional[str]:
         """UUIDを端末番号に解決"""
         try:
+            # まずレガシーマッピングテーブルを確認
+            legacy_mapping = self._get_legacy_mapping(uuid)
+            if legacy_mapping:
+                logger.info(f"🔑 [AUTH_RESOLVER] Found legacy mapping: {uuid} -> {legacy_mapping}")
+                return legacy_mapping
+            
             # nekota-serverのデバイス存在確認APIを使用
             response = await self.client.post("/api/device/exists", 
                                             json={"device_number": uuid})
@@ -136,12 +142,6 @@ class AuthResolver:
                     # UUIDが直接device_numberとして使用可能
                     logger.info(f"🔑 [AUTH_RESOLVER] UUID is valid device_number: {uuid}")
                     return uuid
-            
-            # UUIDが端末番号として認識されない場合、マッピングテーブルを確認
-            legacy_mapping = self._get_legacy_mapping(uuid)
-            if legacy_mapping:
-                logger.info(f"🔑 [AUTH_RESOLVER] Found legacy mapping: {uuid} -> {legacy_mapping}")
-                return legacy_mapping
             
             logger.warning(f"🔑 [AUTH_RESOLVER] UUID not found in any mapping: {uuid}")
             return None
