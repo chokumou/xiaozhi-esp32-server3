@@ -676,12 +676,11 @@ class ConnectionHandler:
                 logger.info(f"🧠 [MEMORY_TRIGGER] Memory save triggered! Content: '{memory_to_save}'")
                 
                 if memory_to_save:
-                    # フレンド機能と同じ認証フローを使用
-                    device_number = self.device_id
-                    jwt_token, user_id = await self.memory_service._get_valid_jwt_and_user(device_number)
+                    # 認証リゾルバを使用（UUIDでも端末番号でも対応）
+                    jwt_token, user_id = await self.memory_service._get_valid_jwt_and_user(self.device_id)
                     
                     if not jwt_token or not user_id:
-                        logger.error(f"🧠 [MEMORY_AUTH_FAIL] 認証失敗: device_number={device_number}")
+                        logger.error(f"🧠 [MEMORY_AUTH_FAIL] 認証失敗: device_id={self.device_id}")
                         await self.send_audio_response("すみません、記憶の保存に失敗しました。")
                         return
                     
@@ -701,12 +700,11 @@ class ConnectionHandler:
             if memory_query:
                 logger.info(f"🔍 [MEMORY_SEARCH] Starting memory search for query: '{memory_query}'")
                 
-                # フレンド機能と同じ認証フローを使用
-                device_number = self.device_id
-                jwt_token, user_id = await self.memory_service._get_valid_jwt_and_user(device_number)
+                # 認証リゾルバを使用（UUIDでも端末番号でも対応）
+                jwt_token, user_id = await self.memory_service._get_valid_jwt_and_user(self.device_id)
                 
                 if not jwt_token or not user_id:
-                    logger.error(f"🔍 [MEMORY_SEARCH_AUTH_FAIL] 認証失敗: device_number={device_number}")
+                    logger.error(f"🔍 [MEMORY_SEARCH_AUTH_FAIL] 認証失敗: device_id={self.device_id}")
                     retrieved_memory = None
                 else:
                     retrieved_memory = await self.memory_service.query_memory_with_auth(jwt_token, user_id, memory_query, self.device_id)
@@ -1226,12 +1224,11 @@ class ConnectionHandler:
         try:
             import httpx
             
-            # デバイス番号からuser_idを取得
-            device_number = "327546"  # 登録済みデバイス番号
-            jwt_token, user_id = await self.memory_service._get_valid_jwt_and_user(device_number)
+            # 認証リゾルバを使用（固定端末番号）
+            jwt_token, user_id = await self.memory_service._get_valid_jwt_and_user("327546")
             
             if not jwt_token or not user_id:
-                logger.error(f"⏰ [ALARM_API] Failed to get valid JWT for device {device_number}")
+                logger.error(f"⏰ [ALARM_API] Failed to get valid JWT for device 327546")
                 return False
             
             # アラーム作成API呼び出し
@@ -2481,16 +2478,12 @@ class ConnectionHandler:
             
             logger.info(f"🐛 RID[{rid}] 計算された時刻: {target_time_jst.strftime('%Y-%m-%d %H:%M')}")
             
-            # MemoryServiceと同じ方法で端末認証（既存の仕組みを使用）
-            # 現在のWebSocket接続のdevice_idを使用
-            device_number = self.device_id
-            logger.info(f"🐛 RID[{rid}] 端末番号を使用: {device_number}")
-            
-            # MemoryServiceの認証方法を使用
-            jwt_token, user_id = await self.memory_service._get_valid_jwt_and_user(device_number)
+            # 認証リゾルバを使用（UUIDでも端末番号でも対応）
+            logger.info(f"🐛 RID[{rid}] デバイスIDを使用: {self.device_id}")
+            jwt_token, user_id = await self.memory_service._get_valid_jwt_and_user(self.device_id)
             
             if not jwt_token or not user_id:
-                logger.error(f"🐛 RID[{rid}] 認証失敗: device_number={device_number}")
+                logger.error(f"🐛 RID[{rid}] 認証失敗: device_id={self.device_id}")
                 return
             
             logger.info(f"🐛 RID[{rid}] 認証成功: user_id={user_id}, token={jwt_token[:20]}...")
@@ -2615,9 +2608,8 @@ class ConnectionHandler:
             logger.info(f"📮 RID[{rid}] あいまい検索開始: '{friend_name}' へ '{message}'")
             
             # nekota-serverから友達リストを取得
-            # 現在のWebSocket接続のdevice_idを使用
-            device_number = self.device_id
-            jwt_token, user_id = await self.memory_service._get_valid_jwt_and_user(device_number)
+            # 認証リゾルバを使用（UUIDでも端末番号でも対応）
+            jwt_token, user_id = await self.memory_service._get_valid_jwt_and_user(self.device_id)
             if not jwt_token or not user_id:
                 logger.error(f"📮 RID[{rid}] 認証失敗")
                 return {"success": False, "suggestion": None}
@@ -2678,9 +2670,8 @@ class ConnectionHandler:
     async def send_letter_to_friend_direct(self, friend_name: str, message: str, rid: str) -> bool:
         """友達名で直接レター送信（確認済み）"""
         try:
-            # 現在のWebSocket接続のdevice_idを使用
-            device_number = self.device_id
-            jwt_token, user_id = await self.memory_service._get_valid_jwt_and_user(device_number)
+            # 認証リゾルバを使用（UUIDでも端末番号でも対応）
+            jwt_token, user_id = await self.memory_service._get_valid_jwt_and_user(self.device_id)
             if not jwt_token or not user_id:
                 return False
             

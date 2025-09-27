@@ -4,6 +4,7 @@ import time
 from typing import Optional, Dict
 from config import Config
 from utils.logger import setup_logger
+from .auth_resolver import resolve_auth
 
 logger = setup_logger()
 
@@ -24,59 +25,19 @@ class MemoryService:
         )
         logger.info(f"MemoryService initialized with nekota-server URL: {self.api_url}")
     
-    async def _convert_esp32_device_id_to_device_number(self, esp32_device_id: str) -> str:
-        """ESP32のdevice_idを正しいdevice_numberに変換（データベース検索方式）"""
+    async def _get_valid_jwt_and_user(self, identifier: str) -> tuple:
+        """認証リゾルバを使用してJWTとユーザー情報を取得"""
         try:
-            # UUIDの場合は直接nekota-serverのデバイステーブルで検索
-            if len(esp32_device_id) == 36 and esp32_device_id.count('-') == 4:
-                # UUID形式の場合、nekota-serverのAPIで検索
-                response = await self.client.post("/api/device/exists", 
-                                                json={"device_number": esp32_device_id})
-                if response.status_code == 200:
-                    data = response.json()
-                    if data.get("exists"):
-                        # UUIDが直接device_numberとして使用可能
-                        logger.info(f"🔄 [UUID_DIRECT] UUID直接使用: {esp32_device_id}")
-                        return esp32_device_id
-            
-            # レガシー形式の場合はマッピングテーブル使用
-            legacy_mapping = {
-                "ESP32_8:44": "467731",
-                "ESP32_9:58": "327546", 
-                "ESP32_8_44": "467731",
-                "ESP32_9_58": "327546",
-                "ESP328_44": "467731",
-                "ESP329_58": "327546",
-                "unknown": "467731"  # 緊急対応
-            }
-            
-            device_number = legacy_mapping.get(esp32_device_id)
-            if device_number:
-                logger.info(f"🔄 [LEGACY_MAPPING] {esp32_device_id} → {device_number}")
-                return device_number
-            else:
-                logger.warning(f"🔄 [DEVICE_MAPPING] Unknown device_id: {esp32_device_id}, using as-is")
-                return esp32_device_id
-                
-        except Exception as e:
-            logger.error(f"🔄 [DEVICE_MAPPING] Error converting device_id: {e}")
-            return esp32_device_id
-    
-    async def _get_valid_jwt_and_user(self, device_number: str) -> tuple:
-        """nekota-serverから正規JWTとユーザー情報を取得"""
-        try:
-            response = await self.client.post("/api/device/exists",
-                                            json={"device_number": device_number})
-            if response.status_code == 200:
-                data = response.json()
-                jwt_token = data.get("token")
-                user_data = data.get("user")
-                user_id = user_data.get("id") if user_data else None
-                logger.info(f"🔑 正規JWT取得成功: user_id={user_id}")
+            jwt_token, user_id, device_number = await resolve_auth(identifier)
+            if jwt_token and user_id:
+                logger.info(f"🔑 [AUTH_RESOLVER] Successfully got auth: device={device_number}, user_id={user_id}")
                 return jwt_token, user_id
+            else:
+                logger.error(f"🔑 [AUTH_RESOLVER] Failed to get auth for identifier: {identifier}")
+                return None, None
         except Exception as e:
-            logger.error(f"❌ 正規JWT取得失敗: {e}")
-        return None, None
+            logger.error(f"🔑 [AUTH_RESOLVER] Error getting auth: {e}")
+            return None, None
     
     async def save_memory_with_auth(self, jwt_token: str, user_id: str, text: str) -> bool:
         """認証済みJWTとuser_idを使用してメモリを保存"""
