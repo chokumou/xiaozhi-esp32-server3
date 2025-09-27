@@ -1,3 +1,4 @@
+import asyncio
 import edge_tts
 import opuslib_next
 from pydub import AudioSegment
@@ -16,7 +17,36 @@ class EdgeTTSService:
         try:
             logger.info(f"🔄 [EDGE_TTS] Starting TTS generation for: '{text}'")
             
-            # EdgeTTSで音声生成（Server2互換）
+            # テキスト長制限と分割処理（早口防止）
+            if len(text) > 100:
+                logger.info(f"🔄 [EDGE_TTS] Text too long ({len(text)} chars), splitting...")
+                text_segments = self._split_text_by_length(text, 100)
+                all_opus_frames = []
+                
+                for i, segment in enumerate(text_segments):
+                    logger.info(f"🔄 [EDGE_TTS] Processing segment {i+1}/{len(text_segments)}: '{segment[:30]}...'")
+                    segment_frames = await self._generate_single_segment(segment)
+                    if segment_frames:
+                        all_opus_frames.extend(segment_frames)
+                        # セグメント間の短い間隔
+                        if i < len(text_segments) - 1:
+                            await asyncio.sleep(0.1)
+                
+                logger.info(f"🔄 [EDGE_TTS] Generated {len(all_opus_frames)} total frames from {len(text_segments)} segments")
+                return all_opus_frames
+            else:
+                return await self._generate_single_segment(text)
+            
+        except Exception as e:
+            logger.error(f"❌ [EDGE_TTS] Generation failed: {e}")
+            import traceback
+            logger.error(f"❌ [EDGE_TTS] Stack trace: {traceback.format_exc()}")
+            return []
+    
+    async def _generate_single_segment(self, text: str) -> list:
+        """単一セグメントの音声生成"""
+        try:
+            # EdgeTTSで音声生成
             communicate = edge_tts.Communicate(text, self.voice)
             audio_bytes = b""
             
@@ -25,7 +55,7 @@ class EdgeTTSService:
                 if chunk["type"] == "audio":
                     audio_bytes += chunk["data"]
             
-            logger.info(f"🔄 [EDGE_TTS] Generated {len(audio_bytes)} bytes audio for text: '{text[:50]}...'")
+            logger.info(f"🔄 [EDGE_TTS] Generated {len(audio_bytes)} bytes audio for segment: '{text[:30]}...'")
             
             # Server2準拠: MP3 → PCM → Opus フレーム分割処理
             opus_frames = await self._convert_to_opus_frames(audio_bytes, "mp3")
@@ -33,10 +63,48 @@ class EdgeTTSService:
             return opus_frames
             
         except Exception as e:
-            logger.error(f"❌ [EDGE_TTS] Generation failed: {e}")
-            import traceback
-            logger.error(f"❌ [EDGE_TTS] Stack trace: {traceback.format_exc()}")
-            return b""
+            logger.error(f"❌ [EDGE_TTS] Segment generation failed: {e}")
+            return []
+    
+    def _split_text_by_length(self, text: str, max_length: int) -> list:
+        """テキストを指定長以内で句読点で分割する（早口防止のため短めに分割）"""
+        if len(text) <= max_length:
+            return [text]
+        
+        segments = []
+        current_pos = 0
+        
+        # 句読点の優先順位（分割しやすい順）- より細かく分割
+        punctuation_priority = ["。", "？", "！", "?", "!", "；", ":", "，", "、", ",", " ", "　"]
+        
+        while current_pos < len(text):
+            remaining_text = text[current_pos:]
+            
+            if len(remaining_text) <= max_length:
+                segments.append(remaining_text)
+                break
+            
+            # 最大長以内で最も近い句読点を探す
+            best_split_pos = max_length
+            for punct in punctuation_priority:
+                # 現在位置から最大長以内で句読点を探す
+                search_text = remaining_text[:max_length]
+                pos = search_text.rfind(punct)
+                if pos != -1 and pos > 0:
+                    best_split_pos = min(best_split_pos, pos + 1)
+                    break
+            
+            # 句読点が見つからない場合は最大長で強制分割
+            if best_split_pos == max_length:
+                best_split_pos = max_length
+            
+            segment = remaining_text[:best_split_pos].strip()
+            if segment:
+                segments.append(segment)
+            
+            current_pos += best_split_pos
+        
+        return segments
     
     async def _convert_to_opus_frames(self, audio_bytes: bytes, file_type: str) -> bytes:
         """Server2準拠: 音声データをOpusフレームに変換"""
