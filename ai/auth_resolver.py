@@ -124,7 +124,7 @@ class AuthResolver:
             return None
     
     async def _resolve_uuid_to_device_number(self, uuid: str) -> Optional[str]:
-        """UUIDを端末番号に解決（DBから動的取得）"""
+        """UUIDを端末番号に解決（DBから動的取得、フォールバック付き）"""
         try:
             # まずレガシーマッピングテーブルを確認（ESP32_*形式のみ）
             legacy_mapping = self._get_legacy_mapping(uuid)
@@ -154,18 +154,22 @@ class AuthResolver:
                     return None
                 else:
                     logger.error(f"🔑 [AUTH_RESOLVER] Failed to get device info from DB: {response.status_code}")
-                    return None
+                    # DB接続失敗時はフォールバックマッピングを使用
+                    return self._get_fallback_mapping(uuid)
                     
             except httpx.HTTPStatusError as e:
                 logger.error(f"🔑 [AUTH_RESOLVER] HTTP error getting device info from DB: {e.response.status_code}")
-                return None
+                # DB接続失敗時はフォールバックマッピングを使用
+                return self._get_fallback_mapping(uuid)
             except httpx.RequestError as e:
                 logger.error(f"🔑 [AUTH_RESOLVER] Request error getting device info from DB: {e}")
-                return None
+                # DB接続失敗時はフォールバックマッピングを使用
+                return self._get_fallback_mapping(uuid)
             
         except Exception as e:
             logger.error(f"🔑 [AUTH_RESOLVER] Error resolving UUID {uuid}: {e}")
-            return None
+            # 例外時もフォールバックマッピングを使用
+            return self._get_fallback_mapping(uuid)
     
     def _get_legacy_mapping(self, identifier: str) -> Optional[str]:
         """レガシーマッピングテーブルから端末番号を取得（レガシー形式のみ）"""
@@ -180,6 +184,18 @@ class AuthResolver:
             "unknown": "467731"
         }
         return legacy_mappings.get(identifier)
+    
+    def _get_fallback_mapping(self, uuid: str) -> Optional[str]:
+        """DB接続失敗時のフォールバックマッピング"""
+        fallback_mappings = {
+            # 既知のUUID（DB接続失敗時の緊急対応）
+            "92b63e50-4f65-49dc-a259-35fe14bea832": "327546",
+            "405fc146-3a70-4c35-9ed4-a245dd5a9ee0": "467731"
+        }
+        device_number = fallback_mappings.get(uuid)
+        if device_number:
+            logger.warning(f"🔑 [AUTH_RESOLVER] Using fallback mapping: {uuid} -> {device_number}")
+        return device_number
     
     async def _get_auth_from_server(self, device_number: str) -> Tuple[Optional[str], Optional[str]]:
         """nekota-serverから認証情報を取得"""
