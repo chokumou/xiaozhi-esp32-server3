@@ -2971,24 +2971,24 @@ Examples:
             logger.info(f"📮 RID[{rid}] レター応答処理開始: '{response}' (device: {self.device_id})")
             logger.info(f"🔍🔍🔍 [DEBUG_LETTER_START] レター応答処理開始 🔍🔍🔍")
             
-            # AI判断による応答分類を試行
+            # 正規表現による応答分類を試行
             ai_action = await self._classify_letter_response_with_ai(response, rid)
             
             if ai_action == "listen":
                 # 「聞く」として処理
-                logger.info(f"📮 RID[{rid}] AI判定: 聞く応答として処理")
+                logger.info(f"📮 RID[{rid}] 正規表現判定: 聞く応答として処理")
                 await self._process_letter_listen(rid)
             elif ai_action == "later":
                 # 「後で」として処理
-                logger.info(f"📮 RID[{rid}] AI判定: 後で応答として処理")
+                logger.info(f"📮 RID[{rid}] 正規表現判定: 後で応答として処理")
                 await self._process_letter_later(rid)
             elif ai_action == "delete":
                 # 「削除」として処理
-                logger.info(f"📮 RID[{rid}] AI判定: 削除応答として処理")
+                logger.info(f"📮 RID[{rid}] 正規表現判定: 削除応答として処理")
                 await self._process_letter_delete(rid)
             else:
                 # 本当に不明な場合はユーザーフレンドリーな対応
-                logger.info(f"🔍🔍🔍 [DEBUG_LETTER_UNKNOWN] AI判定でも不明な応答 🔍🔍🔍")
+                logger.info(f"🔍🔍🔍 [DEBUG_LETTER_UNKNOWN] 正規表現判定でも不明な応答 🔍🔍🔍")
                 await self.send_audio_response("ごめん、分からなかった。お手紙を聞く？後にする？それとも消す？", rid)
                 # レター応答状態は維持（再度応答を待つ）
                 
@@ -3140,67 +3140,54 @@ Examples:
             await self.send_audio_response(f"{friend_name}のメッセージ確認でエラーが発生したよ", rid)
 
     async def _classify_letter_response_with_ai(self, response: str, rid: str) -> str:
-        """AI判断によるレター応答分類（多言語対応）"""
+        """レター応答分類（正規表現ベース）"""
         try:
-            import httpx
-            from config import Config
+            import re
             
-            # OpenAI APIキーを取得
-            api_key = getattr(Config, 'OPENAI_API_KEY', None)
-            if not api_key:
-                logger.warning(f"📮 RID[{rid}] OpenAI API key not found, skipping AI classification")
-                return "unknown"
+            # 正規表現パターンで分類（AI API不要）
+            response_lower = response.lower().strip()
             
-            prompt = f"""ユーザーがお手紙（メッセージ）に対する応答を言いました。
-以下の応答を分類してください：
-
-ユーザーの応答: "{response}"
-
-分類カテゴリ:
-- "listen": お手紙を聞きたい（例：聞く、効く、きく、読んで、教えて、内容は、なに、何、聞かせて、話して、言って、yes、listen、read、tell me、など）
-- "later": 後で聞く（例：後で、あとで、後にする、あとにする、今はいい、今度、また今度、later、not now、など）  
-- "delete": 削除したい（例：消して、削除、捨てて、いらない、要らない、delete、remove、など）
-- "unknown": 上記に該当しない
-
-多言語（日本語、英語、中国語、韓国語等）に対応してください。
-音声認識の誤変換も考慮してください（例：「効く」→「聞く」、「きく」→「聞く」）。
-
-回答は分類カテゴリのみを返してください（例：listen）"""
-
-            async with httpx.AsyncClient() as client:
-                response_api = await client.post(
-                    "https://api.openai.com/v1/chat/completions",
-                    headers={
-                        "Authorization": f"Bearer {api_key}",
-                        "Content-Type": "application/json"
-                    },
-                    json={
-                        "model": "gpt-4o-mini",
-                        "messages": [{"role": "user", "content": prompt}],
-                        "max_tokens": 50,
-                        "temperature": 0.1
-                    },
-                    timeout=10.0
-                )
-                
-                if response_api.status_code == 200:
-                    data = response_api.json()
-                    content = data["choices"][0]["message"]["content"].strip().lower()
-                    
-                    # 有効な分類カテゴリかチェック
-                    valid_categories = ["listen", "later", "delete", "unknown"]
-                    if content in valid_categories:
-                        logger.info(f"📮 RID[{rid}] AI分類成功: '{response}' → {content}")
-                        return content
-                    else:
-                        logger.warning(f"📮 RID[{rid}] AI分類結果が無効: {content}")
-                        return "unknown"
-                else:
-                    logger.error(f"📮 RID[{rid}] AI分類API呼び出し失敗: {response_api.status_code}")
-                    return "unknown"
+            # 「聞く」系のパターン
+            listen_patterns = [
+                r'聞く', r'効く', r'きく', r'読んで', r'教えて', r'内容は', r'なに', r'何', 
+                r'聞かせて', r'話して', r'言って', r'yes', r'listen', r'read', r'tell me',
+                r'読む', r'内容', r'メッセージ', r'手紙'
+            ]
+            
+            # 「後で」系のパターン
+            later_patterns = [
+                r'後で', r'あとで', r'後にする', r'あとにする', r'今はいい', r'今度', 
+                r'また今度', r'later', r'not now', r'後回し', r'後', r'後にする'
+            ]
+            
+            # 「削除」系のパターン
+            delete_patterns = [
+                r'消して', r'削除', r'捨てて', r'いらない', r'要らない', r'delete', 
+                r'remove', r'消す', r'削除', r'不要', r'いらない'
+            ]
+            
+            # パターンマッチング
+            for pattern in listen_patterns:
+                if re.search(pattern, response_lower):
+                    logger.info(f"📮 RID[{rid}] 正規表現分類成功: '{response}' → listen")
+                    return "listen"
+            
+            for pattern in later_patterns:
+                if re.search(pattern, response_lower):
+                    logger.info(f"📮 RID[{rid}] 正規表現分類成功: '{response}' → later")
+                    return "later"
+            
+            for pattern in delete_patterns:
+                if re.search(pattern, response_lower):
+                    logger.info(f"📮 RID[{rid}] 正規表現分類成功: '{response}' → delete")
+                    return "delete"
+            
+            # どのパターンにもマッチしない場合
+            logger.info(f"📮 RID[{rid}] 正規表現分類: '{response}' → unknown")
+            return "unknown"
                     
         except Exception as e:
-            logger.error(f"📮 RID[{rid}] AI分類エラー: {e}")
+            logger.error(f"📮 RID[{rid}] 分類エラー: {e}")
             return "unknown"
 
     async def _process_letter_listen(self, rid: str):
