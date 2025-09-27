@@ -31,6 +31,7 @@ logger = setup_logger()
 connected_devices: Dict[str, 'ConnectionHandler'] = {}
 device_letter_states: Dict[str, bool] = {}  # デバイス別レター応答待ち状態
 device_pending_letters: Dict[str, list] = {}  # デバイス別未読レター情報
+device_letter_retry_count: Dict[str, int] = {}  # デバイス別レター応答リトライ回数
 
 class ConnectionHandler:
     def __init__(self, websocket: web.WebSocketResponse, headers: Dict[str, str]):
@@ -163,6 +164,7 @@ class ConnectionHandler:
                     # レター通知の場合は応答待ち状態に設定（グローバル状態）
                     if "お手紙が届いている" in text_input and "聞く？後にする？" in text_input:
                         device_letter_states[self.device_id] = True
+                        device_letter_retry_count[self.device_id] = 0  # リトライ回数をリセット
                         logger.info(f"📮 RID[{rid}] レター応答待ち状態に設定 (device: {self.device_id})")
                         logger.info(f"🔍🔍🔍 [DEBUG_LETTER_STATE_SET] レター応答待ち状態に設定 🔍🔍🔍")
                     
@@ -2987,15 +2989,27 @@ Examples:
                 logger.info(f"📮 RID[{rid}] 正規表現判定: 削除応答として処理")
                 await self._process_letter_delete(rid)
             else:
-                # 本当に不明な場合はユーザーフレンドリーな対応
-                logger.info(f"🔍🔍🔍 [DEBUG_LETTER_UNKNOWN] 正規表現判定でも不明な応答 🔍🔍🔍")
-                await self.send_audio_response("ごめん、分からなかった。お手紙を聞く？後にする？それとも消す？", rid)
-                # レター応答状態は維持（再度応答を待つ）
+                # 本当に不明な場合はリトライ回数をチェック
+                retry_count = device_letter_retry_count.get(self.device_id, 0)
+                logger.info(f"🔍🔍🔍 [DEBUG_LETTER_UNKNOWN] 正規表現判定でも不明な応答 (リトライ回数: {retry_count}) 🔍🔍🔍")
+                
+                if retry_count < 2:  # 最大2回までリトライ
+                    # リトライ回数を増加
+                    device_letter_retry_count[self.device_id] = retry_count + 1
+                    # 1回目の質問を単純に繰り返す
+                    await self.send_audio_response("聞く？後にする？", rid)
+                    # レター応答状態は維持（再度応答を待つ）
+                else:
+                    # 3回目で諦めて「後で」に設定
+                    logger.info(f"📮 RID[{rid}] 3回連続で聞き取れなかったため、後でに設定")
+                    await self.send_audio_response("ごめん、聞き取れなかったから後でwebで確認してね", rid)
+                    await self._process_letter_later(rid)
                 
         except Exception as e:
             logger.error(f"📮 レター応答処理エラー: {e}")
             # エラー時も状態をリセット
             device_letter_states[self.device_id] = False
+            device_letter_retry_count[self.device_id] = 0  # リトライ回数もリセット
 
     async def snooze_letter(self, letter_id: str, rid: str):
         """特定のメッセージをスルー状態に設定"""
@@ -3052,6 +3066,7 @@ Examples:
                         
                         # レター応答状態に設定
                         device_letter_states[self.device_id] = True
+                        device_letter_retry_count[self.device_id] = 0  # リトライ回数をリセット
                         device_pending_letters[self.device_id] = messages
                         
                         logger.info(f"📮 RID[{rid}] 手動メッセージ確認: {len(messages)}件の未読メッセージ")
@@ -3119,6 +3134,7 @@ Examples:
                                 
                                 # レター応答状態に設定
                                 device_letter_states[self.device_id] = True
+                                device_letter_retry_count[self.device_id] = 0  # リトライ回数をリセット
                                 device_pending_letters[self.device_id] = messages
                                 
                                 logger.info(f"📮 RID[{rid}] 特定友達メッセージ確認成功: {matched_name} - {len(messages)}件")
@@ -3233,6 +3249,7 @@ Examples:
         
         # レター応答状態をリセット
         device_letter_states[self.device_id] = False
+        device_letter_retry_count[self.device_id] = 0  # リトライ回数もリセット
         logger.info(f"📮 RID[{rid}] レター応答状態リセット完了 (device: {self.device_id})")
         
         # pending_lettersもクリア（既読後は不要）
@@ -3254,6 +3271,7 @@ Examples:
         
         # レター応答状態をリセット
         device_letter_states[self.device_id] = False
+        device_letter_retry_count[self.device_id] = 0  # リトライ回数もリセット
         logger.info(f"📮 RID[{rid}] レター応答状態リセット完了 (device: {self.device_id})")
 
     async def _process_letter_delete(self, rid: str):
@@ -3262,6 +3280,7 @@ Examples:
         
         # レター応答状態をリセット
         device_letter_states[self.device_id] = False
+        device_letter_retry_count[self.device_id] = 0  # リトライ回数もリセット
         logger.info(f"📮 RID[{rid}] レター応答状態リセット完了 (device: {self.device_id})")
 
     async def mark_letter_as_read(self, letter_id: str, rid: str):
