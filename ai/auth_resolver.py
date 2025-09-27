@@ -132,22 +132,21 @@ class AuthResolver:
                 logger.info(f"🔑 [AUTH_RESOLVER] Found legacy mapping: {uuid} -> {legacy_mapping}")
                 return legacy_mapping
             
-            # nekota-serverのデバイス情報取得APIを使用（UUIDで検索）
+            # nekota-serverの既存エンドポイントを使用（UUIDで検索）
             try:
-                logger.info(f"🔑 [AUTH_RESOLVER] Querying DB for UUID: {uuid}")
-                response = await self.client.get(f"/api/devices/by-id/{uuid}")
+                logger.info(f"🔑 [AUTH_RESOLVER] Querying existing endpoint for UUID: {uuid}")
+                # 既存の/device/existsエンドポイントを使用
+                response = await self.client.post("/api/device/exists", json={"device_number": uuid})
                 
                 if response.status_code == 200:
                     device_data = response.json()
-                    device_number = device_data.get("device_number")
-                    if device_number:
-                        logger.info(f"🔑 [AUTH_RESOLVER] DB lookup successful: {uuid} -> {device_number}")
-                        # キャッシュに保存
-                        self._uuid_to_device_cache[uuid] = device_number
-                        self._device_to_uuid_cache[device_number] = uuid
-                        return device_number
+                    if device_data.get("exists"):
+                        # 既存エンドポイントからdevice_numberを取得する方法を確認
+                        # 現在はフォールバックマッピングを使用
+                        logger.info(f"🔑 [AUTH_RESOLVER] Device exists in DB: {uuid}")
+                        return self._get_fallback_mapping(uuid)
                     else:
-                        logger.warning(f"🔑 [AUTH_RESOLVER] Device found but no device_number in DB: {uuid}")
+                        logger.warning(f"🔑 [AUTH_RESOLVER] Device not found in DB: {uuid}")
                         return None
                 elif response.status_code == 404:
                     logger.warning(f"🔑 [AUTH_RESOLVER] Device not found in DB: {uuid}")
