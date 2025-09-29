@@ -215,7 +215,7 @@ class ShortMemoryProcessor:
                 "Authorization": f"Bearer {self.get_jwt_token()}",
                 "Content-Type": "application/json"
             }
-            data = {"conversation_content": sentence}
+            data = {"sentence": sentence}
             
             logger.info(f"🧠 [SHORT_MEMORY] Sending API request to: {api_url}")
             logger.info(f"🧠 [SHORT_MEMORY] Request data: {data}")
