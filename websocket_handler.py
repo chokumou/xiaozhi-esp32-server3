@@ -707,6 +707,8 @@ class ConnectionHandler:
                     user_id = self.device_id  # 実際の実装ではdevice_idからuser_idを取得する必要がある
                     self.short_memory_processor = ShortMemoryProcessor(user_id)
                     logger.info(f"🧠 [SHORT_MEMORY] Initialized processor for device_id={self.device_id}")
+                else:
+                    logger.info(f"🧠 [SHORT_MEMORY] Using existing processor for device_id={self.device_id}")
                 
                 # 会話ターン処理
                 result = self.short_memory_processor.process_conversation_turn(text)
