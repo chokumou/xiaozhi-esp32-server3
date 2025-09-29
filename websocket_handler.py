@@ -697,6 +697,35 @@ class ConnectionHandler:
                 else:
                     logger.warning(f"🧠 [MEMORY_EMPTY] No content to save after keyword removal")
 
+            # 短期記憶処理（ASR→テキスト確定時点でフック）
+            try:
+                from utils.short_memory_processor import ShortMemoryProcessor
+                
+                # 短期記憶プロセッサーを取得または作成
+                if not hasattr(self, 'short_memory_processor'):
+                    # device_idからuser_idを取得（簡略化）
+                    user_id = self.device_id  # 実際の実装ではdevice_idからuser_idを取得する必要がある
+                    self.short_memory_processor = ShortMemoryProcessor(user_id)
+                    logger.info(f"🧠 [SHORT_MEMORY] Initialized processor for device_id={self.device_id}")
+                
+                # 会話ターン処理
+                result = self.short_memory_processor.process_conversation_turn(text)
+                
+                if result["is_boundary"] and result["new_entry"]:
+                    logger.info(f"🧠 [SHORT_MEMORY] Topic boundary detected, new memory entry: {result['new_entry']}")
+                    
+                    # プロンプト用コンテキストを取得して通知
+                    context = self.short_memory_processor.get_context_for_prompt()
+                    if context:
+                        logger.info(f"🧠 [SHORT_MEMORY] Memory context for prompt: {context[:100]}...")
+                
+                # 辞書更新があれば処理
+                if result["glossary_updates"]:
+                    logger.info(f"🧠 [SHORT_MEMORY] Glossary updates: {result['glossary_updates']}")
+                    
+            except Exception as e:
+                logger.error(f"🧠 [SHORT_MEMORY] Short memory processing error: {e}")
+
             # Prepare messages for LLM
             llm_messages = list(self.chat_history)
             if memory_query:
