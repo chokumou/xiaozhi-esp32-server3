@@ -78,55 +78,15 @@ class ShortMemoryProcessor:
         return found_meanings
     
     def detect_topic_boundary(self, current_text: str) -> bool:
-        """話題境界判定（AI不使用）"""
-        # 初回発話の場合は必ず境界とする
-        if not self.stm_last_topic_repr:
-            logger.info(f"Topic boundary detected: first utterance")
+        """話題境界判定（3発話カウンター方式）"""
+        # 3発話に達したら必ず境界とする
+        if len(self.stm_chunk) >= 2:  # 現在の発話を含めて3発話になる
+            logger.info(f"🧠 [SHORT_MEMORY] Topic boundary detected: 3 utterances reached (chunk_length={len(self.stm_chunk)})")
             return True
         
-        # ノイズ合流チェック（短文は境界にしない）
-        if current_text.strip() in ["はい", "了解", "うん", "そう", "なるほど"]:
-            logger.info(f"Topic boundary not detected: noise response")
-            return False
-        
-        # 類似度閾値チェック
-        similarity = self.calculate_jaccard_similarity(
-            self.stm_last_topic_repr, current_text
-        )
-        if similarity < 0.5:  # 閾値を下げて境界を検出しやすくする
-            logger.info(f"Topic boundary detected by similarity: {similarity}")
-            return True
-        
-        # 新規固有語の出現チェック
-        current_terms = self.extract_candidate_terms(current_text)
-        last_terms = self.extract_candidate_terms(self.stm_last_topic_repr)
-        new_terms = set(current_terms) - set(last_terms)
-        if len(new_terms) >= 1:  # 閾値を下げる
-            logger.info(f"Topic boundary detected by new terms: {new_terms}")
-            return True
-        
-        # 会話の長さチェック（stm_chunkが一定数に達したら境界）
-        if len(self.stm_chunk) >= 3:
-            logger.info(f"Topic boundary detected: chunk length reached {len(self.stm_chunk)}")
-            return True
-        
-        logger.info(f"No topic boundary detected: similarity={similarity}, new_terms={len(new_terms)}, chunk_length={len(self.stm_chunk)}")
+        logger.info(f"🧠 [SHORT_MEMORY] No topic boundary: chunk_length={len(self.stm_chunk)}")
         return False
     
-    def calculate_jaccard_similarity(self, text1: str, text2: str) -> float:
-        """Jaccard類似度計算（正規化キーワード集合）"""
-        terms1 = set(self.extract_candidate_terms(text1))
-        terms2 = set(self.extract_candidate_terms(text2))
-        
-        if not terms1 and not terms2:
-            return 1.0
-        if not terms1 or not terms2:
-            return 0.0
-        
-        intersection = len(terms1 & terms2)
-        union = len(terms1 | terms2)
-        
-        return intersection / union if union > 0 else 0.0
     
     def process_conversation_turn(self, text: str) -> Dict[str, any]:
         """
@@ -215,20 +175,31 @@ class ShortMemoryProcessor:
         return updates
     
     def generate_one_sentence_diary(self, chunk: List[str]) -> str:
-        """1文日記の生成（境界時だけLLM呼び出し）"""
-        # 簡略化された実装
-        # 実際にはOpenAI APIを呼び出して要約を生成
+        """3発話の1文日記生成（シンプルな結合方式）"""
+        if not chunk:
+            return ""
         
-        # 簡易実装：会話束を結合して120字以内に要約
-        combined_text = " ".join(chunk)
-        summary = combined_text[:120] + ("..." if len(combined_text) > 120 else "")
+        # 3発話を自然な1文に統合
+        if len(chunk) == 1:
+            summary = chunk[0]
+        elif len(chunk) == 2:
+            # 2発話: "A。B" → "A。B"
+            summary = f"{chunk[0]}。{chunk[1]}"
+        else:
+            # 3発話: "A。B。C" → "A。B。C"
+            summary = f"{chunk[0]}。{chunk[1]}。{chunk[2]}"
         
-        # サニタイズ：改行/多絵文字除去、全角記号統一、末尾「。」付与
+        # サニタイズ：改行除去、全角記号統一、末尾「。」付与
         summary = re.sub(r'\n+', '', summary)
         summary = re.sub(r'[。！？]+', '。', summary)
         if not summary.endswith('。'):
             summary += '。'
         
+        # 120字以内に制限
+        if len(summary) > 120:
+            summary = summary[:117] + "..."
+        
+        logger.info(f"🧠 [SHORT_MEMORY] Generated summary from {len(chunk)} utterances: '{summary}'")
         return summary
     
     def save_memory_entry(self, sentence: str):
