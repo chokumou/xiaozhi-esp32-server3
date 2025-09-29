@@ -710,6 +710,11 @@ class ConnectionHandler:
                 else:
                     logger.info(f"🧠 [SHORT_MEMORY] Using existing processor for device_id={self.device_id}")
                 
+                # 認証済みJWTトークンを設定
+                if hasattr(self, 'jwt_token') and self.jwt_token:
+                    self.short_memory_processor.jwt_token = self.jwt_token
+                    logger.info(f"🧠 [SHORT_MEMORY] JWT token set for authentication")
+                
                 # 会話ターン処理
                 result = self.short_memory_processor.process_conversation_turn(text)
                 logger.info(f"🧠 [SHORT_MEMORY] Process result: {result}")

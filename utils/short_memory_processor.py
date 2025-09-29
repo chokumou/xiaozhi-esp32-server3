@@ -21,6 +21,7 @@ class ShortMemoryProcessor:
         self.glossary_cache = {}  # セッション中の辞書キャッシュ
         self.stm_chunk = []  # 同一トピック束の一時蓄積
         self.stm_last_topic_repr = ""  # 直近代表文
+        self.jwt_token = None  # JWTトークン
         self.load_glossary_cache()
     
     def load_glossary_cache(self):
@@ -43,8 +44,11 @@ class ShortMemoryProcessor:
             self.glossary_cache = {}
     
     def get_jwt_token(self):
-        """JWTトークンを取得（簡略化）"""
-        # 実際の実装では認証システムから取得
+        """JWTトークンを取得"""
+        if self.jwt_token:
+            return self.jwt_token
+        # フォールバック（デバッグ用）
+        logger.warning("🧠 [SHORT_MEMORY] No JWT token available, using dummy")
         return "dummy_token"
     
     def extract_candidate_terms(self, text: str) -> List[str]:
