@@ -710,6 +710,7 @@ class ConnectionHandler:
                 
                 # 会話ターン処理
                 result = self.short_memory_processor.process_conversation_turn(text)
+                logger.info(f"🧠 [SHORT_MEMORY] Process result: {result}")
                 
                 if result["is_boundary"] and result["new_entry"]:
                     logger.info(f"🧠 [SHORT_MEMORY] Topic boundary detected, new memory entry: {result['new_entry']}")
