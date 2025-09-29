@@ -217,12 +217,19 @@ class ShortMemoryProcessor:
             }
             data = {"sentence": sentence}
             
+            logger.info(f"🧠 [SHORT_MEMORY] Sending API request to: {api_url}")
+            logger.info(f"🧠 [SHORT_MEMORY] Request data: {data}")
+            logger.info(f"🧠 [SHORT_MEMORY] Request headers: {headers}")
+            
             response = requests.post(api_url, json=data, headers=headers, timeout=10)
             
+            logger.info(f"🧠 [SHORT_MEMORY] API response status: {response.status_code}")
+            logger.info(f"🧠 [SHORT_MEMORY] API response content: {response.text}")
+            
             if response.status_code == 200:
-                logger.info(f"Saved memory entry for user {self.user_id}: {sentence}")
+                logger.info(f"🧠 [SHORT_MEMORY] Saved memory entry for user {self.user_id}: {sentence}")
             else:
-                logger.error(f"Failed to save memory entry: {response.status_code}")
+                logger.error(f"🧠 [SHORT_MEMORY] Failed to save memory entry: {response.status_code} - {response.text}")
             
         except Exception as e:
             logger.error(f"Error saving memory entry: {e}")
