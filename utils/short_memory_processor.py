@@ -5,7 +5,11 @@ import json
 import logging
 from typing import List, Dict, Tuple, Optional
 from datetime import datetime
-import requests
+try:
+    import requests
+except ImportError:
+    # requestsが利用できない場合はhttpxを使用
+    import httpx as requests
 
 logger = logging.getLogger(__name__)
 

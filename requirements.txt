@@ -11,3 +11,4 @@ numpy
 pydub
 edge-tts
 pytz
+requests
