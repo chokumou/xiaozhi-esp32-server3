@@ -79,30 +79,38 @@ class ShortMemoryProcessor:
     
     def detect_topic_boundary(self, current_text: str) -> bool:
         """話題境界判定（AI不使用）"""
+        # 初回発話の場合は必ず境界とする
+        if not self.stm_last_topic_repr:
+            logger.info(f"Topic boundary detected: first utterance")
+            return True
+        
+        # ノイズ合流チェック（短文は境界にしない）
+        if current_text.strip() in ["はい", "了解", "うん", "そう", "なるほど"]:
+            logger.info(f"Topic boundary not detected: noise response")
+            return False
+        
         # 類似度閾値チェック
-        if self.stm_last_topic_repr:
-            similarity = self.calculate_jaccard_similarity(
-                self.stm_last_topic_repr, current_text
-            )
-            if similarity < 0.65:  # 初期値、運用で調整可
-                logger.info(f"Topic boundary detected by similarity: {similarity}")
-                return True
+        similarity = self.calculate_jaccard_similarity(
+            self.stm_last_topic_repr, current_text
+        )
+        if similarity < 0.5:  # 閾値を下げて境界を検出しやすくする
+            logger.info(f"Topic boundary detected by similarity: {similarity}")
+            return True
         
         # 新規固有語の出現チェック
         current_terms = self.extract_candidate_terms(current_text)
-        if self.stm_last_topic_repr:
-            last_terms = self.extract_candidate_terms(self.stm_last_topic_repr)
-            new_terms = set(current_terms) - set(last_terms)
-            if len(new_terms) >= 2:
-                logger.info(f"Topic boundary detected by new terms: {new_terms}")
-                return True
+        last_terms = self.extract_candidate_terms(self.stm_last_topic_repr)
+        new_terms = set(current_terms) - set(last_terms)
+        if len(new_terms) >= 1:  # 閾値を下げる
+            logger.info(f"Topic boundary detected by new terms: {new_terms}")
+            return True
         
-        # 時間ギャップチェック（実装簡略化）
-        # 終了系イベントチェック（実装簡略化）
-        # ノイズ合流チェック
-        if current_text.strip() in ["はい", "了解", "うん", "そう", "なるほど"]:
-            return False
+        # 会話の長さチェック（stm_chunkが一定数に達したら境界）
+        if len(self.stm_chunk) >= 3:
+            logger.info(f"Topic boundary detected: chunk length reached {len(self.stm_chunk)}")
+            return True
         
+        logger.info(f"No topic boundary detected: similarity={similarity}, new_terms={len(new_terms)}, chunk_length={len(self.stm_chunk)}")
         return False
     
     def calculate_jaccard_similarity(self, text1: str, text2: str) -> float:
@@ -129,21 +137,28 @@ class ShortMemoryProcessor:
             "new_entry": str or None
         }
         """
+        logger.info(f"🧠 [SHORT_MEMORY] Processing conversation turn: '{text}'")
+        
         # 候補語抽出
         candidate_terms = self.extract_candidate_terms(text)
+        logger.info(f"🧠 [SHORT_MEMORY] Extracted candidate terms: {candidate_terms}")
         
         # 辞書参照
         found_meanings = self.check_glossary_reference(candidate_terms)
+        if found_meanings:
+            logger.info(f"🧠 [SHORT_MEMORY] Found glossary meanings: {found_meanings}")
         
         # 辞書登録ヒューリスティック
         glossary_updates = self.apply_registration_heuristics(text, candidate_terms)
         
         # 話題境界判定
         is_boundary = self.detect_topic_boundary(text)
+        logger.info(f"🧠 [SHORT_MEMORY] Topic boundary result: {is_boundary}")
         
         # 境界でない場合：stm_chunkに追加
         if not is_boundary:
             self.stm_chunk.append(text)
+            logger.info(f"🧠 [SHORT_MEMORY] Added to chunk. Current chunk length: {len(self.stm_chunk)}")
             return {
                 "is_boundary": False,
                 "glossary_updates": glossary_updates,
@@ -154,6 +169,7 @@ class ShortMemoryProcessor:
         if self.stm_chunk:
             self.stm_chunk.append(text)
             summary = self.generate_one_sentence_diary(self.stm_chunk)
+            logger.info(f"🧠 [SHORT_MEMORY] Generated summary: '{summary}'")
             
             # データベースに保存
             self.save_memory_entry(summary)
@@ -168,6 +184,7 @@ class ShortMemoryProcessor:
                 "new_entry": summary
             }
         
+        logger.info(f"🧠 [SHORT_MEMORY] No chunk to process")
         return {
             "is_boundary": False,
             "glossary_updates": glossary_updates,
@@ -178,18 +195,22 @@ class ShortMemoryProcessor:
         """辞書登録ヒューリスティック"""
         updates = {}
         
-        # 簡略化された実装
-        # 実際には前回の会話履歴も参照してパターンマッチングを行う
+        # 定義文パターン
+        definition_patterns = [
+            r'(.+?)とは(.+?)のことです',
+            r'(.+?)は(.+?)のことです',
+            r'(.+?)って(.+?)のことです',
+            r'(.+?)とは(.+?)です'
+        ]
         
-        # 「Xって何？」の次ターン発話パターン
-        if "って何" in text or "とは" in text:
-            # 定義的発話を検出して辞書に登録
-            pass
-        
-        # 「XとはY」「X=Y」パターン
-        if "とは" in text or "=" in text:
-            # 定義パターンを抽出
-            pass
+        for pattern in definition_patterns:
+            match = re.search(pattern, text)
+            if match:
+                term = match.group(1).strip()
+                meaning = match.group(2).strip()
+                if len(term) <= 10 and len(meaning) <= 50:
+                    updates[term] = meaning
+                    logger.info(f"🧠 [SHORT_MEMORY] Detected definition: {term} = {meaning}")
         
         return updates
     
