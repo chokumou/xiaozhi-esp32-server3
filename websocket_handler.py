@@ -740,6 +740,9 @@ class ConnectionHandler:
                             self.llm_service.short_memory_processor.jwt_token = jwt_token
                             self.llm_service.short_memory_processor.user_id = user_id
                             logger.info(f"🧠 [SHORT_MEMORY] Updated LLMService processor with JWT token: user_id={user_id}")
+                            logger.info(f"🧠 [JWT_DEBUG] LLMService processor jwt_token set: {jwt_token[:20]}...")
+                        else:
+                            logger.warning(f"🧠 [SHORT_MEMORY] LLMService or processor not available for JWT token update")
                     else:
                         logger.warning(f"🧠 [SHORT_MEMORY] Failed to get JWT token for device_id={self.device_id}")
                         logger.warning(f"🧠 [AUTH_DEBUG] jwt_token: {jwt_token}, user_id: {user_id}")

@@ -47,6 +47,8 @@ class ShortMemoryProcessor:
         """JWTトークンを取得"""
         logger.info(f"🧠 [JWT_DEBUG] Getting JWT token for user_id: {self.user_id}")
         logger.info(f"🧠 [JWT_DEBUG] Current jwt_token: {self.jwt_token[:20] if self.jwt_token else 'None'}...")
+        logger.info(f"🧠 [JWT_DEBUG] jwt_token type: {type(self.jwt_token)}")
+        logger.info(f"🧠 [JWT_DEBUG] jwt_token is None: {self.jwt_token is None}")
         
         if self.jwt_token:
             logger.info(f"🧠 [JWT_DEBUG] Using existing JWT token")
@@ -301,10 +303,22 @@ class ShortMemoryProcessor:
             
             if response.status_code == 200:
                 data = response.json()
-                if data and data.get("memory_text"):
+                logger.info(f"🧠 [MEMORY_DEBUG] API response type: {type(data)}")
+                logger.info(f"🧠 [MEMORY_DEBUG] API response data: {data}")
+                
+                # レスポンス形式を判定して処理
+                if isinstance(data, dict) and data.get("memory_text"):
                     memory_text = data["memory_text"]
                     # 最後の300字を返す
                     return memory_text[-300:] if len(memory_text) > 300 else memory_text
+                elif isinstance(data, list) and len(data) > 0:
+                    # リスト形式の場合、最初の要素からmemory_textを取得
+                    first_item = data[0]
+                    if isinstance(first_item, dict) and first_item.get("memory_text"):
+                        memory_text = first_item["memory_text"]
+                        return memory_text[-300:] if len(memory_text) > 300 else memory_text
+                else:
+                    logger.warning(f"🧠 [MEMORY_DEBUG] Unexpected response format: {type(data)}")
             
             return ""
             
