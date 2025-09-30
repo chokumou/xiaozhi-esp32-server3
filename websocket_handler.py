@@ -729,11 +729,12 @@ class ConnectionHandler:
                 else:
                     logger.info(f"🧠 [SHORT_MEMORY] Using existing processor for device_id={self.device_id}")
                 
-                # JWTトークンを設定
+                # JWTトークンを設定（確実に設定）
                 if jwt_token:
                     self.short_memory_processor.jwt_token = jwt_token
                     self.short_memory_processor.user_id = user_id
                     logger.info(f"🧠 [SHORT_MEMORY] JWT token set for authentication: user_id={user_id}")
+                    logger.info(f"🧠 [JWT_DEBUG] Short memory processor jwt_token after set: {self.short_memory_processor.jwt_token[:20] if self.short_memory_processor.jwt_token else 'None'}...")
                 else:
                     logger.warning(f"🧠 [SHORT_MEMORY] No JWT token available, using dummy token")
                 
