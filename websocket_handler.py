@@ -2235,31 +2235,31 @@ class ConnectionHandler:
         return
         
         # try:
-            # カスタムメッセージがあれば使用、なければデフォルト
-            if message and message != "ネコ太からのお知らせにゃん！":
-                notification_text = f"{message}ですにゃ"
-            else:
-                # 時刻を日本語で読み上げ
-                hour, minute = alarm_time.split(':')
-                notification_text = f"{hour}時{minute}分ですにゃ"
-            
-            # ESP32にアラーム通知送信
-            alarm_notification = {
-                "type": "alarm_notification",
-                "message": notification_text,
-                "alarm_time": alarm_time,
-                "alarm_id": alarm_id,
-                "timestamp": datetime.now().isoformat()
-            }
-            
-            await self.websocket.send_text(json.dumps(alarm_notification))
-            logger.info(f"🔔 [ALARM_NOTIFICATION] Sent to ESP32: '{notification_text}'")
-            
-            # アラームを発火済みにマーク
-            await self._mark_alarm_as_fired(alarm_id)
-            
-        except Exception as e:
-            logger.error(f"🔔 [ALARM_NOTIFICATION] Failed to send: {e}")
+        #     # カスタムメッセージがあれば使用、なければデフォルト
+        #     if message and message != "ネコ太からのお知らせにゃん！":
+        #         notification_text = f"{message}ですにゃ"
+        #     else:
+        #         # 時刻を日本語で読み上げ
+        #         hour, minute = alarm_time.split(':')
+        #         notification_text = f"{hour}時{minute}分ですにゃ"
+        #     
+        #     # ESP32にアラーム通知送信
+        #     alarm_notification = {
+        #         "type": "alarm_notification",
+        #         "message": notification_text,
+        #         "alarm_time": alarm_time,
+        #         "alarm_id": alarm_id,
+        #         "timestamp": datetime.now().isoformat()
+        #     }
+        #     
+        #     await self.websocket.send_text(json.dumps(alarm_notification))
+        #     logger.info(f"🔔 [ALARM_NOTIFICATION] Sent to ESP32: '{notification_text}'")
+        #     
+        #     # アラームを発火済みにマーク
+        #     await self._mark_alarm_as_fired(alarm_id)
+        #     
+        # except Exception as e:
+        #     logger.error(f"🔔 [ALARM_NOTIFICATION] Failed to send: {e}")
     
     async def _mark_alarm_as_fired(self, alarm_id: str):
         """アラームを発火済みにマーク"""
