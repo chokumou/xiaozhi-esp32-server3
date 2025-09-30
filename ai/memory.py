@@ -169,6 +169,26 @@ class MemoryService:
                     return combined_memory
             else:
                 logger.info(f"❌ No memory found for keyword: '{keyword}'")
+                # キーワードが見つからない場合、関連する用語で再検索
+                related_terms = self._get_related_terms(keyword)
+                if related_terms:
+                    logger.info(f"🔄 [RELATED_SEARCH] Trying related terms: {related_terms}")
+                    for term in related_terms:
+                        try:
+                            response = await client.get(
+                                f"{Config.MANAGER_API_URL}/api/memory/search",
+                                params={"keyword": term, "user_id": user_id},
+                                headers={"Authorization": f"Bearer {jwt_token}"},
+                                timeout=10
+                            )
+                            if response.status_code == 200:
+                                data = response.json()
+                                if data.get("memory_text"):
+                                    logger.info(f"✅ [RELATED_FOUND] Found memory with related term '{term}': {data['memory_text'][:50]}...")
+                                    return data["memory_text"]
+                        except Exception as e:
+                            logger.error(f"❌ [RELATED_SEARCH] Error searching related term '{term}': {e}")
+                            continue
                 return None
         except httpx.HTTPStatusError as e:
             logger.error(f"❌ HTTP error querying memory: {e.response.status_code} - {e.response.text}")
@@ -411,12 +431,25 @@ Support multiple languages and cultural contexts."""
                     content = data["choices"][0]["message"]["content"]
                     
                     try:
+                        # JSON解析前にマークダウンコードブロックを除去
+                        if "```json" in content:
+                            content = content.split("```json")[1].split("```")[0].strip()
+                        elif "```" in content:
+                            content = content.split("```")[1].split("```")[0].strip()
+                        
                         keywords = json.loads(content)
                         if isinstance(keywords, list) and keywords:
                             logger.info(f"✅ [AI_MEMORY] AI キーワード抽出成功: {keywords}")
                             return keywords
-                    except json.JSONDecodeError:
+                    except json.JSONDecodeError as e:
                         logger.error(f"❌ [AI_MEMORY] JSON解析失敗: {content}")
+                        logger.error(f"❌ [AI_MEMORY] JSON解析エラー詳細: {e}")
+                        # フォールバック: 単語を分割して返す
+                        fallback_keywords = content.replace('[', '').replace(']', '').replace('"', '').split(',')
+                        fallback_keywords = [kw.strip() for kw in fallback_keywords if kw.strip()]
+                        if fallback_keywords:
+                            logger.info(f"🔄 [AI_MEMORY] フォールバック キーワード: {fallback_keywords}")
+                            return fallback_keywords
                 else:
                     logger.error(f"❌ [AI_MEMORY] API呼び出し失敗: {response.status_code}")
                     
@@ -424,3 +457,24 @@ Support multiple languages and cultural contexts."""
             logger.error(f"❌ [AI_MEMORY] AI キーワード抽出エラー: {e}")
         
         return []
+    
+    def _get_related_terms(self, keyword: str) -> list:
+        """キーワードに関連する用語を生成"""
+        related_terms = []
+        
+        # 基本的な関連用語マッピング
+        term_mapping = {
+            "練乳": ["練乳", "コンデンスミルク", "甘い乳製品", "乳製品"],
+            "作り方": ["作り方", "レシピ", "調理法", "方法"],
+            "電子レンジ": ["電子レンジ", "レンジ", "マイクロウェーブ", "加熱"],
+            "600ワット": ["600ワット", "ワット", "電力", "出力"],
+            "5分": ["5分", "時間", "加熱時間", "調理時間"]
+        }
+        
+        # キーワードから関連用語を抽出
+        for term, related in term_mapping.items():
+            if term in keyword:
+                related_terms.extend(related)
+        
+        # 重複を除去
+        return list(set(related_terms))
