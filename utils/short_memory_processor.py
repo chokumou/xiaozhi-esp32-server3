@@ -188,8 +188,11 @@ class ShortMemoryProcessor:
         
         # AIによる日記形式の要約
         try:
+            logger.info(f"🧠 [SHORT_MEMORY] Starting AI summary for: {conversation_text[:50]}...")
             import openai
+            logger.info(f"🧠 [SHORT_MEMORY] OpenAI module imported successfully")
             from config import config
+            logger.info(f"🧠 [SHORT_MEMORY] Config imported successfully, API key length: {len(config.OPENAI_API_KEY)}")
             
             prompt = f"""
 以下の会話内容を、ネコタの日記として1文（80-120字）に要約してください。
@@ -230,8 +233,17 @@ class ShortMemoryProcessor:
             logger.info(f"🧠 [SHORT_MEMORY] AI Generated diary: '{summary}'")
             return summary
             
+        except ImportError as e:
+            logger.error(f"🧠 [SHORT_MEMORY] Import error: {e}")
+            # フォールバック: シンプル結合
+            summary = "。".join(chunk[:3])
+            if len(summary) > 120:
+                summary = summary[:117] + "..."
+            if not summary.endswith('。'):
+                summary += '。'
+            return summary
         except Exception as e:
-            logger.error(f"🧠 [SHORT_MEMORY] AI summary failed: {e}")
+            logger.error(f"🧠 [SHORT_MEMORY] AI summary failed: {type(e).__name__}: {e}")
             # フォールバック: シンプル結合
             summary = "。".join(chunk[:3])
             if len(summary) > 120:
