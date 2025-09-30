@@ -1392,80 +1392,80 @@ class ConnectionHandler:
         return
         
         # try:
-            # アラーム時刻までの秒数を計算
-            import datetime
-            target_datetime = datetime.datetime.combine(date, datetime.time(hour, minute))
-            now = datetime.datetime.now()
-            seconds_until_alarm = int((target_datetime - now).total_seconds())
-            
-            # 1. 優先送信: alarm_setメッセージ（ESP32のAlarmManagerに登録）
-            import uuid
-            message_id = str(uuid.uuid4())
-            alarm_id = int(datetime.datetime.now().timestamp())
-            
-            # サーバーの現在時刻を追加（ESP32の時刻修正用）
-            import datetime
-            import pytz
-            
-            # UTC時刻を取得
-            utc_now = datetime.datetime.now(pytz.UTC)
-            
-            # JST時刻もデバッグ用に保持
-            jst = pytz.timezone('Asia/Tokyo')
-            server_now_jst = utc_now.astimezone(jst)
-            
-            alarm_set_msg = {
-                "type": "alarm_set",
-                "message_id": message_id,  # 🎯 ACK追跡用ID
-                "alarm_id": alarm_id,
-                "alarm_date": date.strftime("%Y-%m-%d"),
-                "alarm_time": f"{hour:02d}:{minute:02d}",
-                "message": f"{hour:02d}:{minute:02d}のアラーム",
-                "timezone": "Asia/Tokyo",
-                "server_time": utc_now.strftime("%Y-%m-%d %H:%M:%S"),  # サーバー現在時刻（UTC）
-                "server_timestamp": int(utc_now.timestamp())  # Unix timestamp（UTC）
-            }
-            
-            # デバッグログ：送信する時刻情報を確認
-            logger.info(f"🕐 [TIME_DEBUG] Server time (UTC): {utc_now.strftime('%Y-%m-%d %H:%M:%S')}")
-            logger.info(f"🕐 [TIME_DEBUG] Server time (JST): {server_now_jst.strftime('%Y-%m-%d %H:%M:%S')}")
-            logger.info(f"🕐 [TIME_DEBUG] Server timestamp (UTC): {int(utc_now.timestamp())}")
-            
-            # 🎯 4. 再送キューに登録
-            self.pending_alarms[message_id] = alarm_set_msg
-            
-            import json
-            await self.websocket.send_str(json.dumps(alarm_set_msg))
-            logger.info(f"🔔 [ALARM_SET] Sent alarm_set to ESP32: {date.strftime('%Y-%m-%d')} {hour:02d}:{minute:02d}, msg_id={message_id}")
-            
-            # 🎯 ACKタイムアウト設定（5秒）
-            import asyncio
-            timeout_task = asyncio.create_task(self._alarm_ack_timeout(message_id, 5.0))
-            self.alarm_ack_timeouts[message_id] = timeout_task
-            
-            # 少し待機してから次のメッセージ送信
-            await asyncio.sleep(0.1)
-            
-            # 2. 電源管理メッセージ（既存のpower_wakeup）
-            power_wakeup_msg = {
-                "type": "power_wakeup",
-                "reason": "alarm_scheduled", 
-                "seconds_until_alarm": seconds_until_alarm,
-                "alarm_time": f"{hour:02d}:{minute:02d}",
-                "alarm_date": date.strftime("%Y-%m-%d"),
-                "message": f"アラーム設定: PowerSaveTimer WakeUp() - {seconds_until_alarm}秒後にアラーム"
-            }
-            
-            await self.websocket.send_str(json.dumps(power_wakeup_msg))
-            logger.info(f"⚡ [POWER_WAKEUP] Sent power_wakeup to ESP32: WakeUp() for alarm in {seconds_until_alarm}s")
-            
-            # サーバー側のタイムアウトも延長
-            if seconds_until_alarm > 0:
-                self.timeout_seconds = max(self.timeout_seconds, seconds_until_alarm + 60)  # アラーム時刻+1分
-                logger.info(f"⏰ [SERVER_TIMEOUT] Extended server timeout to {self.timeout_seconds}s for alarm")
-            
-        except Exception as e:
-            logger.error(f"⏰ [ALARM_NOTIFICATION] Failed to send alarm messages: {e}")
+        #     # アラーム時刻までの秒数を計算
+        #     import datetime
+        #     target_datetime = datetime.datetime.combine(date, datetime.time(hour, minute))
+        #     now = datetime.datetime.now()
+        #     seconds_until_alarm = int((target_datetime - now).total_seconds())
+        #     
+        #     # 1. 優先送信: alarm_setメッセージ（ESP32のAlarmManagerに登録）
+        #     import uuid
+        #     message_id = str(uuid.uuid4())
+        #     alarm_id = int(datetime.datetime.now().timestamp())
+        
+        #     # サーバーの現在時刻を追加（ESP32の時刻修正用）
+        #     import datetime
+        #     import pytz
+        #     
+        #     # UTC時刻を取得
+        #     utc_now = datetime.datetime.now(pytz.UTC)
+        #     
+        #     # JST時刻もデバッグ用に保持
+        #     jst = pytz.timezone('Asia/Tokyo')
+        #     server_now_jst = utc_now.astimezone(jst)
+        #     
+        #     alarm_set_msg = {
+        #         "type": "alarm_set",
+        #         "message_id": message_id,  # 🎯 ACK追跡用ID
+        #         "alarm_id": alarm_id,
+        #         "alarm_date": date.strftime("%Y-%m-%d"),
+        #         "alarm_time": f"{hour:02d}:{minute:02d}",
+        #         "message": f"{hour:02d}:{minute:02d}のアラーム",
+        #         "timezone": "Asia/Tokyo",
+        #         "server_time": utc_now.strftime("%Y-%m-%d %H:%M:%S"),  # サーバー現在時刻（UTC）
+        #         "server_timestamp": int(utc_now.timestamp())  # Unix timestamp（UTC）
+        #     }
+        #     
+        #     # デバッグログ：送信する時刻情報を確認
+        #     logger.info(f"🕐 [TIME_DEBUG] Server time (UTC): {utc_now.strftime('%Y-%m-%d %H:%M:%S')}")
+        #     logger.info(f"🕐 [TIME_DEBUG] Server time (JST): {server_now_jst.strftime('%Y-%m-%d %H:%M:%S')}")
+        #     logger.info(f"🕐 [TIME_DEBUG] Server timestamp (UTC): {int(utc_now.timestamp())}")
+        #     
+        #     # 🎯 4. 再送キューに登録
+        #     self.pending_alarms[message_id] = alarm_set_msg
+        #     
+        #     import json
+        #     await self.websocket.send_str(json.dumps(alarm_set_msg))
+        #     logger.info(f"🔔 [ALARM_SET] Sent alarm_set to ESP32: {date.strftime('%Y-%m-%d')} {hour:02d}:{minute:02d}, msg_id={message_id}")
+        #     
+        #     # 🎯 ACKタイムアウト設定（5秒）
+        #     import asyncio
+        #     timeout_task = asyncio.create_task(self._alarm_ack_timeout(message_id, 5.0))
+        #     self.alarm_ack_timeouts[message_id] = timeout_task
+        #     
+        #     # 少し待機してから次のメッセージ送信
+        #     await asyncio.sleep(0.1)
+        #     
+        #     # 2. 電源管理メッセージ（既存のpower_wakeup）
+        #     power_wakeup_msg = {
+        #         "type": "power_wakeup",
+        #         "reason": "alarm_scheduled", 
+        #         "seconds_until_alarm": seconds_until_alarm,
+        #         "alarm_time": f"{hour:02d}:{minute:02d}",
+        #         "alarm_date": date.strftime("%Y-%m-%d"),
+        #         "message": f"アラーム設定: PowerSaveTimer WakeUp() - {seconds_until_alarm}秒後にアラーム"
+        #     }
+        #     
+        #     await self.websocket.send_str(json.dumps(power_wakeup_msg))
+        #     logger.info(f"⚡ [POWER_WAKEUP] Sent power_wakeup to ESP32: WakeUp() for alarm in {seconds_until_alarm}s")
+        #     
+        #     # サーバー側のタイムアウトも延長
+        #     if seconds_until_alarm > 0:
+        #         self.timeout_seconds = max(self.timeout_seconds, seconds_until_alarm + 60)  # アラーム時刻+1分
+        #         logger.info(f"⏰ [SERVER_TIMEOUT] Extended server timeout to {self.timeout_seconds}s for alarm")
+        #     
+        # except Exception as e:
+        #     logger.error(f"⏰ [ALARM_NOTIFICATION] Failed to send alarm messages: {e}")
     
     async def _check_pending_alarms(self):
         """WebSocket再接続時に未送信アラームをチェック・再送"""
