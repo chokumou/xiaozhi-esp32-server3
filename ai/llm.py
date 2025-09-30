@@ -34,33 +34,33 @@ class LLMService:
 ユーザーが「覚えて」「覚えておいて」と言った時は、その情報を記憶してください。
 ユーザーが過去の話題について質問したら、記憶している情報を活用して答えてください。"""
                 
-                # 短期記憶と辞書のコンテキストを追加
+                # 短期記憶と辞書のコンテキストを追加（一時的に無効化）
                 if self.short_memory_processor:
                     try:
-                        logger.info(f"🧠 [PROMPT_INTEGRATION] Adding short memory and glossary context")
+                        logger.info(f"🧠 [PROMPT_INTEGRATION] DISABLED - Short memory and glossary context integration temporarily disabled for stability")
                         
-                        # 短期記憶コンテキストを取得
-                        memory_context = self.short_memory_processor.get_context_for_prompt()
-                        if memory_context:
-                            system_prompt += f"\n\n[短期記憶]\n{memory_context}"
-                            logger.info(f"🧠 [PROMPT_INTEGRATION] Added memory context: {memory_context[:100]}...")
-                        else:
-                            logger.info(f"🧠 [PROMPT_INTEGRATION] No memory context available")
+                        # # 短期記憶コンテキストを取得
+                        # memory_context = self.short_memory_processor.get_context_for_prompt()
+                        # if memory_context:
+                        #     system_prompt += f"\n\n[短期記憶]\n{memory_context}"
+                        #     logger.info(f"🧠 [PROMPT_INTEGRATION] Added memory context: {memory_context[:100]}...")
+                        # else:
+                        #     logger.info(f"🧠 [PROMPT_INTEGRATION] No memory context available")
                         
-                        # 辞書コンテキストを取得（最近の用語から）
-                        recent_terms = []
-                        if len(messages) > 0:
-                            # 最新のユーザーメッセージから用語を抽出
-                            latest_message = messages[-1].get("content", "")
-                            recent_terms = self.short_memory_processor.extract_candidate_terms(latest_message)
-                            logger.info(f"🧠 [PROMPT_INTEGRATION] Extracted recent terms: {recent_terms}")
+                        # # 辞書コンテキストを取得（最近の用語から）
+                        # recent_terms = []
+                        # if len(messages) > 0:
+                        #     # 最新のユーザーメッセージから用語を抽出
+                        #     latest_message = messages[-1].get("content", "")
+                        #     recent_terms = self.short_memory_processor.extract_candidate_terms(latest_message)
+                        #     logger.info(f"🧠 [PROMPT_INTEGRATION] Extracted recent terms: {recent_terms}")
                         
-                        glossary_context = self.short_memory_processor.get_glossary_for_prompt(recent_terms)
-                        if glossary_context:
-                            system_prompt += f"\n\n[辞書]\n{glossary_context}"
-                            logger.info(f"🧠 [PROMPT_INTEGRATION] Added glossary context: {glossary_context[:100]}...")
-                        else:
-                            logger.info(f"🧠 [PROMPT_INTEGRATION] No glossary context available")
+                        # glossary_context = self.short_memory_processor.get_glossary_for_prompt(recent_terms)
+                        # if glossary_context:
+                        #     system_prompt += f"\n\n[辞書]\n{glossary_context}"
+                        #     logger.info(f"🧠 [PROMPT_INTEGRATION] Added glossary context: {glossary_context[:100]}...")
+                        # else:
+                        #     logger.info(f"🧠 [PROMPT_INTEGRATION] No glossary context available")
                     except Exception as e:
                         logger.error(f"🧠 [PROMPT_INTEGRATION] Error adding context: {e}")
                         # エラーが発生してもプロンプト生成は継続
