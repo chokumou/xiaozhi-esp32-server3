@@ -2137,8 +2137,8 @@ class ConnectionHandler:
                 except Exception as e:
                     logger.error(f"⏰ [ALARM_CHECK] Error checking alarm for {self.device_id}: {e}")
                 
-                # 10秒間隔でチェック
-                await asyncio.sleep(10.0)
+                # 30秒間隔でチェック（頻度を削減）
+                await asyncio.sleep(30.0)
                 
         except Exception as e:
             logger.error(f"Error in alarm checker for {self.device_id}: {e}")
@@ -2159,8 +2159,10 @@ class ConnectionHandler:
             current_date = now_jst.strftime('%Y-%m-%d')
             current_time = now_jst.strftime('%H:%M')
             
-            logger.info(f"⏰ [ALARM_CHECK] Current time: {current_date} {current_time} (JST)")
-            logger.info(f"⏰ [ALARM_CHECK] Full datetime: {now_jst.strftime('%Y-%m-%d %H:%M:%S %Z')}")
+            # ログ出力を削減（デバッグ時のみ）
+            if not hasattr(self, '_last_alarm_check_log') or (now_jst - self._last_alarm_check_log).seconds >= 60:
+                logger.debug(f"⏰ [ALARM_CHECK] Current time: {current_date} {current_time} (JST)")
+                self._last_alarm_check_log = now_jst
             
             # アラームAPIでチェック
             import httpx
@@ -2180,7 +2182,9 @@ class ConnectionHandler:
                     result = response.json()
                     alarms = result.get('alarms', [])
                     
-                    logger.info(f"⏰ [ALARM_CHECK] Found {len(alarms)} total alarms for user")
+                    # ログ出力を削減（アラームがある場合のみ）
+                    if len(alarms) > 0:
+                        logger.debug(f"⏰ [ALARM_CHECK] Found {len(alarms)} alarms for user")
                     
                     for alarm in alarms:
                         alarm_date = alarm.get('alarm_date')
