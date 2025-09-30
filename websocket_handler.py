@@ -710,6 +710,17 @@ class ConnectionHandler:
                 else:
                     logger.info(f"🧠 [SHORT_MEMORY] Using existing processor for device_id={self.device_id}")
                 
+                # LLMServiceの短期記憶プロセッサーも更新
+                if hasattr(self, 'llm_service') and self.llm_service:
+                    if not self.llm_service.short_memory_processor:
+                        self.llm_service.set_user_id(user_id)
+                        logger.info(f"🧠 [SHORT_MEMORY] Updated LLMService processor for user_id={user_id}")
+                    else:
+                        # 既存のプロセッサーにJWTトークンを設定
+                        self.llm_service.short_memory_processor.jwt_token = self.short_memory_processor.jwt_token
+                        self.llm_service.short_memory_processor.user_id = self.short_memory_processor.user_id
+                        logger.info(f"🧠 [SHORT_MEMORY] Updated existing LLMService processor with JWT token")
+                
                 # 認証済みJWTトークンを取得して設定
                 try:
                     logger.info(f"🧠 [AUTH_DEBUG] Starting authentication for device_id: {self.device_id}")
@@ -723,6 +734,12 @@ class ConnectionHandler:
                         self.short_memory_processor.user_id = user_id
                         logger.info(f"🧠 [SHORT_MEMORY] JWT token set for authentication: user_id={user_id}")
                         logger.info(f"🧠 [AUTH_DEBUG] Short memory processor updated with JWT token")
+                        
+                        # LLMServiceの短期記憶プロセッサーにもJWTトークンを設定
+                        if hasattr(self, 'llm_service') and self.llm_service and self.llm_service.short_memory_processor:
+                            self.llm_service.short_memory_processor.jwt_token = jwt_token
+                            self.llm_service.short_memory_processor.user_id = user_id
+                            logger.info(f"🧠 [SHORT_MEMORY] Updated LLMService processor with JWT token: user_id={user_id}")
                     else:
                         logger.warning(f"🧠 [SHORT_MEMORY] Failed to get JWT token for device_id={self.device_id}")
                         logger.warning(f"🧠 [AUTH_DEBUG] jwt_token: {jwt_token}, user_id: {user_id}")

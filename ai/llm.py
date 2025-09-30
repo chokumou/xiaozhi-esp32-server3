@@ -14,8 +14,11 @@ class LLMService:
 
     def set_user_id(self, user_id: str):
         """ユーザーIDを設定して短期記憶プロセッサーを初期化"""
-        self.short_memory_processor = ShortMemoryProcessor(user_id)
-        logger.info(f"Short memory processor initialized for user: {user_id}")
+        if not self.short_memory_processor:
+            self.short_memory_processor = ShortMemoryProcessor(user_id)
+            logger.info(f"Short memory processor initialized for user: {user_id}")
+        else:
+            logger.info(f"Short memory processor already exists for user: {user_id}")
 
     async def chat_completion(self, messages: list, stream: bool = False, user_id: str = None) -> str:
         try:
