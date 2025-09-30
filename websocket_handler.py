@@ -701,24 +701,7 @@ class ConnectionHandler:
             try:
                 from utils.short_memory_processor import ShortMemoryProcessor
                 
-                # 短期記憶プロセッサーを取得または作成
-                if not hasattr(self, 'short_memory_processor'):
-                    # device_idからuser_idを取得（簡略化）
-                    user_id = self.device_id  # 実際の実装ではdevice_idからuser_idを取得する必要がある
-                    self.short_memory_processor = ShortMemoryProcessor(user_id)
-                    logger.info(f"🧠 [SHORT_MEMORY] Initialized processor for device_id={self.device_id}")
-                else:
-                    logger.info(f"🧠 [SHORT_MEMORY] Using existing processor for device_id={self.device_id}")
-                
-                # LLMServiceの短期記憶プロセッサーも更新（認証前）
-                if hasattr(self, 'llm_service') and self.llm_service:
-                    if not self.llm_service.short_memory_processor:
-                        self.llm_service.set_user_id(user_id)
-                        logger.info(f"🧠 [SHORT_MEMORY] Updated LLMService processor for user_id={user_id}")
-                    else:
-                        logger.info(f"🧠 [SHORT_MEMORY] LLMService processor already exists")
-                
-                # 認証済みJWTトークンを取得して設定
+                # 認証済みJWTトークンを先に取得
                 try:
                     logger.info(f"🧠 [AUTH_DEBUG] Starting authentication for device_id: {self.device_id}")
                     jwt_token, user_id = await self.memory_service._get_valid_jwt_and_user(self.device_id)
@@ -727,29 +710,52 @@ class ConnectionHandler:
                     if jwt_token and user_id:
                         # user_idをConnectionHandlerに設定
                         self.user_id = user_id
-                        self.short_memory_processor.jwt_token = jwt_token
-                        self.short_memory_processor.user_id = user_id
-                        logger.info(f"🧠 [SHORT_MEMORY] JWT token set for authentication: user_id={user_id}")
-                        logger.info(f"🧠 [AUTH_DEBUG] Short memory processor updated with JWT token")
-                        
-                        # LLMServiceの短期記憶プロセッサーにもJWTトークンを設定
-                        if hasattr(self, 'llm_service') and self.llm_service and self.llm_service.short_memory_processor:
-                            self.llm_service.short_memory_processor.jwt_token = jwt_token
-                            self.llm_service.short_memory_processor.user_id = user_id
-                            logger.info(f"🧠 [SHORT_MEMORY] Updated LLMService processor with JWT token: user_id={user_id}")
-                            logger.info(f"🧠 [JWT_DEBUG] LLMService processor jwt_token set: {jwt_token[:20]}...")
-                            
-                            # 設定確認
-                            logger.info(f"🧠 [JWT_DEBUG] LLMService processor jwt_token after set: {self.llm_service.short_memory_processor.jwt_token[:20] if self.llm_service.short_memory_processor.jwt_token else 'None'}...")
-                        else:
-                            logger.warning(f"🧠 [SHORT_MEMORY] LLMService or processor not available for JWT token update")
+                        logger.info(f"🧠 [SHORT_MEMORY] JWT token obtained: user_id={user_id}")
                     else:
                         logger.warning(f"🧠 [SHORT_MEMORY] Failed to get JWT token for device_id={self.device_id}")
-                        logger.warning(f"🧠 [AUTH_DEBUG] jwt_token: {jwt_token}, user_id: {user_id}")
+                        # フォールバック: device_idをuser_idとして使用
+                        user_id = self.device_id
+                        logger.warning(f"🧠 [SHORT_MEMORY] Using device_id as fallback user_id: {user_id}")
                 except Exception as e:
                     logger.error(f"🧠 [SHORT_MEMORY] Error getting JWT token: {e}")
-                    import traceback
-                    logger.error(f"🧠 [AUTH_DEBUG] Full traceback: {traceback.format_exc()}")
+                    # フォールバック: device_idをuser_idとして使用
+                    user_id = self.device_id
+                    logger.warning(f"🧠 [SHORT_MEMORY] Using device_id as fallback user_id: {user_id}")
+                
+                # 短期記憶プロセッサーを取得または作成
+                if not hasattr(self, 'short_memory_processor'):
+                    self.short_memory_processor = ShortMemoryProcessor(user_id)
+                    logger.info(f"🧠 [SHORT_MEMORY] Initialized processor for device_id={self.device_id}, user_id={user_id}")
+                else:
+                    logger.info(f"🧠 [SHORT_MEMORY] Using existing processor for device_id={self.device_id}")
+                
+                # JWTトークンを設定
+                if jwt_token:
+                    self.short_memory_processor.jwt_token = jwt_token
+                    self.short_memory_processor.user_id = user_id
+                    logger.info(f"🧠 [SHORT_MEMORY] JWT token set for authentication: user_id={user_id}")
+                else:
+                    logger.warning(f"🧠 [SHORT_MEMORY] No JWT token available, using dummy token")
+                
+                # LLMServiceの短期記憶プロセッサーも更新
+                if hasattr(self, 'llm_service') and self.llm_service:
+                    if not self.llm_service.short_memory_processor:
+                        self.llm_service.set_user_id(user_id)
+                        logger.info(f"🧠 [SHORT_MEMORY] Updated LLMService processor for user_id={user_id}")
+                    else:
+                        logger.info(f"🧠 [SHORT_MEMORY] LLMService processor already exists")
+                    
+                    # LLMServiceの短期記憶プロセッサーにもJWTトークンを設定
+                    if self.llm_service.short_memory_processor and jwt_token:
+                        self.llm_service.short_memory_processor.jwt_token = jwt_token
+                        self.llm_service.short_memory_processor.user_id = user_id
+                        logger.info(f"🧠 [SHORT_MEMORY] Updated LLMService processor with JWT token: user_id={user_id}")
+                        logger.info(f"🧠 [JWT_DEBUG] LLMService processor jwt_token set: {jwt_token[:20]}...")
+                        
+                        # 設定確認
+                        logger.info(f"🧠 [JWT_DEBUG] LLMService processor jwt_token after set: {self.llm_service.short_memory_processor.jwt_token[:20] if self.llm_service.short_memory_processor.jwt_token else 'None'}...")
+                    else:
+                        logger.warning(f"🧠 [SHORT_MEMORY] LLMService processor not available or no JWT token")
                 
                 # 会話ターン処理
                 result = self.short_memory_processor.process_conversation_turn(text)
