@@ -1386,8 +1386,12 @@ class ConnectionHandler:
             return "アラームの設定に失敗しましたにゃん。もう一度お試しくださいにゃ。"
     
     async def _send_alarm_notification(self, date, hour, minute):
-        """ESP32にアラーム設定を通知＋電源管理制御"""
-        try:
+        """ESP32にアラーム設定を通知＋電源管理制御（一時的に無効化）"""
+        # アラーム機能を一時的に無効化
+        logger.debug(f"⏰ [ALARM_DISABLED] Alarm notification disabled for {self.device_id}")
+        return
+        
+        # try:
             # アラーム時刻までの秒数を計算
             import datetime
             target_datetime = datetime.datetime.combine(date, datetime.time(hour, minute))
@@ -2129,96 +2133,108 @@ class ConnectionHandler:
             logger.error(f"Error in timeout check for {self.device_id}: {e}")
     
     async def start_alarm_checker(self):
-        """アラーム時刻チェックタスクを開始"""
-        try:
-            while not self.stop_event.is_set():
-                try:
-                    await self._check_alarm_time()
-                except Exception as e:
-                    logger.error(f"⏰ [ALARM_CHECK] Error checking alarm for {self.device_id}: {e}")
-                
-                # 30秒間隔でチェック（頻度を削減）
-                await asyncio.sleep(30.0)
-                
-        except Exception as e:
-            logger.error(f"Error in alarm checker for {self.device_id}: {e}")
+        """アラーム時刻チェックタスクを開始（一時的に無効化）"""
+        # アラーム機能を一時的に無効化（他の機能に影響しないよう安全にコメントアウト）
+        logger.info(f"⏰ [ALARM_DISABLED] Alarm checker disabled for {self.device_id}")
+        return
+        
+        # try:
+        #     while not self.stop_event.is_set():
+        #         try:
+        #             await self._check_alarm_time()
+        #         except Exception as e:
+        #             logger.error(f"⏰ [ALARM_CHECK] Error checking alarm for {self.device_id}: {e}")
+        #         
+        #         # 30秒間隔でチェック（頻度を削減）
+        #         await asyncio.sleep(30.0)
+        #         
+        # except Exception as e:
+        #     logger.error(f"Error in alarm checker for {self.device_id}: {e}")
     
     async def _check_alarm_time(self):
-        """現在時刻でアラームが発火すべきかチェック"""
-        try:
-            # JWTトークンが必要
-            if not hasattr(self, 'user_id') or not self.user_id:
-                logger.debug(f"⏰ [ALARM_CHECK] Skipping - no user_id for {self.device_id}")
-                return
+        """現在時刻でアラームが発火すべきかチェック（一時的に無効化）"""
+        # アラーム機能を一時的に無効化
+        logger.debug(f"⏰ [ALARM_DISABLED] Alarm check disabled for {self.device_id}")
+        return
+        
+        # try:
+        #     # JWTトークンが必要
+        #     if not hasattr(self, 'user_id') or not self.user_id:
+        #         logger.debug(f"⏰ [ALARM_CHECK] Skipping - no user_id for {self.device_id}")
+        #         return
+        #     
+        #     logger.debug(f"⏰ [ALARM_CHECK] Checking alarms for user_id={self.user_id}, device={self.device_id}")
+        #     
+        #     # 現在時刻（JST）
+        #     jst = pytz.timezone('Asia/Tokyo')
+        #     now_jst = datetime.now(jst)
+        #     current_date = now_jst.strftime('%Y-%m-%d')
+        #     current_time = now_jst.strftime('%H:%M')
+        #     
+        #     # ログ出力を削減（デバッグ時のみ）
+        #     if not hasattr(self, '_last_alarm_check_log') or (now_jst - self._last_alarm_check_log).seconds >= 60:
+        #         logger.debug(f"⏰ [ALARM_CHECK] Current time: {current_date} {current_time} (JST)")
+        #         self._last_alarm_check_log = now_jst
             
-            logger.debug(f"⏰ [ALARM_CHECK] Checking alarms for user_id={self.user_id}, device={self.device_id}")
-            
-            # 現在時刻（JST）
-            jst = pytz.timezone('Asia/Tokyo')
-            now_jst = datetime.now(jst)
-            current_date = now_jst.strftime('%Y-%m-%d')
-            current_time = now_jst.strftime('%H:%M')
-            
-            # ログ出力を削減（デバッグ時のみ）
-            if not hasattr(self, '_last_alarm_check_log') or (now_jst - self._last_alarm_check_log).seconds >= 60:
-                logger.debug(f"⏰ [ALARM_CHECK] Current time: {current_date} {current_time} (JST)")
-                self._last_alarm_check_log = now_jst
-            
-            # アラームAPIでチェック
-            import httpx
-            async with httpx.AsyncClient() as client:
-                response = await client.get(
-                    f"{Config.MANAGER_API_URL}/api/alarm/check",
-                    params={
-                        "user_id": self.user_id,
-                        "timezone": "Asia/Tokyo"
-                    },
-                    headers={
-                        "Authorization": f"Bearer {Config.MANAGER_API_SECRET}"
-                    }
-                )
-                
-                if response.status_code == 200:
-                    result = response.json()
-                    alarms = result.get('alarms', [])
-                    
-                    # ログ出力を削減（アラームがある場合のみ）
-                    if len(alarms) > 0:
-                        logger.debug(f"⏰ [ALARM_CHECK] Found {len(alarms)} alarms for user")
-                    
-                    for alarm in alarms:
-                        alarm_date = alarm.get('alarm_date')
-                        alarm_time = alarm.get('alarm_time') 
-                        message = alarm.get('message', '').strip()
-                        alarm_id = alarm.get('id')
-                        is_fired = alarm.get('is_fired', False)
-                        
-                        logger.info(f"⏰ [ALARM_DETAIL] ID:{alarm_id} Date:{alarm_date} Time:{alarm_time} Fired:{is_fired} Msg:'{message}'")
-                        
-                        # 現在の日付・時刻と一致するかチェック
-                        if alarm_date == current_date and alarm_time == current_time:
-                            logger.info(f"🎯 [ALARM_MATCH] EXACT TIME MATCH! {alarm_date} {alarm_time}")
-                        else:
-                            logger.debug(f"⏰ [ALARM_NO_MATCH] {alarm_date} {alarm_time} != {current_date} {current_time}")
-                        
-                        # 現在の日付・時刻と一致するかチェック（かつ未発火）
-                        if alarm_date == current_date and alarm_time == current_time and not is_fired:
-                            logger.info(f"⏰ [ALARM_FIRED] Alarm triggered: {alarm_time} - {message}")
-                            
-                            # WebSocket接続確認 + 切断時は再接続不要（グローバル送信）
-                            if self.websocket.closed:
-                                logger.warning(f"🔌 [ALARM_DISCONNECT] WebSocket disconnected, attempting global alarm send")
-                                await self._send_alarm_global(self.device_id, alarm_time, message, alarm_id)
-                            else:
-                                # 正常接続時は通常送信
-                                await self._send_alarm_notification_fired(alarm_time, message, alarm_id)
-                
-        except Exception as e:
-            logger.error(f"⏰ [ALARM_CHECK] Error: {e}")
+        #     # アラームAPIでチェック
+        #     import httpx
+        #     async with httpx.AsyncClient() as client:
+        #         response = await client.get(
+        #             f"{Config.MANAGER_API_URL}/api/alarm/check",
+        #             params={
+        #                 "user_id": self.user_id,
+        #                 "timezone": "Asia/Tokyo"
+        #             },
+        #             headers={
+        #                 "Authorization": f"Bearer {Config.MANAGER_API_SECRET}"
+        #             }
+        #         )
+        #         
+        #         if response.status_code == 200:
+        #             result = response.json()
+        #             alarms = result.get('alarms', [])
+        #             
+        #             # ログ出力を削減（アラームがある場合のみ）
+        #             if len(alarms) > 0:
+        #                 logger.debug(f"⏰ [ALARM_CHECK] Found {len(alarms)} alarms for user")
+        #             
+        #             for alarm in alarms:
+        #                 alarm_date = alarm.get('alarm_date')
+        #                 alarm_time = alarm.get('alarm_time') 
+        #                 message = alarm.get('message', '').strip()
+        #                 alarm_id = alarm.get('id')
+        #                 is_fired = alarm.get('is_fired', False)
+        #                 
+        #                 logger.info(f"⏰ [ALARM_DETAIL] ID:{alarm_id} Date:{alarm_date} Time:{alarm_time} Fired:{is_fired} Msg:'{message}'")
+        #                 
+        #                 # 現在の日付・時刻と一致するかチェック
+        #                 if alarm_date == current_date and alarm_time == current_time:
+        #                     logger.info(f"🎯 [ALARM_MATCH] EXACT TIME MATCH! {alarm_date} {alarm_time}")
+        #                 else:
+        #                     logger.debug(f"⏰ [ALARM_NO_MATCH] {alarm_date} {alarm_time} != {current_date} {current_time}")
+        #                 
+        #                 # 現在の日付・時刻と一致するかチェック（かつ未発火）
+        #                 if alarm_date == current_date and alarm_time == current_time and not is_fired:
+        #                     logger.info(f"⏰ [ALARM_FIRED] Alarm triggered: {alarm_time} - {message}")
+        #                     
+        #                     # WebSocket接続確認 + 切断時は再接続不要（グローバル送信）
+        #                     if self.websocket.closed:
+        #                         logger.warning(f"🔌 [ALARM_DISCONNECT] WebSocket disconnected, attempting global alarm send")
+        #                         await self._send_alarm_global(self.device_id, alarm_time, message, alarm_id)
+        #                     else:
+        #                         # 正常接続時は通常送信
+        #                         await self._send_alarm_notification_fired(alarm_time, message, alarm_id)
+        #         
+        # except Exception as e:
+        #     logger.error(f"⏰ [ALARM_CHECK] Error: {e}")
     
     async def _send_alarm_notification_fired(self, alarm_time: str, message: str, alarm_id: str):
-        """アラーム発火時の通知をESP32に送信"""
-        try:
+        """アラーム発火時の通知をESP32に送信（一時的に無効化）"""
+        # アラーム機能を一時的に無効化
+        logger.debug(f"⏰ [ALARM_DISABLED] Alarm notification disabled for {self.device_id}")
+        return
+        
+        # try:
             # カスタムメッセージがあれば使用、なければデフォルト
             if message and message != "ネコ太からのお知らせにゃん！":
                 notification_text = f"{message}ですにゃ"
@@ -2267,8 +2283,12 @@ class ConnectionHandler:
             logger.error(f"⏰ [ALARM_FIRED] Error marking as fired: {e}")
     
     async def _send_alarm_global(self, target_device_id: str, alarm_time: str, message: str, alarm_id: str):
-        """WebSocket切断時のグローバルアラーム送信（他の接続やHTTP経由）"""
-        try:
+        """WebSocket切断時のグローバルアラーム送信（一時的に無効化）"""
+        # アラーム機能を一時的に無効化
+        logger.debug(f"⏰ [ALARM_DISABLED] Global alarm disabled for {target_device_id}")
+        return
+        
+        # try:
             logger.info(f"🌐 [ALARM_GLOBAL] Attempting global alarm send to device {target_device_id}")
             
             # アラーム発火を記録（重複防止）
