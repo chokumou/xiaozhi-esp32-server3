@@ -189,7 +189,7 @@ class ShortMemoryProcessor:
         # AIによる日記形式の要約
         try:
             import openai
-            from config import settings
+            from config import config
             
             prompt = f"""
 以下の会話内容を、ネコタの日記として1文（80-120字）に要約してください。
@@ -205,6 +205,8 @@ class ShortMemoryProcessor:
 
 日記：
 """
+            
+            openai.api_key = config.OPENAI_API_KEY
             
             response = openai.ChatCompletion.create(
                 model="gpt-4o-mini",
