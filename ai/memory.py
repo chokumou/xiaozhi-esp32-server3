@@ -140,23 +140,36 @@ class MemoryService:
             
             logger.info(f"🔍 [KEYWORD_EXTRACTION] Extracted keywords: {search_keywords}")
             
-            # 最初のキーワードで検索（より広範囲な検索）
-            primary_keyword = search_keywords[0] if search_keywords else keyword
+            # 全てのキーワードで検索（より広範囲な検索）
+            all_memories = []
             
-            response = await self.client.get(
-                f"/api/memory/search?keyword={primary_keyword}&device_id={device_uuid}",
-                headers=headers
-            )
-            response.raise_for_status()
+            for search_keyword in search_keywords:
+                logger.info(f"🔍 [KEYWORD_SEARCH] Searching with keyword: '{search_keyword}'")
+                try:
+                    response = await self.client.get(
+                        f"/api/memory/search?keyword={search_keyword}&device_id={device_uuid}",
+                        headers=headers
+                    )
+                    response.raise_for_status()
+                    
+                    data = response.json()
+                    if data.get("memories"):
+                        memories = [mem.get("text", "") for mem in data.get("memories", [])]
+                        all_memories.extend(memories)
+                        logger.info(f"✅ [KEYWORD_FOUND] Found {len(memories)} memories for '{search_keyword}'")
+                    else:
+                        logger.info(f"❌ [KEYWORD_NOT_FOUND] No memories for '{search_keyword}'")
+                except Exception as e:
+                    logger.error(f"❌ [KEYWORD_SEARCH_ERROR] Error searching '{search_keyword}': {e}")
+                    continue
             
-            data = response.json()
-            if data.get("memories"):
-                # 取得したメモリーに対して柔軟検索を適用
-                memory_texts = [mem.get("text", "") for mem in data.get("memories", [])]
-                logger.info(f"🔍 [FLEXIBLE_SEARCH] Applying flexible search to {len(memory_texts)} memories")
+            if all_memories:
+                # 重複を除去
+                unique_memories = list(set(all_memories))
+                logger.info(f"🔍 [COMBINED_SEARCH] Found {len(unique_memories)} unique memories from all keywords")
                 
                 # 柔軟検索でフィルタリング
-                relevant_memories = self._filter_memories_by_keyword(memory_texts, keyword)
+                relevant_memories = self._filter_memories_by_keyword(unique_memories, keyword)
                 
                 if relevant_memories:
                     combined_memory = " ".join(relevant_memories)
