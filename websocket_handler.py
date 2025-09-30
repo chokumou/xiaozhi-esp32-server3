@@ -712,17 +712,24 @@ class ConnectionHandler:
                 
                 # 認証済みJWTトークンを取得して設定
                 try:
+                    logger.info(f"🧠 [AUTH_DEBUG] Starting authentication for device_id: {self.device_id}")
                     jwt_token, user_id = await self.memory_service._get_valid_jwt_and_user(self.device_id)
+                    logger.info(f"🧠 [AUTH_DEBUG] Auth result - jwt_token: {jwt_token[:20] if jwt_token else 'None'}..., user_id: {user_id}")
+                    
                     if jwt_token and user_id:
                         # user_idをConnectionHandlerに設定
                         self.user_id = user_id
                         self.short_memory_processor.jwt_token = jwt_token
                         self.short_memory_processor.user_id = user_id
                         logger.info(f"🧠 [SHORT_MEMORY] JWT token set for authentication: user_id={user_id}")
+                        logger.info(f"🧠 [AUTH_DEBUG] Short memory processor updated with JWT token")
                     else:
                         logger.warning(f"🧠 [SHORT_MEMORY] Failed to get JWT token for device_id={self.device_id}")
+                        logger.warning(f"🧠 [AUTH_DEBUG] jwt_token: {jwt_token}, user_id: {user_id}")
                 except Exception as e:
                     logger.error(f"🧠 [SHORT_MEMORY] Error getting JWT token: {e}")
+                    import traceback
+                    logger.error(f"🧠 [AUTH_DEBUG] Full traceback: {traceback.format_exc()}")
                 
                 # 会話ターン処理
                 result = self.short_memory_processor.process_conversation_turn(text)

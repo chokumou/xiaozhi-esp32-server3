@@ -51,14 +51,20 @@ class AuthResolver:
             
             # 2. 端末番号に統一
             device_number = await self._normalize_to_device_number(identifier, identifier_type)
+            logger.info(f"🔑 [AUTH_RESOLVER_DEBUG] Normalized device_number: {device_number}")
             if not device_number:
                 logger.error(f"🔑 [AUTH_RESOLVER] Failed to normalize identifier: {identifier}")
                 return None, None, None
             
             # 3. nekota-serverから認証情報を取得
+            logger.info(f"🔑 [AUTH_RESOLVER_DEBUG] Getting auth from server for device: {device_number}")
             jwt_token, user_id = await self._get_auth_from_server(device_number)
+            logger.info(f"🔑 [AUTH_RESOLVER_DEBUG] Server auth result: jwt_token={jwt_token[:20] if jwt_token else 'None'}..., user_id={user_id}")
+            
             if not jwt_token or not user_id:
                 logger.error(f"🔑 [AUTH_RESOLVER] Failed to get auth from server for device: {device_number}")
+                logger.error(f"🔑 [AUTH_RESOLVER_DEBUG] jwt_token is None: {jwt_token is None}")
+                logger.error(f"🔑 [AUTH_RESOLVER_DEBUG] user_id is None: {user_id is None}")
                 return None, None, None
             
             logger.info(f"🔑 [AUTH_RESOLVER] Successfully resolved auth: device={device_number}, user_id={user_id}")
@@ -66,6 +72,8 @@ class AuthResolver:
             
         except Exception as e:
             logger.error(f"🔑 [AUTH_RESOLVER] Error resolving auth for {identifier}: {e}")
+            import traceback
+            logger.error(f"🔑 [AUTH_RESOLVER_DEBUG] Full traceback: {traceback.format_exc()}")
             return None, None, None
     
     def _detect_identifier_type(self, identifier: str) -> str:
@@ -199,24 +207,38 @@ class AuthResolver:
     async def _get_auth_from_server(self, device_number: str) -> Tuple[Optional[str], Optional[str]]:
         """nekota-serverから認証情報を取得"""
         try:
+            logger.info(f"🔑 [AUTH_RESOLVER_DEBUG] Calling /api/device/exists with device_number: {device_number}")
             response = await self.client.post("/api/device/exists",
                                             json={"device_number": device_number})
             
+            logger.info(f"🔑 [AUTH_RESOLVER_DEBUG] Server response status: {response.status_code}")
+            logger.info(f"🔑 [AUTH_RESOLVER_DEBUG] Server response text: {response.text}")
+            
             if response.status_code == 200:
                 data = response.json()
+                logger.info(f"🔑 [AUTH_RESOLVER_DEBUG] Response data: {data}")
+                
                 jwt_token = data.get("token")
                 user_data = data.get("user")
                 user_id = user_data.get("id") if user_data else None
                 
+                logger.info(f"🔑 [AUTH_RESOLVER_DEBUG] Extracted jwt_token: {jwt_token[:20] if jwt_token else 'None'}...")
+                logger.info(f"🔑 [AUTH_RESOLVER_DEBUG] Extracted user_id: {user_id}")
+                logger.info(f"🔑 [AUTH_RESOLVER_DEBUG] user_data: {user_data}")
+                
                 if jwt_token and user_id:
                     logger.info(f"🔑 [AUTH_RESOLVER] Successfully got auth from server: device={device_number}, user_id={user_id}")
                     return jwt_token, user_id
+                else:
+                    logger.warning(f"🔑 [AUTH_RESOLVER_DEBUG] Missing auth data - jwt_token: {bool(jwt_token)}, user_id: {bool(user_id)}")
             
             logger.warning(f"🔑 [AUTH_RESOLVER] Server returned invalid response for device: {device_number}")
             return None, None
             
         except Exception as e:
             logger.error(f"🔑 [AUTH_RESOLVER] Error getting auth from server for device {device_number}: {e}")
+            import traceback
+            logger.error(f"🔑 [AUTH_RESOLVER_DEBUG] Full traceback: {traceback.format_exc()}")
             return None, None
     
     async def clear_cache(self):

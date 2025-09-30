@@ -28,15 +28,25 @@ class MemoryService:
     async def _get_valid_jwt_and_user(self, identifier: str) -> tuple:
         """認証リゾルバを使用してJWTとユーザー情報を取得"""
         try:
+            logger.info(f"🔑 [AUTH_RESOLVER_DEBUG] Starting auth resolution for identifier: {identifier}")
             jwt_token, user_id, device_number = await resolve_auth(identifier)
+            logger.info(f"🔑 [AUTH_RESOLVER_DEBUG] Auth resolution result:")
+            logger.info(f"🔑 [AUTH_RESOLVER_DEBUG] - jwt_token: {jwt_token[:20] if jwt_token else 'None'}...")
+            logger.info(f"🔑 [AUTH_RESOLVER_DEBUG] - user_id: {user_id}")
+            logger.info(f"🔑 [AUTH_RESOLVER_DEBUG] - device_number: {device_number}")
+            
             if jwt_token and user_id:
                 logger.info(f"🔑 [AUTH_RESOLVER] Successfully got auth: device={device_number}, user_id={user_id}")
                 return jwt_token, user_id
             else:
                 logger.error(f"🔑 [AUTH_RESOLVER] Failed to get auth for identifier: {identifier}")
+                logger.error(f"🔑 [AUTH_RESOLVER_DEBUG] jwt_token is None: {jwt_token is None}")
+                logger.error(f"🔑 [AUTH_RESOLVER_DEBUG] user_id is None: {user_id is None}")
                 return None, None
         except Exception as e:
             logger.error(f"🔑 [AUTH_RESOLVER] Error getting auth: {e}")
+            import traceback
+            logger.error(f"🔑 [AUTH_RESOLVER_DEBUG] Full traceback: {traceback.format_exc()}")
             return None, None
     
     async def save_memory_with_auth(self, jwt_token: str, user_id: str, text: str) -> bool:

@@ -45,10 +45,17 @@ class ShortMemoryProcessor:
     
     def get_jwt_token(self):
         """JWTトークンを取得"""
+        logger.info(f"🧠 [JWT_DEBUG] Getting JWT token for user_id: {self.user_id}")
+        logger.info(f"🧠 [JWT_DEBUG] Current jwt_token: {self.jwt_token[:20] if self.jwt_token else 'None'}...")
+        
         if self.jwt_token:
+            logger.info(f"🧠 [JWT_DEBUG] Using existing JWT token")
             return self.jwt_token
+        
         # フォールバック（デバッグ用）
         logger.warning("🧠 [SHORT_MEMORY] No JWT token available, using dummy")
+        logger.warning(f"🧠 [JWT_DEBUG] user_id: {self.user_id}")
+        logger.warning(f"🧠 [JWT_DEBUG] jwt_token is None: {self.jwt_token is None}")
         return "dummy_token"
     
     def extract_candidate_terms(self, text: str) -> List[str]:
