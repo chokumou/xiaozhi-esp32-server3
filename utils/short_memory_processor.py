@@ -209,13 +209,14 @@ class ShortMemoryProcessor:
     def save_memory_entry(self, sentence: str):
         """記憶エントリをデータベースに保存"""
         try:
+            
             # nekota-serverのAPIを呼び出し
             api_url = "https://nekota-server-production.up.railway.app/api/memory/append"
             headers = {
                 "Authorization": f"Bearer {self.get_jwt_token()}",
                 "Content-Type": "application/json"
             }
-            data = {"conversation_content": sentence}
+            data = {"sentence": sentence}
             
             logger.info(f"🧠 [SHORT_MEMORY] Sending API request to: {api_url}")
             logger.info(f"🧠 [SHORT_MEMORY] Request data: {data}")
@@ -225,6 +226,7 @@ class ShortMemoryProcessor:
             
             logger.info(f"🧠 [SHORT_MEMORY] API response status: {response.status_code}")
             logger.info(f"🧠 [SHORT_MEMORY] API response content: {response.text}")
+            logger.info(f"🧠 [SHORT_MEMORY] API response headers: {dict(response.headers)}")
             
             if response.status_code == 200:
                 logger.info(f"🧠 [SHORT_MEMORY] Saved memory entry for user {self.user_id}: {sentence}")
