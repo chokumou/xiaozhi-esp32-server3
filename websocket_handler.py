@@ -714,6 +714,8 @@ class ConnectionHandler:
                 try:
                     jwt_token, user_id = await self.memory_service._get_valid_jwt_and_user(self.device_id)
                     if jwt_token and user_id:
+                        # user_idをConnectionHandlerに設定
+                        self.user_id = user_id
                         self.short_memory_processor.jwt_token = jwt_token
                         self.short_memory_processor.user_id = user_id
                         logger.info(f"🧠 [SHORT_MEMORY] JWT token set for authentication: user_id={user_id}")
@@ -753,15 +755,20 @@ class ConnectionHandler:
                     logger.error(f"🔍 [MEMORY_SEARCH_AUTH_FAIL] 認証失敗: device_id={self.device_id}")
                     retrieved_memory = None
                 else:
+                    # user_idをConnectionHandlerに設定
+                    self.user_id = user_id
                     retrieved_memory = await self.memory_service.query_memory_with_auth(jwt_token, user_id, memory_query, self.device_id)
                 if retrieved_memory:
-                    llm_messages.insert(0, {"role": "system", "content": f"ユーザーの記憶: {retrieved_memory}"})
+                    # 既存メモリ検索結果をユーザーメッセージとして追加（システムプロンプトとの競合を回避）
+                    llm_messages.append({"role": "user", "content": f"[記憶検索結果] {retrieved_memory}"})
                     logger.info(f"✅ [MEMORY_FOUND] Retrieved memory for LLM: {retrieved_memory[:50]}...")
                 else:
                     logger.info(f"❌ [MEMORY_NOT_FOUND] No memory found for query: '{memory_query}'")
 
             # Generate LLM response (server2 style - no extra keepalive)
-            llm_response = await self.llm_service.chat_completion(llm_messages)
+            # ユーザーIDを取得してLLMサービスに渡す
+            user_id = getattr(self, 'user_id', None)
+            llm_response = await self.llm_service.chat_completion(llm_messages, user_id=user_id)
             
             if llm_response and llm_response.strip():
                 logger.info(f"🔥 RID[{rid}] LLM_RESULT: '{llm_response}'")
