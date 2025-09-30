@@ -209,9 +209,10 @@ class ShortMemoryProcessor:
 日記：
 """
             
-            openai.api_key = config.OPENAI_API_KEY
+            from openai import OpenAI
+            client = OpenAI(api_key=config.OPENAI_API_KEY)
             
-            response = openai.ChatCompletion.create(
+            response = client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[{"role": "user", "content": prompt}],
                 max_tokens=150,
