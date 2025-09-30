@@ -2289,29 +2289,29 @@ class ConnectionHandler:
         return
         
         # try:
-            logger.info(f"🌐 [ALARM_GLOBAL] Attempting global alarm send to device {target_device_id}")
-            
-            # アラーム発火を記録（重複防止）
-            await self._mark_alarm_as_fired(alarm_id)
-            
-            # アラーム通知テキスト生成
-            if message and message != "ネコ太からのお知らせにゃん！":
-                notification_text = f"{message}ですにゃ"
-            else:
-                hour, minute = alarm_time.split(':')
-                notification_text = f"{hour}時{minute}分ですにゃ"
-            
-            logger.info(f"🔔 [ALARM_GLOBAL] Alarm notification: '{notification_text}' for device {target_device_id}")
-            
-            # 方法1: ESP32への再接続トリガー信号（Light Sleepから復帰）
-            logger.info(f"🔔 [ALARM_WAKE] Device {target_device_id} should wake up and reconnect for alarm")
-            
-            # 方法2: デバイスが再接続してきたときのためにアラーム状態を保持
-            # (実装はconnection_managerに依存)
-            logger.info(f"🔄 [ALARM_PENDING] Alarm ready for when device {target_device_id} reconnects")
-            
-        except Exception as e:
-            logger.error(f"🌐 [ALARM_GLOBAL] Error in global alarm send: {e}")
+        #     logger.info(f"🌐 [ALARM_GLOBAL] Attempting global alarm send to device {target_device_id}")
+        #     
+        #     # アラーム発火を記録（重複防止）
+        #     await self._mark_alarm_as_fired(alarm_id)
+        #     
+        #     # アラーム通知テキスト生成
+        #     if message and message != "ネコ太からのお知らせにゃん！":
+        #         notification_text = f"{message}ですにゃ"
+        #     else:
+        #         hour, minute = alarm_time.split(':')
+        #         notification_text = f"{hour}時{minute}分ですにゃ"
+        #     
+        #     logger.info(f"🔔 [ALARM_GLOBAL] Alarm notification: '{notification_text}' for device {target_device_id}")
+        #     
+        #     # 方法1: ESP32への再接続トリガー信号（Light Sleepから復帰）
+        #     logger.info(f"🔔 [ALARM_WAKE] Device {target_device_id} should wake up and reconnect for alarm")
+        #     
+        #     # 方法2: デバイスが再接続してきたときのためにアラーム状態を保持
+        #     # (実装はconnection_managerに依存)
+        #     logger.info(f"🔄 [ALARM_PENDING] Alarm ready for when device {target_device_id} reconnects")
+        #     
+        # except Exception as e:
+        #     logger.error(f"🌐 [ALARM_GLOBAL] Error in global alarm send: {e}")
     
     async def _check_pending_alarms(self):
         """接続開始時に待機中のアラームをチェック（再接続後の即座配信）"""
