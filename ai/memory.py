@@ -177,7 +177,7 @@ class MemoryService:
                     return combined_memory
                 else:
                     # 柔軟検索でも見つからない場合、全メモリーを返す（従来の動作）
-                    combined_memory = " ".join(memory_texts)
+                    combined_memory = " ".join(all_memories)
                     logger.info(f"✅ No flexible match, returning all memories: {combined_memory[:50]}...")
                     return combined_memory
             else:
@@ -387,7 +387,7 @@ class MemoryService:
             similarity = self._calculate_similarity(keyword, memory)
             logger.info(f"🔍 [MEMORY_SIMILARITY] '{keyword}' vs '{memory[:30]}...': {similarity}")
             
-            if similarity > 0.3:  # 類似度閾値
+            if similarity > 0.2:  # 類似度閾値を下げる
                 relevant_memories.append(memory)
                 logger.info(f"🎯 [MEMORY_MATCH] Similarity match: '{memory[:50]}...'")
         
