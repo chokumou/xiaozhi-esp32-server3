@@ -179,32 +179,64 @@ class ShortMemoryProcessor:
         return updates
     
     def generate_one_sentence_diary(self, chunk: List[str]) -> str:
-        """3発話の1文日記生成（シンプルな結合方式）"""
+        """3発話の1文日記生成（AI要約方式）"""
         if not chunk:
             return ""
         
-        # 3発話を自然な1文に統合
-        if len(chunk) == 1:
-            summary = chunk[0]
-        elif len(chunk) == 2:
-            # 2発話: "A。B" → "A。B"
-            summary = f"{chunk[0]}。{chunk[1]}"
-        else:
-            # 3発話: "A。B。C" → "A。B。C"
-            summary = f"{chunk[0]}。{chunk[1]}。{chunk[2]}"
+        # 会話内容を結合
+        conversation_text = " ".join(chunk)
         
-        # サニタイズ：改行除去、全角記号統一、末尾「。」付与
-        summary = re.sub(r'\n+', '', summary)
-        summary = re.sub(r'[。！？]+', '。', summary)
-        if not summary.endswith('。'):
-            summary += '。'
-        
-        # 120字以内に制限
-        if len(summary) > 120:
-            summary = summary[:117] + "..."
-        
-        logger.info(f"🧠 [SHORT_MEMORY] Generated summary from {len(chunk)} utterances: '{summary}'")
-        return summary
+        # AIによる日記形式の要約
+        try:
+            import openai
+            from config import settings
+            
+            prompt = f"""
+以下の会話内容を、ネコタの日記として1文（80-120字）に要約してください。
+
+要件：
+- ネコタの視点で書く（「君の〜って聞いたにゃん」「〜について話してくれたにゃん」など）
+- 会話の要点を自然な日記形式で表現
+- 箇条書き禁止
+- 1文のみで完結
+- 末尾に「にゃん」で締める
+
+会話内容：{conversation_text}
+
+日記：
+"""
+            
+            response = openai.ChatCompletion.create(
+                model="gpt-4o-mini",
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=150,
+                temperature=0.7
+            )
+            
+            summary = response.choices[0].message.content.strip()
+            
+            # サニタイズ
+            summary = re.sub(r'\n+', '', summary)
+            summary = re.sub(r'[。！？]+', '。', summary)
+            if not summary.endswith('。') and not summary.endswith('にゃん'):
+                summary += '。'
+            
+            # 120字以内に制限
+            if len(summary) > 120:
+                summary = summary[:117] + "..."
+            
+            logger.info(f"🧠 [SHORT_MEMORY] AI Generated diary: '{summary}'")
+            return summary
+            
+        except Exception as e:
+            logger.error(f"🧠 [SHORT_MEMORY] AI summary failed: {e}")
+            # フォールバック: シンプル結合
+            summary = "。".join(chunk[:3])
+            if len(summary) > 120:
+                summary = summary[:117] + "..."
+            if not summary.endswith('。'):
+                summary += '。'
+            return summary
     
     def save_memory_entry(self, sentence: str):
         """記憶エントリをデータベースに保存"""
