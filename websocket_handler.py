@@ -2700,7 +2700,8 @@ class ConnectionHandler:
             
             # 1. 送信開始
             if self.letter_state == "none":
-                letter_keywords = ["メッセージ", "レター", "手紙", "送って", "送る", "伝えて", "連絡"]
+                # より厳格なキーワードマッチング（完全一致のみ）
+                letter_keywords = ["メッセージを送る", "メッセージ送る", "メッセージおくる"]
                 if any(keyword in text for keyword in letter_keywords):
                     logger.info(f"📮 RID[{rid}] レター送信開始")
                     await self.send_audio_response("誰になんのメッセージを送るにゃ？", rid)
