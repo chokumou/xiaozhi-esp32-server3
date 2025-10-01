@@ -34,6 +34,10 @@ class LLMService:
 ユーザーが「覚えて」「覚えておいて」と言った時は、その情報を記憶してください。
 ユーザーが過去の話題について質問したら、記憶している情報を活用して答えてください。"""
                 
+                # プロンプトの内容をログ出力（デバッグ用）
+                logger.info(f"📝 [PROMPT_DEBUG] Character prompt length: {len(Config.CHARACTER_PROMPT)} chars")
+                logger.info(f"📝 [PROMPT_DEBUG] Character prompt preview: {Config.CHARACTER_PROMPT[:200]}...")
+                
                 # 短期記憶と辞書のコンテキストを追加
                 if self.short_memory_processor:
                     try:
@@ -66,6 +70,10 @@ class LLMService:
                         # エラーが発生してもプロンプト生成は継続
                 else:
                     logger.info(f"🧠 [PROMPT_INTEGRATION] No short memory processor available")
+                
+                # 最終的なシステムプロンプトをログ出力
+                logger.info(f"📝 [PROMPT_DEBUG] Final system prompt length: {len(system_prompt)} chars")
+                logger.info(f"📝 [PROMPT_DEBUG] Final system prompt:\n{system_prompt}")
                 
                 messages.insert(0, {"role": "system", "content": system_prompt})
             
