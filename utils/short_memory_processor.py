@@ -34,13 +34,21 @@ class ShortMemoryProcessor:
             response = requests.get(api_url, headers=headers, timeout=10)
             if response.status_code == 200:
                 data = response.json()
-                if data and data.get("glossary"):
+                
+                # レスポンス形式を判定して処理
+                if isinstance(data, dict) and data.get("glossary"):
                     self.glossary_cache = data["glossary"]
+                elif isinstance(data, list):
+                    # リスト形式の場合は辞書キャッシュなし
+                    logger.info(f"🧠 [GLOSSARY] API returned list format, no glossary data")
+                    self.glossary_cache = {}
+                else:
+                    self.glossary_cache = {}
             else:
                 self.glossary_cache = {}
-            logger.info(f"Loaded glossary cache for user {self.user_id}: {len(self.glossary_cache)} terms")
+            logger.info(f"🧠 [GLOSSARY] Loaded glossary cache for user {self.user_id}: {len(self.glossary_cache)} terms")
         except Exception as e:
-            logger.error(f"Error loading glossary cache: {e}")
+            logger.error(f"❌ [GLOSSARY] Error loading glossary cache: {e}")
             self.glossary_cache = {}
     
     def get_jwt_token(self):
