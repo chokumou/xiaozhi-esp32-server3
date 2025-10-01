@@ -301,12 +301,14 @@ class ShortMemoryProcessor:
             logger.error(f"Error saving memory entry: {e}")
     
     def get_context_for_prompt(self) -> str:
-        """プロンプト用のコンテキストを取得（キャッシュ優先）"""
+        """プロンプト用のコンテキストを取得（キャッシュ優先、区切り文字なし）"""
         try:
             # キャッシュがあればキャッシュから返す
             if hasattr(self, 'memory_context_cache') and self.memory_context_cache:
                 logger.info(f"🚀 [CACHE_HIT] Using cached memory context: {len(self.memory_context_cache)} chars")
-                return self.memory_context_cache[-300:] if len(self.memory_context_cache) > 300 else self.memory_context_cache
+                # 区切り文字「｜」を削除して1行のテキストに
+                clean_text = self.memory_context_cache.replace("｜", "。")
+                return clean_text[-300:] if len(clean_text) > 300 else clean_text
             
             logger.info(f"🔄 [CACHE_MISS] Cache not available, fetching from API")
             
@@ -324,14 +326,17 @@ class ShortMemoryProcessor:
                 # レスポンス形式を判定して処理
                 if isinstance(data, dict) and data.get("memory_text"):
                     memory_text = data["memory_text"]
+                    # 区切り文字を削除して1行のテキストに
+                    clean_text = memory_text.replace("｜", "。")
                     # 最後の300字を返す
-                    return memory_text[-300:] if len(memory_text) > 300 else memory_text
+                    return clean_text[-300:] if len(clean_text) > 300 else clean_text
                 elif isinstance(data, list) and len(data) > 0:
                     # リスト形式の場合、最初の要素からmemory_textを取得
                     first_item = data[0]
                     if isinstance(first_item, dict) and first_item.get("memory_text"):
                         memory_text = first_item["memory_text"]
-                        return memory_text[-300:] if len(memory_text) > 300 else memory_text
+                        clean_text = memory_text.replace("｜", "。")
+                        return clean_text[-300:] if len(clean_text) > 300 else clean_text
                 else:
                     logger.warning(f"🧠 [MEMORY_DEBUG] Unexpected response format: {type(data)}")
             
