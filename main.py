@@ -269,228 +269,80 @@ async def main():
 
     async def device_check_alarms(request):
         """
-        ESP32からの未発火アラームチェック要求
+        ESP32からの未発火アラームチェック要求（一時的に無効化）
         """
-        try:
-            data = await request.json()
-            request_device_id = data.get('device_id')
-            
-            if not request_device_id:
-                return web.json_response({"error": "device_id required"}, status=400)
-            
-            # 実際のWebSocket接続時のデバイスIDを使用
-            from websocket_handler import connected_devices
-            actual_device_id = None
-            
-            # 接続中のデバイスから該当するものを探す
-            for connected_device_id, handler in connected_devices.items():
-                if connected_device_id == request_device_id or handler.device_id == request_device_id:
-                    actual_device_id = connected_device_id
-                    break
-            
-            if not actual_device_id:
-                # デバッグログを削減（警告レベルを下げる）
-                logger.debug(f"📱 接続中のデバイスが見つかりません: request={request_device_id}, connected={list(connected_devices.keys())}")
-                actual_device_id = request_device_id  # フォールバック
-            
-            logger.info(f"📱 アラームチェック要求: request_device_id={request_device_id}, actual_device_id={actual_device_id}")
-            logger.info(f"🔍🔍🔍 [DEBUG_DEVICE_MAPPING] 接続中デバイス: {list(connected_devices.keys())} 🔍🔍🔍")
-            logger.info(f"🔍🔍🔍 [DEBUG_DEVICE_MAPPING] 各デバイスのhandler.device_id: {[(k, v.device_id) for k, v in connected_devices.items()]} 🔍🔍🔍")
-            
-            # nekota-serverから未発火アラーム取得
-            import aiohttp
-            nekota_server_url = "https://nekota-server-production.up.railway.app"
-            
-            # デバイス認証でuser_idを取得
-            # device_idをdevice_numberに変換（マッピング）
-            device_mapping = {
-                "ESP32_8:44": "467731",  # 現在テスト中の端末
-                "ESP32_9:58": "327546"   # もう一方の端末
-            }
-            device_number = device_mapping.get(actual_device_id, actual_device_id)
-            logger.info(f"📱 デバイスマッピング: {actual_device_id} → {device_number}")
-            
-            async with aiohttp.ClientSession() as session:
-                # デバイス認証
-                auth_response = await session.post(
-                    f"{nekota_server_url}/api/device/exists",
-                    json={"device_number": device_number}  # マッピング後のdevice_number
-                )
-                
-                if auth_response.status != 200:
-                    error_text = await auth_response.text()
-                    # 502エラーは一時的なサーバー問題の可能性があるため、警告レベルを下げる
-                    if auth_response.status == 502:
-                        logger.warning(f"📱 デバイス認証失敗（一時的）: {auth_response.status} - {error_text}")
-                    else:
-                        logger.error(f"📱 デバイス認証失敗: {auth_response.status} - {error_text}")
-                    return web.json_response({"alarms": []})
-                
-                auth_data = await auth_response.json()
-                logger.info(f"📱 認証レスポンス: {auth_data}")
-                
-                # 正しい構造でuser_idを取得
-                user_data = auth_data.get("user")
-                if user_data is None:
-                    logger.error(f"📱 認証失敗: ユーザーデータが見つかりません (device_id={actual_device_id})")
-                    return web.json_response({"alarms": []})
-                
-                user_id = user_data.get("id")
-                jwt_token = auth_data.get("token")
-                
-                if not user_id or not jwt_token:
-                    logger.error(f"📱 認証情報取得失敗: user_id={user_id}, token={'あり' if jwt_token else 'なし'}")
-                    return web.json_response({"alarms": []})
-                
-                # 未発火アラーム取得
-                headers = {"Authorization": f"Bearer {jwt_token}"}
-                # ESP32未通知のアラームのみ取得（重複防止）
-                alarm_response = await session.get(
-                    f"{nekota_server_url}/api/alarm/?user_id={user_id}&fired=false&esp32_notified=false",
-                    headers=headers
-                )
-                
-                if alarm_response.status == 200:
-                    alarm_data = await alarm_response.json()
-                    alarms = alarm_data.get("alarms", [])
+        logger.info(f"⏰ [ALARM_DISABLED] Alarm check disabled, returning empty response")
+        return web.json_response({"alarms": [], "letters": []})
+        
+        # アラーム機能を一時的に停止中
+        # try:
+        #     data = await request.json()
+        #     request_device_id = data.get('device_id')
+        #     
+        #     if not request_device_id:
+        #         return web.json_response({"error": "device_id required"}, status=400)
+    #                 # 未読レター取得（友達リストから個別に取得）
+    #                 # まず友達リストを取得
+    #                 friends_response = await session.get(
+    #                     f"{nekota_server_url}/api/friend/list",
+    #                     headers=headers
+    #                 )
+    #                 
+    #                 pending_letters = []
+    #                 if friends_response.status == 200:
+    #                     friends_data = await friends_response.json()
+    #                     friends = friends_data.get("friends", [])
+    #                     logger.info(f"📮 友達リスト取得: {len(friends)}人")
+    #                     
+    #                     # 各友達から未読メッセージを取得
+    #                     for friend in friends:
+    #                         friend_id = friend.get("id")
+    #                         friend_name = friend.get("name", "不明")
+    #                         logger.info(f"📮 友達チェック: {friend_name} (ID: {friend_id})")
+    #                         
+    #                         if friend_id:
+    #                             api_url = f"{nekota_server_url}/api/message/list?friend_id={friend_id}&unread_only=true"
+    #                             logger.info(f"📮 API呼び出し: {api_url}")
+    #                             
+    #                             letter_response = await session.get(api_url, headers=headers)
+    #                             logger.info(f"📮 API応答: {letter_response.status}")
+    #                             
+    #                             if letter_response.status == 200:
+    #                                 letter_data = await letter_response.json()
+    #                                 letters = letter_data.get("messages", [])
+    #                                 logger.info(f"📮 {friend_name}からの未読メッセージ: {len(letters)}件")
+    #                                 
+    #                                 for letter in letters:
+    #                                     pending_letters.append({
+    #                                         "id": letter["id"],
+    #                                         "from_user_name": letter.get("from_user_name", friend.get("name", "誰か")),
+    #                                         "message": letter.get("transcribed_text", letter.get("message", ""))
+    #                                     })
+    #                                     logger.info(f"📮 メッセージ追加: {letter.get('transcribed_text', 'なし')}")
+    #                             else:
+    #                                 logger.error(f"📮 {friend_name}のメッセージ取得失敗: {letter_response.status}")
+    #                 else:
+    #                     logger.error(f"📮 友達リスト取得失敗: {friends_response.status}")
+    #                 
+    #                 logger.info(f"📮 未読レター取得: {len(pending_letters)}件")
+    #                 
+    #                 # デバイス別にレター情報を保存
+    #                 from websocket_handler import device_pending_letters
+    #                 device_pending_letters[actual_device_id] = pending_letters
+    #                 logger.info(f"📮 デバイス別レター保存完了: {actual_device_id} = {len(pending_letters)}件")
+    #                 logger.info(f"🔍🔍🔍 [DEBUG_LETTER_SAVE] デバイス別レター保存: {pending_letters} 🔍🔍🔍")
                     
-                    logger.info(f"📱 未発火アラーム取得: {len(alarms)}件")
-                    
-                    # 現在時刻より未来のアラームのみ処理
-                    import datetime
-                    now_utc = datetime.datetime.now(datetime.timezone.utc)
-                    
-                    pending_alarms = []
-                    for alarm in alarms:
-                        try:
-                            # アラームデータの構造をログ出力
-                            logger.info(f"📱 アラームデータ: {alarm}")
-                            
-                            # 日付と時刻を組み合わせてUTC時刻を作成
-                            alarm_date = alarm.get('alarm_date')     # YYYY-MM-DD
-                            alarm_time_str = alarm.get('alarm_time') # HH:MM:SS
-                            
-                            if alarm_date and alarm_time_str:
-                                # 日付と時刻を組み合わせ
-                                alarm_datetime_str = f"{alarm_date}T{alarm_time_str}"
-                                alarm_time = datetime.datetime.fromisoformat(alarm_datetime_str)
-                                
-                                # DBに保存されている時刻は既にUTC時刻なので、そのままUTCとして解釈
-                                alarm_time = alarm_time.replace(tzinfo=datetime.timezone.utc)
-                                logger.info(f"📱 DB時刻をUTCとして解釈: {alarm_time}")
-                                
-                                logger.info(f"📱 アラーム時刻: {alarm_time}, 現在時刻: {now_utc}")
-                                
-                                if alarm_time > now_utc:
-                                    seconds_until = int((alarm_time - now_utc).total_seconds())
-                                    
-                                    # メッセージとテキストを統合
-                                    message = alarm.get("message", "")
-                                    text = alarm.get("text", "")
-                                    
-                                    # 両方ある場合は統合、片方だけの場合はそのまま
-                                    if message and text:
-                                        combined_message = f"{message}　{text}"
-                                    elif text:
-                                        combined_message = text
-                                    else:
-                                        combined_message = message or "アラームの時間だにゃん！"
-                                    
-                                    pending_alarms.append({
-                                        "id": alarm["id"],
-                                        "seconds": seconds_until,
-                                        "message": combined_message
-                                    })
-                                    logger.info(f"📱 有効アラーム追加: {seconds_until}秒後, メッセージ: {combined_message}")
-                                else:
-                                    logger.info(f"📱 過去のアラーム（スキップ）: {alarm_time}")
-                            else:
-                                logger.error(f"📱 アラーム時刻データ不正: date={alarm_date}, time={alarm_time_str}")
-                                
-                        except Exception as e:
-                            logger.error(f"📱 アラーム処理エラー: {e}, データ: {alarm}")
-                    
-                    logger.info(f"📱 有効アラーム: {len(pending_alarms)}件")
-                    
-                    # ESP32に送信するアラームを通知済みに更新
-                    if pending_alarms:
-                        alarm_ids = [alarm["id"] for alarm in pending_alarms]
-                        for alarm_id in alarm_ids:
-                            try:
-                                update_response = await session.patch(
-                                    f"{nekota_server_url}/api/alarm/{alarm_id}",
-                                    json={"esp32_notified": True},
-                                    headers=headers
-                                )
-                                if update_response.status == 200:
-                                    logger.info(f"📱 アラーム通知済み更新: {alarm_id}")
-                                else:
-                                    logger.warning(f"📱 アラーム更新失敗: {alarm_id}")
-                            except Exception as e:
-                                logger.error(f"📱 アラーム更新エラー: {alarm_id} - {e}")
-                    
-                    # 未読レター取得（友達リストから個別に取得）
-                    # まず友達リストを取得
-                    friends_response = await session.get(
-                        f"{nekota_server_url}/api/friend/list",
-                        headers=headers
-                    )
-                    
-                    pending_letters = []
-                    if friends_response.status == 200:
-                        friends_data = await friends_response.json()
-                        friends = friends_data.get("friends", [])
-                        logger.info(f"📮 友達リスト取得: {len(friends)}人")
-                        
-                        # 各友達から未読メッセージを取得
-                        for friend in friends:
-                            friend_id = friend.get("id")
-                            friend_name = friend.get("name", "不明")
-                            logger.info(f"📮 友達チェック: {friend_name} (ID: {friend_id})")
-                            
-                            if friend_id:
-                                api_url = f"{nekota_server_url}/api/message/list?friend_id={friend_id}&unread_only=true"
-                                logger.info(f"📮 API呼び出し: {api_url}")
-                                
-                                letter_response = await session.get(api_url, headers=headers)
-                                logger.info(f"📮 API応答: {letter_response.status}")
-                                
-                                if letter_response.status == 200:
-                                    letter_data = await letter_response.json()
-                                    letters = letter_data.get("messages", [])
-                                    logger.info(f"📮 {friend_name}からの未読メッセージ: {len(letters)}件")
-                                    
-                                    for letter in letters:
-                                        pending_letters.append({
-                                            "id": letter["id"],
-                                            "from_user_name": letter.get("from_user_name", friend.get("name", "誰か")),
-                                            "message": letter.get("transcribed_text", letter.get("message", ""))
-                                        })
-                                        logger.info(f"📮 メッセージ追加: {letter.get('transcribed_text', 'なし')}")
-                                else:
-                                    logger.error(f"📮 {friend_name}のメッセージ取得失敗: {letter_response.status}")
-                    else:
-                        logger.error(f"📮 友達リスト取得失敗: {friends_response.status}")
-                    
-                    logger.info(f"📮 未読レター取得: {len(pending_letters)}件")
-                    
-                    # デバイス別にレター情報を保存
-                    from websocket_handler import device_pending_letters
-                    device_pending_letters[actual_device_id] = pending_letters
-                    logger.info(f"📮 デバイス別レター保存完了: {actual_device_id} = {len(pending_letters)}件")
-                    logger.info(f"🔍🔍🔍 [DEBUG_LETTER_SAVE] デバイス別レター保存: {pending_letters} 🔍🔍🔍")
-                    
-                    return web.json_response({
-                        "alarms": pending_alarms,
-                        "letters": pending_letters
-                    })
-                else:
-                    logger.error(f"📱 アラーム取得失敗: {alarm_response.status}")
-                    return web.json_response({"alarms": [], "letters": []})
-                    
-        except Exception as e:
-            logger.error(f"📱 アラームチェックエラー: {e}")
-            return web.json_response({"alarms": []})
+    #                 return web.json_response({
+    #                     "alarms": pending_alarms,
+    #                     "letters": pending_letters
+    #                 })
+    #             else:
+    #                 logger.error(f"📱 アラーム取得失敗: {alarm_response.status}")
+    #                 return web.json_response({"alarms": [], "letters": []})
+    #                 
+    #     except Exception as e:
+    #         logger.error(f"📱 アラームチェックエラー: {e}")
+    #         return web.json_response({"alarms": []})
 
     # Create HTTP server with all endpoints BEFORE starting
     app = web.Application()
