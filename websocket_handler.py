@@ -412,9 +412,10 @@ class ConnectionHandler:
         self.timeout_task = asyncio.create_task(self._check_timeout())
         logger.info(f"Started timeout monitoring task for {self.device_id}")
         
-        # 🚀 認証+短期記憶+辞書キャッシュを事前ロード（リスニング前に完了）
-        await self._preload_auth_and_memory()
-        logger.info(f"🚀 [PRELOAD] Auth and memory preload completed for {self.device_id}")
+        # 🚀 認証+短期記憶+辞書キャッシュをバックグラウンドで事前ロード
+        # 初回会話はキャッシュなしで高速応答、2回目以降はキャッシュ利用
+        asyncio.create_task(self._preload_auth_and_memory())
+        logger.info(f"🚀 [PRELOAD] Started background preload (non-blocking) for {self.device_id}")
         
         # WebSocket再接続時の未送信アラーム再送チェック
         await self._check_pending_alarms()
