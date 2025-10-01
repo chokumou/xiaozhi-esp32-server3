@@ -412,6 +412,10 @@ class ConnectionHandler:
         self.timeout_task = asyncio.create_task(self._check_timeout())
         logger.info(f"Started timeout monitoring task for {self.device_id}")
         
+        # 🚀 認証+短期記憶+辞書キャッシュをバックグラウンドで事前ロード
+        asyncio.create_task(self._preload_auth_and_memory())
+        logger.info(f"🚀 [PRELOAD] Started background auth and memory preload for {self.device_id}")
+        
         # WebSocket再接続時の未送信アラーム再送チェック
         await self._check_pending_alarms()
 
@@ -701,70 +705,31 @@ class ConnectionHandler:
             try:
                 from utils.short_memory_processor import ShortMemoryProcessor
                 
-                # 認証済みJWTトークンを先に取得
-                try:
-                    logger.info(f"🧠 [AUTH_DEBUG] Starting authentication for device_id: {self.device_id}")
-                    jwt_token, user_id = await self.memory_service._get_valid_jwt_and_user(self.device_id)
-                    logger.info(f"🧠 [AUTH_DEBUG] Auth result - jwt_token: {jwt_token[:20] if jwt_token else 'None'}..., user_id: {user_id}")
-                    
-                    if jwt_token and user_id:
-                        # user_idをConnectionHandlerに設定
-                        self.user_id = user_id
-                        logger.info(f"🧠 [SHORT_MEMORY] JWT token obtained: user_id={user_id}")
-                    else:
-                        logger.warning(f"🧠 [SHORT_MEMORY] Failed to get JWT token for device_id={self.device_id}")
-                        # フォールバック: device_idをuser_idとして使用
+                # 事前ロードが完了しているかチェック
+                if not hasattr(self, 'short_memory_processor') or not hasattr(self, 'user_id'):
+                    logger.warning(f"🚀 [PRELOAD] Preload not completed, running inline auth")
+                    # フォールバック: 事前ロードが完了していない場合は認証実行
+                    try:
+                        jwt_token, user_id = await self.memory_service._get_valid_jwt_and_user(self.device_id)
+                        if jwt_token and user_id:
+                            self.user_id = user_id
+                            if not hasattr(self, 'short_memory_processor'):
+                                self.short_memory_processor = ShortMemoryProcessor(user_id)
+                            self.short_memory_processor.jwt_token = jwt_token
+                            self.short_memory_processor.user_id = user_id
+                            
+                            # LLMServiceのプロセッサーも設定
+                            if hasattr(self, 'llm_service') and self.llm_service:
+                                if not self.llm_service.short_memory_processor:
+                                    self.llm_service.set_user_id(user_id)
+                                if self.llm_service.short_memory_processor:
+                                    self.llm_service.short_memory_processor.jwt_token = jwt_token
+                                    self.llm_service.short_memory_processor.user_id = user_id
+                    except Exception as e:
+                        logger.error(f"🚀 [PRELOAD] Fallback auth failed: {e}")
                         user_id = self.device_id
-                        logger.warning(f"🧠 [SHORT_MEMORY] Using device_id as fallback user_id: {user_id}")
-                except Exception as e:
-                    logger.error(f"🧠 [SHORT_MEMORY] Error getting JWT token: {e}")
-                    # フォールバック: device_idをuser_idとして使用
-                    user_id = self.device_id
-                    logger.warning(f"🧠 [SHORT_MEMORY] Using device_id as fallback user_id: {user_id}")
-                
-                # 短期記憶プロセッサーを取得または作成
-                if not hasattr(self, 'short_memory_processor'):
-                    self.short_memory_processor = ShortMemoryProcessor(user_id)
-                    logger.info(f"🧠 [SHORT_MEMORY] Initialized processor for device_id={self.device_id}, user_id={user_id}")
                 else:
-                    logger.info(f"🧠 [SHORT_MEMORY] Using existing processor for device_id={self.device_id}")
-                
-                # JWTトークンを設定（確実に設定）
-                if jwt_token:
-                    self.short_memory_processor.jwt_token = jwt_token
-                    self.short_memory_processor.user_id = user_id
-                    logger.info(f"🧠 [SHORT_MEMORY] JWT token set for authentication: user_id={user_id}")
-                    logger.info(f"🧠 [JWT_DEBUG] Short memory processor jwt_token after set: {self.short_memory_processor.jwt_token[:20] if self.short_memory_processor.jwt_token else 'None'}...")
-                    
-                    # JWTトークン設定後に辞書キャッシュをロード
-                    self.short_memory_processor.load_glossary_cache()
-                    logger.info(f"🧠 [SHORT_MEMORY] Glossary cache loaded: {len(self.short_memory_processor.glossary_cache)} terms")
-                else:
-                    logger.warning(f"🧠 [SHORT_MEMORY] No JWT token available, using dummy token")
-                
-                # LLMServiceの短期記憶プロセッサーも更新
-                if hasattr(self, 'llm_service') and self.llm_service:
-                    if not self.llm_service.short_memory_processor:
-                        self.llm_service.set_user_id(user_id)
-                        logger.info(f"🧠 [SHORT_MEMORY] Updated LLMService processor for user_id={user_id}")
-                    else:
-                        logger.info(f"🧠 [SHORT_MEMORY] LLMService processor already exists")
-                    
-                    # LLMServiceの短期記憶プロセッサーにもJWTトークンを設定
-                    if self.llm_service.short_memory_processor and jwt_token:
-                        self.llm_service.short_memory_processor.jwt_token = jwt_token
-                        self.llm_service.short_memory_processor.user_id = user_id
-                        logger.info(f"🧠 [SHORT_MEMORY] Updated LLMService processor with JWT token: user_id={user_id}")
-                        logger.info(f"🧠 [JWT_DEBUG] LLMService processor jwt_token set: {jwt_token[:20]}...")
-                        
-                        # JWTトークン設定後に辞書キャッシュをロード
-                        self.llm_service.short_memory_processor.load_glossary_cache()
-                        logger.info(f"🧠 [SHORT_MEMORY] LLMService glossary cache loaded: {len(self.llm_service.short_memory_processor.glossary_cache)} terms")
-                        
-                        # 設定確認
-                        logger.info(f"🧠 [JWT_DEBUG] LLMService processor jwt_token after set: {self.llm_service.short_memory_processor.jwt_token[:20] if self.llm_service.short_memory_processor.jwt_token else 'None'}...")
-                    else:
-                        logger.warning(f"🧠 [SHORT_MEMORY] LLMService processor not available or no JWT token")
+                    logger.info(f"🚀 [PRELOAD] Using preloaded auth and cache for user_id={self.user_id}")
                 
                 # 会話ターン処理
                 result = self.short_memory_processor.process_conversation_turn(text)
@@ -2140,6 +2105,81 @@ class ConnectionHandler:
                 
         except Exception as e:
             logger.error(f"Error in timeout check for {self.device_id}: {e}")
+    
+    async def _preload_auth_and_memory(self):
+        """接続時に認証と短期記憶を事前ロード（バックグラウンド処理）"""
+        try:
+            logger.info(f"🚀 [PRELOAD] Starting auth and memory preload for {self.device_id}")
+            
+            # 認証処理
+            from utils.short_memory_processor import ShortMemoryProcessor
+            
+            try:
+                jwt_token, user_id = await self.memory_service._get_valid_jwt_and_user(self.device_id)
+                logger.info(f"🚀 [PRELOAD] Auth completed: user_id={user_id}")
+                
+                if jwt_token and user_id:
+                    self.user_id = user_id
+                    
+                    # 短期記憶プロセッサーを初期化
+                    if not hasattr(self, 'short_memory_processor'):
+                        self.short_memory_processor = ShortMemoryProcessor(user_id)
+                        logger.info(f"🚀 [PRELOAD] Short memory processor initialized")
+                    
+                    # JWTトークンを設定
+                    self.short_memory_processor.jwt_token = jwt_token
+                    self.short_memory_processor.user_id = user_id
+                    
+                    # 1回のAPI呼び出しで短期記憶と辞書を取得
+                    import httpx
+                    async with httpx.AsyncClient() as client:
+                        response = await client.get(
+                            "https://nekota-server-production.up.railway.app/api/memory",
+                            headers={"Authorization": f"Bearer {jwt_token}"},
+                            timeout=10
+                        )
+                        
+                        if response.status_code == 200:
+                            data = response.json()
+                            
+                            # 短期記憶をキャッシュ
+                            if isinstance(data, dict) and data.get("memory_text"):
+                                self.short_memory_processor.memory_context_cache = data["memory_text"]
+                                logger.info(f"🚀 [PRELOAD] Memory context cached: {len(data['memory_text'])} chars")
+                            elif isinstance(data, list) and len(data) > 0:
+                                if data[0].get("memory_text"):
+                                    self.short_memory_processor.memory_context_cache = data[0]["memory_text"]
+                                    logger.info(f"🚀 [PRELOAD] Memory context cached: {len(data[0]['memory_text'])} chars")
+                            
+                            # 辞書をキャッシュ
+                            if isinstance(data, dict) and data.get("glossary"):
+                                self.short_memory_processor.glossary_cache = data["glossary"]
+                                logger.info(f"🚀 [PRELOAD] Glossary cached: {len(data['glossary'])} terms")
+                            else:
+                                self.short_memory_processor.glossary_cache = {}
+                        
+                        # LLMServiceのプロセッサーも同じキャッシュを共有
+                        if hasattr(self, 'llm_service') and self.llm_service:
+                            if not self.llm_service.short_memory_processor:
+                                self.llm_service.set_user_id(user_id)
+                            
+                            if self.llm_service.short_memory_processor:
+                                self.llm_service.short_memory_processor.jwt_token = jwt_token
+                                self.llm_service.short_memory_processor.user_id = user_id
+                                self.llm_service.short_memory_processor.glossary_cache = self.short_memory_processor.glossary_cache
+                                if hasattr(self.short_memory_processor, 'memory_context_cache'):
+                                    self.llm_service.short_memory_processor.memory_context_cache = self.short_memory_processor.memory_context_cache
+                                logger.info(f"🚀 [PRELOAD] LLMService processor synced with cache")
+                    
+                    logger.info(f"🚀 [PRELOAD] Preload completed successfully for {self.device_id}")
+                else:
+                    logger.warning(f"🚀 [PRELOAD] Auth failed, skipping preload")
+                    
+            except Exception as e:
+                logger.error(f"🚀 [PRELOAD] Error during preload: {e}")
+                
+        except Exception as e:
+            logger.error(f"🚀 [PRELOAD] Fatal error in preload: {e}")
     
     async def start_alarm_checker(self):
         """アラーム時刻チェックタスクを開始（一時的に無効化）"""

@@ -301,9 +301,16 @@ class ShortMemoryProcessor:
             logger.error(f"Error saving memory entry: {e}")
     
     def get_context_for_prompt(self) -> str:
-        """プロンプト用のコンテキストを取得"""
+        """プロンプト用のコンテキストを取得（キャッシュ優先）"""
         try:
-            # nekota-serverのAPIを呼び出し
+            # キャッシュがあればキャッシュから返す
+            if hasattr(self, 'memory_context_cache') and self.memory_context_cache:
+                logger.info(f"🚀 [CACHE_HIT] Using cached memory context: {len(self.memory_context_cache)} chars")
+                return self.memory_context_cache[-300:] if len(self.memory_context_cache) > 300 else self.memory_context_cache
+            
+            logger.info(f"🔄 [CACHE_MISS] Cache not available, fetching from API")
+            
+            # キャッシュがない場合のみAPIを呼び出し
             api_url = "https://nekota-server-production.up.railway.app/api/memory"
             headers = {"Authorization": f"Bearer {self.get_jwt_token()}"}
             
