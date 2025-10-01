@@ -22,7 +22,7 @@ class ShortMemoryProcessor:
         self.stm_chunk = []  # 同一トピック束の一時蓄積
         self.stm_last_topic_repr = ""  # 直近代表文
         self.jwt_token = None  # JWTトークン
-        self.load_glossary_cache()
+        # load_glossary_cache()はJWTトークン設定後に手動で呼ぶ
     
     def load_glossary_cache(self):
         """セッション開始時に辞書をキャッシュにロード"""

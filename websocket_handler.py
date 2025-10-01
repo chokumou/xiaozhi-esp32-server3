@@ -735,6 +735,10 @@ class ConnectionHandler:
                     self.short_memory_processor.user_id = user_id
                     logger.info(f"🧠 [SHORT_MEMORY] JWT token set for authentication: user_id={user_id}")
                     logger.info(f"🧠 [JWT_DEBUG] Short memory processor jwt_token after set: {self.short_memory_processor.jwt_token[:20] if self.short_memory_processor.jwt_token else 'None'}...")
+                    
+                    # JWTトークン設定後に辞書キャッシュをロード
+                    self.short_memory_processor.load_glossary_cache()
+                    logger.info(f"🧠 [SHORT_MEMORY] Glossary cache loaded: {len(self.short_memory_processor.glossary_cache)} terms")
                 else:
                     logger.warning(f"🧠 [SHORT_MEMORY] No JWT token available, using dummy token")
                 
@@ -752,6 +756,10 @@ class ConnectionHandler:
                         self.llm_service.short_memory_processor.user_id = user_id
                         logger.info(f"🧠 [SHORT_MEMORY] Updated LLMService processor with JWT token: user_id={user_id}")
                         logger.info(f"🧠 [JWT_DEBUG] LLMService processor jwt_token set: {jwt_token[:20]}...")
+                        
+                        # JWTトークン設定後に辞書キャッシュをロード
+                        self.llm_service.short_memory_processor.load_glossary_cache()
+                        logger.info(f"🧠 [SHORT_MEMORY] LLMService glossary cache loaded: {len(self.llm_service.short_memory_processor.glossary_cache)} terms")
                         
                         # 設定確認
                         logger.info(f"🧠 [JWT_DEBUG] LLMService processor jwt_token after set: {self.llm_service.short_memory_processor.jwt_token[:20] if self.llm_service.short_memory_processor.jwt_token else 'None'}...")
