@@ -667,6 +667,13 @@ class ConnectionHandler:
                 await self.send_audio_response("はい、アラームを止めましたにゃん！おはようございます！", rid)
                 return
             
+            # Check for sleep/wait mode keywords
+            elif any(keyword in text for keyword in ["バイバイ", "さようなら", "おやすみ", "待機して", "待機モード", "スリープ"]):
+                logger.info(f"😴 [SLEEP_MODE] Sleep mode request detected: '{text}'")
+                await self.send_audio_response("はい、待機モードにしますにゃん！また呼んでくださいね！", rid)
+                await self.send_sleep_command()
+                return
+            
             # Check for memory-related keywords
             memory_query = None
             logger.info(f"🧠 [MEMORY_CHECK] Checking text for memory keywords: '{text}'")
@@ -821,12 +828,12 @@ class ConnectionHandler:
             await self.websocket.send_str(json.dumps(abort_message))
             logger.info(f"🔥 RID[{rid}] TTS_ABORT_SENT: Sent TTS stop message to ESP32")
             
-            # Abort後の録音再開制御（重要！）
-            mic_on_message = {
-                "type": "audio_control", 
-                "action": "mic_on", 
-                "reason": "abort_recovery"
-            }
+            # Abort後の録音再開制御（audio_control削除 - 状態遷移ベースに戻す）
+            # mic_on_message = {
+            #     "type": "audio_control", 
+            #     "action": "mic_on", 
+            #     "reason": "abort_recovery"
+            # }
             listen_start_message = {
                 "type": "listen", 
                 "state": "start", 
@@ -1591,20 +1598,20 @@ class ConnectionHandler:
                 self.audio_handler.speak_lock_until = time.time() * 1000 + tts_lock_ms
                 logger.info(f"🛡️ [TTS_PROTECTION] TTS開始保護期間設定: {tts_lock_ms}ms")
                 
-                # 🎯 [HALF_DUPLEX] ハーフデュプレックス制御: mic_mute → ACK受領 → TTS送信
-                mic_control_message = {
-                    "type": "audio_control", 
-                    "action": "mic_off", 
-                    "reason": "tts_speaking"
-                }
-                try:
-                    # 🔍 [CONNECTION_GUARD] 送信前WebSocket状態確認
-                    if self.websocket.closed or getattr(self.websocket, '_writer', None) is None:
-                        logger.error(f"💀 [WEBSOCKET_DEAD] Cannot send mic_off control - connection dead")
-                        return
-                        
-                    await self.websocket.send_str(json.dumps(mic_control_message))
-                    logger.info(f"📡 [DEVICE_CONTROL] 端末にマイクオフ指示送信: {mic_control_message}")
+                # 🎯 [HALF_DUPLEX] ハーフデュプレックス制御: audio_control削除 - 状態遷移ベースに戻す
+                # mic_control_message = {
+                #     "type": "audio_control", 
+                #     "action": "mic_off", 
+                #     "reason": "tts_speaking"
+                # }
+                # try:
+                #     # 🔍 [CONNECTION_GUARD] 送信前WebSocket状態確認
+                #     if self.websocket.closed or getattr(self.websocket, '_writer', None) is None:
+                #         logger.error(f"💀 [WEBSOCKET_DEAD] Cannot send mic_off control - connection dead")
+                #         return
+                #         
+                #     await self.websocket.send_str(json.dumps(mic_control_message))
+                #     logger.info(f"📡 [DEVICE_CONTROL] 端末にマイクオフ指示送信: {mic_control_message}")
                     
                     # 🎯 [VAD_CONTROL] ESP32のVADバイパス指示（常時送信モード）
                     vad_control_message = {
@@ -1899,11 +1906,11 @@ class ConnectionHandler:
                             "state": "stop", 
                             "session_id": getattr(self, 'session_id', 'default')
                         }
-                        mic_on_message = {
-                            "type": "audio_control", 
-                            "action": "mic_on", 
-                            "reason": "tts_finished"
-                        }
+                        # mic_on_message = {
+                        #     "type": "audio_control", 
+                        #     "action": "mic_on", 
+                        #     "reason": "tts_finished"
+                        # }
                         try:
                             # 🔍 [CONNECTION_GUARD] WebSocket状態確認（最重要）
                             if self.websocket.closed or getattr(self.websocket, '_writer', None) is None:
@@ -1913,8 +1920,8 @@ class ConnectionHandler:
                             # 1. TTS停止メッセージ（Server2準拠）
                             await self.websocket.send_str(json.dumps(tts_stop_message))
                             
-                            # 2. マイクオン指示（拡張）
-                            await self.websocket.send_str(json.dumps(mic_on_message))
+                            # 2. マイクオン指示（audio_control削除 - 状態遷移ベースに戻す）
+                            # await self.websocket.send_str(json.dumps(mic_on_message))
                             
                             # 3. VAD判定復帰指示（ハングオーバ対応）
                             vad_enable_message = {
@@ -2412,22 +2419,21 @@ class ConnectionHandler:
             logger.error(f"🔄 [PENDING_ALARM] Error checking pending alarms: {e}")
 
     async def process_timer_command(self, text: str, rid: str) -> bool:
-        logger.error(f"🔥🔥🔥 TIMER_PROCESS_CALL 🔥🔥🔥 RID[{rid}] text='{text}'")
+        logger.debug(f"⏰ [TIMER] Checking timer command: '{text}'")
         
-        # 呼び出し回数カウント
+        # 呼び出し回数カウント（デバッグ用）
         if not hasattr(self, 'timer_process_count'):
             self.timer_process_count = 0
         self.timer_process_count += 1
-        logger.error(f"🔥🔥🔥 TIMER_COUNT_{self.timer_process_count} 🔥🔥🔥")
         
         # 同じテキストの重複処理チェック
         if not hasattr(self, 'last_timer_text'):
             self.last_timer_text = None
         
         if self.last_timer_text == text:
-            logger.error(f"🔥🔥🔥 DUPLICATE_TEXT_DETECTED 🔥🔥🔥 '{text}'")
+            logger.debug(f"⏰ [TIMER] Duplicate text detected: '{text}'")
+            return False
         else:
-            logger.error(f"🔥🔥🔥 NEW_TEXT_PROCESSING 🔥🔥🔥 '{text}'")
             self.last_timer_text = text
         """
         自然言語からタイマー設定を解析し、ESP32に送信する
@@ -2608,6 +2614,24 @@ class ConnectionHandler:
             
         except Exception as e:
             logger.error(f"RID[{rid}] タイマー停止コマンド送信エラー: {e}")
+
+    async def send_sleep_command(self):
+        """
+        ESP32に待機モードコマンドを送信
+        """
+        try:
+            # ESP32に送信するメッセージ
+            sleep_command = {
+                "type": "sleep_mode",
+                "action": "enter_sleep"
+            }
+            
+            # WebSocketでESP32に送信
+            await self.websocket.send_str(json.dumps(sleep_command))
+            logger.info(f"😴 [SLEEP_COMMAND] ESP32に待機モードコマンドを送信: {json.dumps(sleep_command)}")
+            
+        except Exception as e:
+            logger.error(f"😴 [SLEEP_COMMAND] 待機モードコマンド送信エラー: {e}")
 
     async def save_alarm_to_nekota_server(self, rid: str, seconds: int, message: str):
         """
