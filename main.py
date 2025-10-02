@@ -19,32 +19,60 @@ async def ota_endpoint(request):
         try:
             data = await request.json()
             mac_address = data.get("mac", "")
+            device_number = data.get("device_number", "")  # 端末番号を直接取得
             logger.info(f"🔍 [OTA_DEBUG] JSON data received: {data}")
             logger.info(f"🔍 [OTA_DEBUG] MAC from JSON: '{mac_address}'")
+            logger.info(f"🔍 [OTA_DEBUG] Device number from JSON: '{device_number}'")
         except Exception as e:
             # JSONでない場合はヘッダーから取得を試行
             mac_address = request.headers.get("Device-Id", "")
+            device_number = ""
             logger.info(f"🔍 [OTA_DEBUG] JSON parse failed: {e}")
             logger.info(f"🔍 [OTA_DEBUG] MAC from header: '{mac_address}'")
         
-        # MACアドレスから端末情報を自動取得
-        mac_suffix = mac_address[-4:] if len(mac_address) >= 4 else ""
-        
+        # 端末番号が直接送信されている場合はそれを使用
         device_info = {}
-        if mac_suffix == "8:44":
-            device_info = {
-                "uuid": "405fc146-3a70-4c35-9ed4-a245dd5a9ee0", 
-                "device_number": "467731"
-            }
-            logger.info(f"🔍 [OTA_DEVICE] MAC {mac_suffix} → Device 467731")
-        elif mac_suffix == "9:58":
-            device_info = {
-                "uuid": "92b63e50-4f65-49dc-a259-35fe14bea832", 
-                "device_number": "327546"
-            }
-            logger.info(f"🔍 [OTA_DEVICE] MAC {mac_suffix} → Device 327546")
+        if device_number:
+            # 端末番号からUUIDを取得（データベース照合）
+            try:
+                from config import Settings
+                from supabase import create_client, Client
+                
+                settings = Settings()
+                supabase: Client = create_client(settings.SUPABASE_URL, settings.SUPABASE_KEY)
+                
+                # 端末番号でデバイスを検索
+                result = supabase.table('devices').select('*').eq('device_number', device_number).execute()
+                
+                if result.data and len(result.data) > 0:
+                    device_data = result.data[0]
+                    device_info = {
+                        "uuid": device_data.get('id', ''),
+                        "device_number": device_number
+                    }
+                    logger.info(f"🔍 [OTA_DEVICE] Device number {device_number} → UUID {device_data.get('id', '')}")
+                else:
+                    logger.warning(f"🔍 [OTA_DEVICE] Device number {device_number} not found in database")
+            except Exception as e:
+                logger.error(f"🔍 [OTA_DEVICE] Database lookup failed: {e}")
         else:
-            logger.warning(f"🔍 [OTA_DEVICE] Unknown MAC suffix: {mac_suffix} (full: {mac_address})")
+            # フォールバック: MACアドレスから端末情報を自動取得
+            mac_suffix = mac_address[-4:] if len(mac_address) >= 4 else ""
+            
+            if mac_suffix == "8:44":
+                device_info = {
+                    "uuid": "405fc146-3a70-4c35-9ed4-a245dd5a9ee0", 
+                    "device_number": "467731"
+                }
+                logger.info(f"🔍 [OTA_DEVICE] MAC {mac_suffix} → Device 467731")
+            elif mac_suffix == "9:58":
+                device_info = {
+                    "uuid": "92b63e50-4f65-49dc-a259-35fe14bea832", 
+                    "device_number": "327546"
+                }
+                logger.info(f"🔍 [OTA_DEVICE] MAC {mac_suffix} → Device 327546")
+            else:
+                logger.warning(f"🔍 [OTA_DEVICE] Unknown MAC suffix: {mac_suffix} (full: {mac_address})")
         
         # Return ESP32-compatible response with websocket configuration
         version_info = {
