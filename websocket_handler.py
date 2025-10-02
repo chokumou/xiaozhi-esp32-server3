@@ -1613,25 +1613,25 @@ class ConnectionHandler:
                 #     await self.websocket.send_str(json.dumps(mic_control_message))
                 #     logger.info(f"📡 [DEVICE_CONTROL] 端末にマイクオフ指示送信: {mic_control_message}")
                     
-                    # 🎯 [VAD_CONTROL] ESP32のVADバイパス指示（常時送信モード）
-                    vad_control_message = {
-                        "type": "vad_control", 
-                        "action": "disable",  # disable = VADバイパス（常時送信）
-                        "reason": "ai_speaking_preroll"  # プリロール対応
-                    }
-                    await self.websocket.send_str(json.dumps(vad_control_message))
-                    logger.info(f"📡 [VAD_CONTROL] 端末にVADバイパス指示送信: {vad_control_message} (常時送信モード)")
-                    
-                    # 🎯 [ACK_WAIT] ACK待機（100ms短縮）またはフォールバック
-                    ack_received = False
-                    wait_start = time.monotonic()
-                    while time.monotonic() - wait_start < 0.1:  # 100ms短縮待機
-                        await asyncio.sleep(0.01)  # 10ms間隔でチェック
-                        # ACKはhandle_text_messageで処理される
-                        if hasattr(self, '_mic_ack_received') and self._mic_ack_received:
-                            ack_received = True
-                            self._mic_ack_received = False  # リセット
-                            break
+                # 🎯 [VAD_CONTROL] ESP32のVADバイパス指示（常時送信モード）
+                vad_control_message = {
+                    "type": "vad_control", 
+                    "action": "disable",  # disable = VADバイパス（常時送信）
+                    "reason": "ai_speaking_preroll"  # プリロール対応
+                }
+                await self.websocket.send_str(json.dumps(vad_control_message))
+                logger.info(f"📡 [VAD_CONTROL] 端末にVADバイパス指示送信: {vad_control_message} (常時送信モード)")
+                
+                # 🎯 [ACK_WAIT] ACK待機（100ms短縮）またはフォールバック
+                ack_received = False
+                wait_start = time.monotonic()
+                while time.monotonic() - wait_start < 0.1:  # 100ms短縮待機
+                    await asyncio.sleep(0.01)  # 10ms間隔でチェック
+                    # ACKはhandle_text_messageで処理される
+                    if hasattr(self, '_mic_ack_received') and self._mic_ack_received:
+                        ack_received = True
+                        self._mic_ack_received = False  # リセット
+                        break
                     
                     if ack_received:
                         logger.info(f"✅ [ACK_RECEIVED] MIC_OFF ACK received, starting TTS")
