@@ -34,11 +34,14 @@ async def ota_endpoint(request):
         device_info = {}
         # データベース接続を初期化
         try:
-            from config import Settings
+            import os
             from supabase import create_client, Client
             
-            settings = Settings()
-            supabase: Client = create_client(settings.SUPABASE_URL, settings.SUPABASE_KEY)
+            # 環境変数から直接取得
+            supabase_url = os.getenv("SUPABASE_URL", "https://xsglqqywodyqhzktkygq.supabase.co")
+            supabase_key = os.getenv("SUPABASE_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhzZ2xxcXl3b2R5cWh6a3RreWdxIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc0OTAyODEyNywiZXhwIjoyMDY0NjA0MTI3fQ.tmNU7T5N5qe7i2jraods8TD9bdGVhDQAIj0TgcnzQpI")
+            
+            supabase: Client = create_client(supabase_url, supabase_key)
         except Exception as e:
             logger.error(f"🔍 [OTA_DEVICE] Database connection failed: {e}")
             supabase = None
