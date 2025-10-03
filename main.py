@@ -32,40 +32,47 @@ async def ota_endpoint(request):
         
         # 端末番号が直接送信されている場合はそれを使用
         device_info = {}
+        # データベース接続を初期化
+        try:
+            from config import Settings
+            from supabase import create_client, Client
+            
+            settings = Settings()
+            supabase: Client = create_client(settings.SUPABASE_URL, settings.SUPABASE_KEY)
+        except Exception as e:
+            logger.error(f"🔍 [OTA_DEVICE] Database connection failed: {e}")
+            supabase = None
+        
         if device_number:
             # 端末番号からUUIDを取得（データベース照合）
-            try:
-                from config import Settings
-                from supabase import create_client, Client
-                
-                settings = Settings()
-                supabase: Client = create_client(settings.SUPABASE_URL, settings.SUPABASE_KEY)
-                
-                # 端末番号でデバイスを検索
-                result = supabase.table('devices').select('*').eq('device_number', device_number).execute()
-                
-                if result.data and len(result.data) > 0:
-                    device_data = result.data[0]
-                    device_info = {
-                        "uuid": device_data.get('id', ''),
-                        "device_number": device_number
-                    }
-                    logger.info(f"🔍 [OTA_DEVICE] Device number {device_number} → UUID {device_data.get('id', '')}")
-                else:
-                    logger.warning(f"🔍 [OTA_DEVICE] Device number {device_number} not found in database")
-            except Exception as e:
-                logger.error(f"🔍 [OTA_DEVICE] Database lookup failed: {e}")
+            if supabase:
+                try:
+                    # 端末番号でデバイスを検索
+                    result = supabase.table('devices').select('*').eq('device_number', device_number).execute()
+                    
+                    if result.data and len(result.data) > 0:
+                        device_data = result.data[0]
+                        device_info = {
+                            "uuid": device_data.get('id', ''),
+                            "device_number": device_number
+                        }
+                        logger.info(f"🔍 [OTA_DEVICE] Device number {device_number} → UUID {device_data.get('id', '')}")
+                    else:
+                        logger.warning(f"🔍 [OTA_DEVICE] Device number {device_number} not found in database")
+                except Exception as e:
+                    logger.error(f"🔍 [OTA_DEVICE] Database lookup failed: {e}")
         else:
             # フォールバック: MACアドレスから端末情報を自動取得
             mac_suffix = mac_address[-4:] if len(mac_address) >= 4 else ""
             
             # 動的マッピング: データベースからMAC Suffixで検索
-            try:
-                # MAC Suffixからデバイス番号を生成（コロン除去、大文字変換）
-                device_number = mac_suffix.replace(':', '').upper()
-                
-                # データベースでデバイス番号を検索
-                result = supabase.table('devices').select('*').eq('device_number', device_number).execute()
+            if supabase:
+                try:
+                    # MAC Suffixからデバイス番号を生成（コロン除去、大文字変換）
+                    device_number = mac_suffix.replace(':', '').upper()
+                    
+                    # データベースでデバイス番号を検索
+                    result = supabase.table('devices').select('*').eq('device_number', device_number).execute()
                 
                 if result.data and len(result.data) > 0:
                     device_data = result.data[0]
