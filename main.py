@@ -43,8 +43,10 @@ async def device_exists_endpoint(request):
             
             # UUIDまたはdevice_numberで検索
             if device_id:
-                # UUIDで検索
-                url = f"{supabase_url}/rest/v1/devices?id=eq.{device_id}"
+                # UUIDで検索（Supabaseの正しい形式）
+                import urllib.parse
+                encoded_device_id = urllib.parse.quote(device_id)
+                url = f"{supabase_url}/rest/v1/devices?id=eq.{encoded_device_id}"
                 logger.info(f"🔍 [DEVICE_EXISTS] UUID search: {url}")
             else:
                 # device_numberで検索
