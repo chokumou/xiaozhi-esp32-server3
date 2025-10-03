@@ -197,7 +197,8 @@ class AuthResolver:
         fallback_mappings = {
             # 既知のUUID（DB接続失敗時の緊急対応）
             "92b63e50-4f65-49dc-a259-35fe14bea832": "327546",
-            "405fc146-3a70-4c35-9ed4-a245dd5a9ee0": "467731"
+            "405fc146-3a70-4c35-9ed4-a245dd5a9ee0": "467731",
+            "2da95bf1-fe3b-4fad-a55f-e848ae675803": "68DC"  # 新しいデバイスを追加
         }
         device_number = fallback_mappings.get(uuid)
         if device_number:
