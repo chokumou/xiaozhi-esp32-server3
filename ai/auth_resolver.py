@@ -14,7 +14,7 @@ class AuthResolver:
     UUIDと端末番号の両方を受け取り、適切な認証情報を返す
     """
     
-    def __init__(self, nekota_server_url: str = "https://nekota-server-production.up.railway.app"):
+    def __init__(self, nekota_server_url: str = "http://localhost:8090"):
         self.nekota_server_url = nekota_server_url.rstrip('/')
         self.client = httpx.AsyncClient(
             base_url=self.nekota_server_url,
@@ -146,6 +146,7 @@ class AuthResolver:
                 logger.info(f"🔑 [AUTH_RESOLVER] Making request to /api/device/exists with device_id: {uuid}")
                 
                 # 既存の/api/device/existsエンドポイントを使用
+                logger.info(f"🔑 [AUTH_RESOLVER_DEBUG] About to call /api/device/exists")
                 response = await self.client.post("/api/device/exists", json={"device_id": uuid})
                 logger.info(f"🔑 [AUTH_RESOLVER] Response status: {response.status_code}")
                 logger.info(f"🔑 [AUTH_RESOLVER] Response text: {response.text}")
