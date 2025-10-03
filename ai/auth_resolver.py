@@ -143,9 +143,12 @@ class AuthResolver:
             # 既存のdevicesテーブルからUUIDで検索
             try:
                 logger.info(f"🔑 [AUTH_RESOLVER] Querying devices table for UUID: {uuid}")
+                logger.info(f"🔑 [AUTH_RESOLVER] Making request to /api/device/exists with device_id: {uuid}")
                 
                 # 既存の/api/device/existsエンドポイントを使用
                 response = await self.client.post("/api/device/exists", json={"device_id": uuid})
+                logger.info(f"🔑 [AUTH_RESOLVER] Response status: {response.status_code}")
+                logger.info(f"🔑 [AUTH_RESOLVER] Response text: {response.text}")
                 
                 if response.status_code == 200:
                     device_data = response.json()
