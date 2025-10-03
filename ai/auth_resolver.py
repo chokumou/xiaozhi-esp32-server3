@@ -132,7 +132,7 @@ class AuthResolver:
             return None
     
     async def _resolve_uuid_to_device_number(self, uuid: str) -> Optional[str]:
-        """UUIDを端末番号に解決（DBから動的取得）"""
+        """UUIDを端末番号に解決（既存のdevicesテーブルから動的取得）"""
         try:
             # まずレガシーマッピングテーブルを確認（ESP32_*形式のみ）
             legacy_mapping = self._get_legacy_mapping(uuid)
@@ -140,11 +140,11 @@ class AuthResolver:
                 logger.info(f"🔑 [AUTH_RESOLVER] Found legacy mapping: {uuid} -> {legacy_mapping}")
                 return legacy_mapping
             
-            # データベースからUUIDで直接検索
+            # 既存のdevicesテーブルからUUIDで検索
             try:
-                logger.info(f"🔑 [AUTH_RESOLVER] Querying database for UUID: {uuid}")
+                logger.info(f"🔑 [AUTH_RESOLVER] Querying devices table for UUID: {uuid}")
                 
-                # UUIDでデバイス情報を取得
+                # 既存の/api/device/existsエンドポイントを使用
                 response = await self.client.post("/api/device/exists", json={"device_id": uuid})
                 
                 if response.status_code == 200:
