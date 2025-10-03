@@ -35,13 +35,14 @@ async def ota_endpoint(request):
         # データベース接続を初期化
         try:
             import os
-            from supabase import create_client, Client
+            import requests
             
             # 環境変数から直接取得
             supabase_url = os.getenv("SUPABASE_URL", "https://xsglqqywodyqhzktkygq.supabase.co")
             supabase_key = os.getenv("SUPABASE_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhzZ2xxcXl3b2R5cWh6a3RreWdxIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc0OTAyODEyNywiZXhwIjoyMDY0NjA0MTI3fQ.tmNU7T5N5qe7i2jraods8TD9bdGVhDQAIj0TgcnzQpI")
             
-            supabase: Client = create_client(supabase_url, supabase_key)
+            # Supabaseクライアントの代わりにrequestsを使用
+            supabase = {"url": supabase_url, "key": supabase_key}
         except Exception as e:
             logger.error(f"🔍 [OTA_DEVICE] Database connection failed: {e}")
             supabase = None
@@ -50,18 +51,28 @@ async def ota_endpoint(request):
             # 端末番号からUUIDを取得（データベース照合）
             if supabase:
                 try:
-                    # 端末番号でデバイスを検索
-                    result = supabase.table('devices').select('*').eq('device_number', device_number).execute()
+                    # requestsを使用してSupabase REST APIを直接呼び出し
+                    headers = {
+                        "apikey": supabase["key"],
+                        "Authorization": f"Bearer {supabase['key']}",
+                        "Content-Type": "application/json"
+                    }
+                    url = f"{supabase['url']}/rest/v1/devices?device_number=eq.{device_number}"
                     
-                    if result.data and len(result.data) > 0:
-                        device_data = result.data[0]
-                        device_info = {
-                            "uuid": device_data.get('id', ''),
-                            "device_number": device_number
-                        }
-                        logger.info(f"🔍 [OTA_DEVICE] Device number {device_number} → UUID {device_data.get('id', '')}")
+                    response = requests.get(url, headers=headers)
+                    if response.status_code == 200:
+                        data = response.json()
+                        if data and len(data) > 0:
+                            device_data = data[0]
+                            device_info = {
+                                "uuid": device_data.get('id', ''),
+                                "device_number": device_number
+                            }
+                            logger.info(f"🔍 [OTA_DEVICE] Device number {device_number} → UUID {device_data.get('id', '')}")
+                        else:
+                            logger.warning(f"🔍 [OTA_DEVICE] Device number {device_number} not found in database")
                     else:
-                        logger.warning(f"🔍 [OTA_DEVICE] Device number {device_number} not found in database")
+                        logger.error(f"🔍 [OTA_DEVICE] Database request failed: {response.status_code}")
                 except Exception as e:
                     logger.error(f"🔍 [OTA_DEVICE] Database lookup failed: {e}")
         else:
@@ -74,32 +85,43 @@ async def ota_endpoint(request):
                     # MAC Suffixからデバイス番号を生成（コロン除去、大文字変換）
                     device_number = mac_suffix.replace(':', '').upper()
                     
-                    # データベースでデバイス番号を検索
-                    result = supabase.table('devices').select('*').eq('device_number', device_number).execute()
+                    # requestsを使用してSupabase REST APIを直接呼び出し
+                    headers = {
+                        "apikey": supabase["key"],
+                        "Authorization": f"Bearer {supabase['key']}",
+                        "Content-Type": "application/json"
+                    }
+                    url = f"{supabase['url']}/rest/v1/devices?device_number=eq.{device_number}"
                     
-                    if result.data and len(result.data) > 0:
-                        device_data = result.data[0]
-                        device_info = {
-                            "uuid": device_data.get('id', ''),
-                            "device_number": device_number
-                        }
-                        logger.info(f"🔍 [OTA_DEVICE] MAC {mac_suffix} → Device {device_number} (UUID: {device_data.get('id', '')})")
-                    else:
-                        # レガシーマッピング（既存の固定マッピング）
-                        if mac_suffix == "8:44":
+                    response = requests.get(url, headers=headers)
+                    if response.status_code == 200:
+                        data = response.json()
+                        if data and len(data) > 0:
+                            device_data = data[0]
                             device_info = {
-                                "uuid": "405fc146-3a70-4c35-9ed4-a245dd5a9ee0", 
-                                "device_number": "467731"
+                                "uuid": device_data.get('id', ''),
+                                "device_number": device_number
                             }
-                            logger.info(f"🔍 [OTA_DEVICE] MAC {mac_suffix} → Device 467731 (Legacy)")
-                        elif mac_suffix == "9:58":
-                            device_info = {
-                                "uuid": "92b63e50-4f65-49dc-a259-35fe14bea832", 
-                                "device_number": "327546"
-                            }
-                            logger.info(f"🔍 [OTA_DEVICE] MAC {mac_suffix} → Device 327546 (Legacy)")
+                            logger.info(f"🔍 [OTA_DEVICE] MAC {mac_suffix} → Device {device_number} (UUID: {device_data.get('id', '')})")
                         else:
-                            logger.warning(f"🔍 [OTA_DEVICE] Unknown MAC suffix: {mac_suffix} (full: {mac_address})")
+                            # レガシーマッピング（既存の固定マッピング）
+                            if mac_suffix == "8:44":
+                                device_info = {
+                                    "uuid": "405fc146-3a70-4c35-9ed4-a245dd5a9ee0", 
+                                    "device_number": "467731"
+                                }
+                                logger.info(f"🔍 [OTA_DEVICE] MAC {mac_suffix} → Device 467731 (Legacy)")
+                            elif mac_suffix == "9:58":
+                                device_info = {
+                                    "uuid": "92b63e50-4f65-49dc-a259-35fe14bea832", 
+                                    "device_number": "327546"
+                                }
+                                logger.info(f"🔍 [OTA_DEVICE] MAC {mac_suffix} → Device 327546 (Legacy)")
+                            else:
+                                logger.warning(f"🔍 [OTA_DEVICE] Unknown MAC suffix: {mac_suffix} (full: {mac_address})")
+                    else:
+                        logger.error(f"🔍 [OTA_DEVICE] Database request failed: {response.status_code}")
+                        logger.warning(f"🔍 [OTA_DEVICE] Unknown MAC suffix: {mac_suffix} (full: {mac_address})")
                 except Exception as e:
                     logger.error(f"🔍 [OTA_DEVICE] Database lookup failed: {e}")
                     logger.warning(f"🔍 [OTA_DEVICE] Unknown MAC suffix: {mac_suffix} (full: {mac_address})")
