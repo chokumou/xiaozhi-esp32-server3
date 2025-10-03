@@ -12,6 +12,80 @@ from websocket_handler import ConnectionHandler, connected_devices
 logger = setup_logger()
 auth_manager = AuthManager()
 
+async def device_exists_endpoint(request):
+    """デバイス認証エンドポイント - UUIDまたはdevice_numberで検索"""
+    try:
+        data = await request.json()
+        device_id = data.get("device_id")
+        device_number = data.get("device_number")
+        
+        logger.info(f"🔍 [DEVICE_EXISTS] Request: device_id={device_id}, device_number={device_number}")
+        
+        if not device_id and not device_number:
+            return web.json_response({"error": "device_id or device_number required"}, status=400)
+        
+        # データベース接続を初期化
+        try:
+            import os
+            import requests
+            
+            # 環境変数から直接取得
+            supabase_url = os.getenv("SUPABASE_URL", "https://xsglqqywodyqhzktkygq.supabase.co")
+            supabase_key = os.getenv("SUPABASE_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhzZ2xxcXl3b2R5cWh6a3RreWdxIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc0OTAyODEyNywiZXhwIjoyMDY0NjA0MTI3fQ.tmNU7T5N5qe7i2jraods8TD9bdGVhDQAIj0TgcnzQpI")
+            
+            headers = {
+                "apikey": supabase_key,
+                "Authorization": f"Bearer {supabase_key}",
+                "Content-Type": "application/json"
+            }
+            
+            # UUIDまたはdevice_numberで検索
+            if device_id:
+                # UUIDで検索
+                url = f"{supabase_url}/rest/v1/devices?id=eq.{device_id}"
+                logger.info(f"🔍 [DEVICE_EXISTS] UUID search: {url}")
+            else:
+                # device_numberで検索
+                url = f"{supabase_url}/rest/v1/devices?device_number=eq.{device_number}"
+                logger.info(f"🔍 [DEVICE_EXISTS] Device number search: {url}")
+            
+            response = requests.get(url, headers=headers)
+            logger.info(f"🔍 [DEVICE_EXISTS] Database response: {response.status_code}")
+            
+            if response.status_code == 200:
+                data = response.json()
+                logger.info(f"🔍 [DEVICE_EXISTS] Database data: {data}")
+                
+                if data and len(data) > 0:
+                    device_data = data[0]
+                    device_id = device_data.get('id')
+                    device_number = device_data.get('device_number')
+                    
+                    # 認証情報を生成
+                    jwt_token = auth_manager.generate_token(device_id)
+                    
+                    return web.json_response({
+                        "exists": True,
+                        "device_id": device_id,
+                        "device_number": device_number,
+                        "token": jwt_token,
+                        "user": {"id": device_id}
+                    })
+                else:
+                    logger.warning(f"🔍 [DEVICE_EXISTS] Device not found")
+                    return web.json_response({"exists": False}, status=404)
+            else:
+                logger.error(f"🔍 [DEVICE_EXISTS] Database request failed: {response.status_code}")
+                return web.json_response({"error": "Database error"}, status=500)
+                
+        except Exception as e:
+            logger.error(f"🔍 [DEVICE_EXISTS] Database lookup failed: {e}")
+            return web.json_response({"error": "Database connection failed"}, status=500)
+            
+    except Exception as e:
+        logger.error(f"🔍 [DEVICE_EXISTS] Endpoint error: {e}")
+        return web.json_response({"error": "Invalid request"}, status=400)
+
 async def ota_endpoint(request):
     """OTA version check endpoint - ESP32 compatible response"""
     try:
@@ -446,6 +520,9 @@ async def main():
     app.router.add_post('/xiaozhi/ota/', ota_endpoint)
     app.router.add_get('/xiaozhi/ota/', ota_endpoint)
     app.router.add_get('/xiaozhi/v1/', websocket_handler)
+    
+    # デバイス認証エンドポイント
+    app.router.add_post('/api/device/exists', device_exists_endpoint)
     
     # Web画面からのアラーム設定用APIエンドポイント
     app.router.add_get('/api/device/connected', device_connected_check)
