@@ -43,6 +43,7 @@ async def ota_endpoint(request):
             
             # Supabaseクライアントの代わりにrequestsを使用
             supabase = {"url": supabase_url, "key": supabase_key}
+            logger.info(f"🔍 [OTA_DEVICE] Database connection initialized: {supabase_url}")
         except Exception as e:
             logger.error(f"🔍 [OTA_DEVICE] Database connection failed: {e}")
             supabase = None
@@ -59,9 +60,13 @@ async def ota_endpoint(request):
                     }
                     url = f"{supabase['url']}/rest/v1/devices?device_number=eq.{device_number}"
                     
+                    logger.info(f"🔍 [OTA_DEVICE] Database query: {url}")
                     response = requests.get(url, headers=headers)
+                    logger.info(f"🔍 [OTA_DEVICE] Database response: {response.status_code}")
+                    
                     if response.status_code == 200:
                         data = response.json()
+                        logger.info(f"🔍 [OTA_DEVICE] Database data: {data}")
                         if data and len(data) > 0:
                             device_data = data[0]
                             device_info = {
@@ -73,6 +78,7 @@ async def ota_endpoint(request):
                             logger.warning(f"🔍 [OTA_DEVICE] Device number {device_number} not found in database")
                     else:
                         logger.error(f"🔍 [OTA_DEVICE] Database request failed: {response.status_code}")
+                        logger.error(f"🔍 [OTA_DEVICE] Response content: {response.text}")
                 except Exception as e:
                     logger.error(f"🔍 [OTA_DEVICE] Database lookup failed: {e}")
         else:
@@ -93,9 +99,13 @@ async def ota_endpoint(request):
                     }
                     url = f"{supabase['url']}/rest/v1/devices?device_number=eq.{device_number}"
                     
+                    logger.info(f"🔍 [OTA_DEVICE] Database query: {url}")
                     response = requests.get(url, headers=headers)
+                    logger.info(f"🔍 [OTA_DEVICE] Database response: {response.status_code}")
+                    
                     if response.status_code == 200:
                         data = response.json()
+                        logger.info(f"🔍 [OTA_DEVICE] Database data: {data}")
                         if data and len(data) > 0:
                             device_data = data[0]
                             device_info = {
@@ -121,6 +131,7 @@ async def ota_endpoint(request):
                                 logger.warning(f"🔍 [OTA_DEVICE] Unknown MAC suffix: {mac_suffix} (full: {mac_address})")
                     else:
                         logger.error(f"🔍 [OTA_DEVICE] Database request failed: {response.status_code}")
+                        logger.error(f"🔍 [OTA_DEVICE] Response content: {response.text}")
                         logger.warning(f"🔍 [OTA_DEVICE] Unknown MAC suffix: {mac_suffix} (full: {mac_address})")
                 except Exception as e:
                     logger.error(f"🔍 [OTA_DEVICE] Database lookup failed: {e}")
