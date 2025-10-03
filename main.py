@@ -20,8 +20,10 @@ async def device_exists_endpoint(request):
         device_number = data.get("device_number")
         
         logger.info(f"🔍 [DEVICE_EXISTS] Request: device_id={device_id}, device_number={device_number}")
+        logger.info(f"🔍 [DEVICE_EXISTS] Raw request data: {data}")
         
         if not device_id and not device_number:
+            logger.error(f"🔍 [DEVICE_EXISTS] Missing required fields: device_id={device_id}, device_number={device_number}")
             return web.json_response({"error": "device_id or device_number required"}, status=400)
         
         # データベース接続を初期化
