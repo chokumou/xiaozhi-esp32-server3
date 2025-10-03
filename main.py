@@ -73,33 +73,33 @@ async def ota_endpoint(request):
                     
                     # データベースでデバイス番号を検索
                     result = supabase.table('devices').select('*').eq('device_number', device_number).execute()
-                
-                if result.data and len(result.data) > 0:
-                    device_data = result.data[0]
-                    device_info = {
-                        "uuid": device_data.get('id', ''),
-                        "device_number": device_number
-                    }
-                    logger.info(f"🔍 [OTA_DEVICE] MAC {mac_suffix} → Device {device_number} (UUID: {device_data.get('id', '')})")
-                else:
-                    # レガシーマッピング（既存の固定マッピング）
-                    if mac_suffix == "8:44":
+                    
+                    if result.data and len(result.data) > 0:
+                        device_data = result.data[0]
                         device_info = {
-                            "uuid": "405fc146-3a70-4c35-9ed4-a245dd5a9ee0", 
-                            "device_number": "467731"
+                            "uuid": device_data.get('id', ''),
+                            "device_number": device_number
                         }
-                        logger.info(f"🔍 [OTA_DEVICE] MAC {mac_suffix} → Device 467731 (Legacy)")
-                    elif mac_suffix == "9:58":
-                        device_info = {
-                            "uuid": "92b63e50-4f65-49dc-a259-35fe14bea832", 
-                            "device_number": "327546"
-                        }
-                        logger.info(f"🔍 [OTA_DEVICE] MAC {mac_suffix} → Device 327546 (Legacy)")
+                        logger.info(f"🔍 [OTA_DEVICE] MAC {mac_suffix} → Device {device_number} (UUID: {device_data.get('id', '')})")
                     else:
-                        logger.warning(f"🔍 [OTA_DEVICE] Unknown MAC suffix: {mac_suffix} (full: {mac_address})")
-            except Exception as e:
-                logger.error(f"🔍 [OTA_DEVICE] Database lookup failed: {e}")
-                logger.warning(f"🔍 [OTA_DEVICE] Unknown MAC suffix: {mac_suffix} (full: {mac_address})")
+                        # レガシーマッピング（既存の固定マッピング）
+                        if mac_suffix == "8:44":
+                            device_info = {
+                                "uuid": "405fc146-3a70-4c35-9ed4-a245dd5a9ee0", 
+                                "device_number": "467731"
+                            }
+                            logger.info(f"🔍 [OTA_DEVICE] MAC {mac_suffix} → Device 467731 (Legacy)")
+                        elif mac_suffix == "9:58":
+                            device_info = {
+                                "uuid": "92b63e50-4f65-49dc-a259-35fe14bea832", 
+                                "device_number": "327546"
+                            }
+                            logger.info(f"🔍 [OTA_DEVICE] MAC {mac_suffix} → Device 327546 (Legacy)")
+                        else:
+                            logger.warning(f"🔍 [OTA_DEVICE] Unknown MAC suffix: {mac_suffix} (full: {mac_address})")
+                except Exception as e:
+                    logger.error(f"🔍 [OTA_DEVICE] Database lookup failed: {e}")
+                    logger.warning(f"🔍 [OTA_DEVICE] Unknown MAC suffix: {mac_suffix} (full: {mac_address})")
         
         # Return ESP32-compatible response with websocket configuration
         version_info = {
