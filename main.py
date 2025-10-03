@@ -83,7 +83,13 @@ async def ota_endpoint(request):
                     logger.error(f"🔍 [OTA_DEVICE] Database lookup failed: {e}")
         else:
             # フォールバック: MACアドレスから端末情報を自動取得
-            mac_suffix = mac_address[-4:] if len(mac_address) >= 4 else ""
+            # MACアドレスの最後の5文字を取得（例: 98:3d:ae:61:68:dc → 68:dc）
+            if len(mac_address) >= 5:
+                # 最後の5文字を取得（コロンを含む）
+                mac_suffix = mac_address[-5:]
+            else:
+                mac_suffix = ""
+            logger.info(f"🔍 [OTA_DEVICE] MAC suffix extracted: {mac_suffix} from {mac_address}")
             
             # 動的マッピング: データベースからMAC Suffixで検索
             if supabase:
