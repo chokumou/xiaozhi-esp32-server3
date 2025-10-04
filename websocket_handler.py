@@ -3397,9 +3397,10 @@ Examples:
             return "unknown"
 
     async def _process_letter_listen(self, rid: str):
-        """レター聞く処理"""
+        """レター聞く処理（自動読み上げ版）"""
+        import asyncio
+        
         # 実際のレター内容を取得
-        letter_content = "レターが見つかりませんでした"
         pending_letters = device_pending_letters.get(self.device_id, [])
         
         # デバッグログ追加
@@ -3408,40 +3409,68 @@ Examples:
         logger.info(f"📮 RID[{rid}] [DEBUG_LETTER_LISTEN] pending_letters for this device: {pending_letters}")
         logger.info(f"📮 RID[{rid}] [DEBUG_LETTER_LISTEN] device_letter_states: {device_letter_states}")
         
-        if pending_letters:
-            first_letter = pending_letters[0]
-            # transcribed_textがNoneや'None'の場合はmessageフィールドを使用
-            transcribed_text = first_letter.get("transcribed_text")
+        if not pending_letters:
+            await self.send_audio_response("レターが見つかりませんでした", rid)
+            # レター応答状態をリセット
+            device_letter_states[self.device_id] = False
+            device_letter_retry_count[self.device_id] = 0
+            return
+        
+        # 送信者別メッセージ数集計
+        sender_counts = {}
+        for letter in pending_letters:
+            sender = letter.get("from_user_name", "不明")
+            sender_counts[sender] = sender_counts.get(sender, 0) + 1
+        
+        # メッセージ数通知（複数メッセージの場合）
+        if len(pending_letters) > 1:
+            sender_messages = []
+            for sender, count in sender_counts.items():
+                sender_messages.append(f"{sender}から{count}件")
+            
+            notification = f"{'、'.join(sender_messages)}メッセージがあります"
+            logger.info(f"📮 RID[{rid}] メッセージ数通知: {notification}")
+            await self.send_audio_response(notification, rid)
+            await asyncio.sleep(1)  # 通知後の間隔
+        
+        # 各メッセージを順次読み上げ
+        for i, letter in enumerate(pending_letters):
+            # メッセージ内容を取得
+            transcribed_text = letter.get("transcribed_text")
             if transcribed_text and transcribed_text != "None" and transcribed_text.strip():
                 letter_content = transcribed_text
             else:
-                letter_content = first_letter.get("message", "メッセージ内容がありません")
+                letter_content = letter.get("message", "メッセージ内容がありません")
             
             # 指示語を除去（「伝えて」「言って」など）
             import re
-            # 末尾の指示語を除去
             letter_content = re.sub(r'(伝えて|言って|って言って|って伝えて)$', '', letter_content).strip()
-            from_user_name = first_letter.get("from_user_name", "誰か")
-            letter_id = first_letter.get("id")
+            
+            from_user_name = letter.get("from_user_name", "誰か")
+            letter_id = letter.get("id")
             
             # デバッグ用ログ
-            logger.info(f"📮 RID[{rid}] レター内容デバッグ: {first_letter}")
-            logger.info(f"📮 RID[{rid}] transcribed_text: '{first_letter.get('transcribed_text')}'")
-            logger.info(f"📮 RID[{rid}] message: '{first_letter.get('message')}'")
+            logger.info(f"📮 RID[{rid}] レター内容デバッグ[{i+1}/{len(pending_letters)}]: {letter}")
+            logger.info(f"📮 RID[{rid}] transcribed_text: '{letter.get('transcribed_text')}'")
+            logger.info(f"📮 RID[{rid}] message: '{letter.get('message')}'")
             logger.info(f"📮 RID[{rid}] 取得した内容: '{letter_content}'")
             
             # 送信者名も含めて読み上げ（文章と名前の間に間を開ける）
             full_content = f"{letter_content}。　　{from_user_name}より"
-            letter_content = full_content
+            
+            await self.send_audio_response(full_content, rid)
             
             # レターを既読状態に更新
             if letter_id:
                 logger.info(f"📮 RID[{rid}] レター既読処理開始: letter_id={letter_id}")
                 await self.mark_letter_as_read(letter_id, rid)
             else:
-                logger.error(f"📮 RID[{rid}] レターIDが見つかりません: {first_letter}")
-        
-        await self.send_audio_response(letter_content, rid)
+                logger.error(f"📮 RID[{rid}] レターIDが見つかりません: {letter}")
+            
+            # 次のメッセージがある場合は間隔を開ける
+            if i < len(pending_letters) - 1:
+                logger.info(f"📮 RID[{rid}] 次のメッセージまで2秒待機...")
+                await asyncio.sleep(2)  # 2秒間隔
         
         # レター応答状態をリセット
         device_letter_states[self.device_id] = False
