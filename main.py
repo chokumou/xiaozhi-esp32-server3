@@ -522,15 +522,21 @@ async def main():
                     alarms = []
                 
                 # 未読レター取得（正しい実装）
+                letter_params = {
+                    "user_id": user_id,  # device_idではなくuser_idを使用
+                    "unread_only": "true",
+                    "include_snoozed": "false"  # スルー分は除外
+                }
+                logger.info(f"📱 レター取得パラメータ: {letter_params}")
+                logger.info(f"📱 レター取得URL: {nekota_server_url}/api/message/list")
+                
                 letter_response = await session.get(
                     f"{nekota_server_url}/api/message/list",
-                    params={
-                        "user_id": user_id,  # device_idではなくuser_idを使用
-                        "unread_only": "true",
-                        "include_snoozed": "false"  # スルー分は除外
-                    },
+                    params=letter_params,
                     headers=headers
                 )
+                
+                logger.info(f"📱 レター取得レスポンス: status={letter_response.status}")
                 
                 if letter_response.status == 200:
                     letter_data = await letter_response.json()
@@ -538,7 +544,8 @@ async def main():
                     
                     logger.info(f"📱 未読レター取得: {len(letters)}件")
                 else:
-                    logger.error(f"📱 レター取得失敗: {letter_response.status}")
+                    response_text = await letter_response.text()
+                    logger.error(f"📱 レター取得失敗: {letter_response.status}, response: {response_text}")
                     letters = []
                 
                 return web.json_response({"alarms": alarms, "letters": letters})
