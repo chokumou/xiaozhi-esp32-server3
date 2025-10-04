@@ -287,5 +287,15 @@ async def resolve_auth(identifier: str) -> Tuple[Optional[str], Optional[str], O
     Returns:
         Tuple[jwt_token, user_id, resolved_device_number]
     """
-    resolver = get_auth_resolver()
-    return await resolver.resolve_auth(identifier)
+    logger.info(f"🔑 [AUTH_RESOLVER_DEBUG] resolve_auth function called with: {identifier}")
+    try:
+        resolver = get_auth_resolver()
+        logger.info(f"🔑 [AUTH_RESOLVER_DEBUG] Got resolver instance: {resolver}")
+        result = await resolver.resolve_auth(identifier)
+        logger.info(f"🔑 [AUTH_RESOLVER_DEBUG] Resolver returned: {result}")
+        return result
+    except Exception as e:
+        logger.error(f"🔑 [AUTH_RESOLVER_DEBUG] Error in resolve_auth function: {e}")
+        import traceback
+        logger.error(f"🔑 [AUTH_RESOLVER_DEBUG] Full traceback: {traceback.format_exc()}")
+        return None, None, None
