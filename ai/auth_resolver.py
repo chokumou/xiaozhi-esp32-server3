@@ -144,7 +144,7 @@ class AuthResolver:
             return None
     
     async def _resolve_uuid_to_device_number(self, uuid: str) -> Optional[str]:
-        """UUIDを端末番号に解決（既存のdevicesテーブルから動的取得）"""
+        """UUIDを端末番号に解決（直接データベースに接続）"""
         try:
             # まずレガシーマッピングテーブルを確認（ESP32_*形式のみ）
             legacy_mapping = self._get_legacy_mapping(uuid)
@@ -152,21 +152,40 @@ class AuthResolver:
                 logger.info(f"🔑 [AUTH_RESOLVER] Found legacy mapping: {uuid} -> {legacy_mapping}")
                 return legacy_mapping
             
-            # 既存のdevicesテーブルからUUIDで検索
+            # 直接データベースに接続
             try:
-                logger.info(f"🔑 [AUTH_RESOLVER] Querying devices table for UUID: {uuid}")
-                logger.info(f"🔑 [AUTH_RESOLVER] Making request to /api/device/exists with device_id: {uuid}")
+                logger.info(f"🔑 [AUTH_RESOLVER] Querying database directly for UUID: {uuid}")
                 
-                # 既存の/api/device/existsエンドポイントを使用
-                logger.info(f"🔑 [AUTH_RESOLVER_DEBUG] About to call /api/device/exists")
-                response = await self.client.post("/api/device/exists", json={"device_id": uuid})
-                logger.info(f"🔑 [AUTH_RESOLVER] Response status: {response.status_code}")
-                logger.info(f"🔑 [AUTH_RESOLVER] Response text: {response.text}")
+                # 環境変数から直接取得
+                import os
+                import requests
+                
+                supabase_url = os.getenv("SUPABASE_URL", "https://xsglqqywodyqhzktkygq.supabase.co")
+                supabase_key = os.getenv("SUPABASE_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhzZ2xxcXl3b2R5cWh6a3RreWdxIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc0OTAyODEyNywiZXhwIjoyMDY0NjA0MTI3fQ.tmNU7T5N5qe7i2jraods8TD9bdGVhDQAIj0TgcnzQpI")
+                
+                headers = {
+                    "apikey": supabase_key,
+                    "Authorization": f"Bearer {supabase_key}",
+                    "Content-Type": "application/json"
+                }
+                
+                # UUIDで検索
+                import urllib.parse
+                encoded_uuid = urllib.parse.quote(uuid)
+                url = f"{supabase_url}/rest/v1/devices?id=eq.{encoded_uuid}"
+                logger.info(f"🔑 [AUTH_RESOLVER] Database URL: {url}")
+                
+                response = requests.get(url, headers=headers)
+                logger.info(f"🔑 [AUTH_RESOLVER] Database response: {response.status_code}")
+                logger.info(f"🔑 [AUTH_RESOLVER] Database data: {response.text}")
                 
                 if response.status_code == 200:
-                    device_data = response.json()
-                    if device_data.get("exists"):
-                        device_number = device_data.get("device_number")
+                    data = response.json()
+                    logger.info(f"🔑 [AUTH_RESOLVER] Database data: {data}")
+                    
+                    if data and len(data) > 0:
+                        device_data = data[0]
+                        device_number = device_data.get('device_number')
                         if device_number:
                             logger.info(f"🔑 [AUTH_RESOLVER] Found device in DB: {uuid} -> {device_number}")
                             return device_number
@@ -183,11 +202,8 @@ class AuthResolver:
                     logger.error(f"🔑 [AUTH_RESOLVER] Failed to get device info from DB: {response.status_code}")
                     return None
                     
-            except httpx.HTTPStatusError as e:
-                logger.error(f"🔑 [AUTH_RESOLVER] HTTP error getting device info from DB: {e.response.status_code}")
-                return None
-            except httpx.RequestError as e:
-                logger.error(f"🔑 [AUTH_RESOLVER] Request error getting device info from DB: {e}")
+            except Exception as e:
+                logger.error(f"🔑 [AUTH_RESOLVER] Database connection error: {e}")
                 return None
             
         except Exception as e:
