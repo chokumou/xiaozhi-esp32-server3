@@ -534,6 +534,7 @@ async def main():
     
     # ESP32起動時アラームチェック用API
     app.router.add_post('/api/device/check_alarms', device_check_alarms)
+    app.router.add_get('/api/alarms/check/{device_id}', device_check_alarms)
     
     stop_event = asyncio.Event()
     if sys.platform != "win32":
