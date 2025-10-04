@@ -526,8 +526,8 @@ async def main():
                     f"{nekota_server_url}/api/message/list",
                     params={
                         "device_id": device_id,
-                        "unread_only": True,
-                        "include_snoozed": False  # スルー分は除外
+                        "unread_only": "true",
+                        "include_snoozed": "false"  # スルー分は除外
                     },
                     headers=headers
                 )
