@@ -170,7 +170,17 @@ class AuthResolver:
                         device_number = device_data.get('device_number')
                         if device_number:
                             logger.info(f"🔑 [AUTH_RESOLVER] Found device in DB: {uuid} -> {device_number}")
-                            return device_number
+                            # 直接認証情報も取得
+                            jwt_token, user_id = await self._get_auth_from_server(device_number)
+                            if jwt_token and user_id:
+                                logger.info(f"🔑 [AUTH_RESOLVER] Got auth from server: device={device_number}, user_id={user_id}")
+                                # 認証情報をキャッシュに保存
+                                self._uuid_to_device_cache[uuid] = device_number
+                                self._device_to_uuid_cache[device_number] = uuid
+                                return device_number
+                            else:
+                                logger.error(f"🔑 [AUTH_RESOLVER] Failed to get auth from server for device: {device_number}")
+                                return None
                         else:
                             logger.warning(f"🔑 [AUTH_RESOLVER] Device found but no device_number: {uuid}")
                             return None
