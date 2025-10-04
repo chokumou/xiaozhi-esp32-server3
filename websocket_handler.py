@@ -3402,6 +3402,12 @@ Examples:
         letter_content = "レターが見つかりませんでした"
         pending_letters = device_pending_letters.get(self.device_id, [])
         
+        # デバッグログ追加
+        logger.info(f"📮 RID[{rid}] [DEBUG_LETTER_LISTEN] device_id: {self.device_id}")
+        logger.info(f"📮 RID[{rid}] [DEBUG_LETTER_LISTEN] device_pending_letters keys: {list(device_pending_letters.keys())}")
+        logger.info(f"📮 RID[{rid}] [DEBUG_LETTER_LISTEN] pending_letters for this device: {pending_letters}")
+        logger.info(f"📮 RID[{rid}] [DEBUG_LETTER_LISTEN] device_letter_states: {device_letter_states}")
+        
         if pending_letters:
             first_letter = pending_letters[0]
             # transcribed_textがNoneや'None'の場合はmessageフィールドを使用
