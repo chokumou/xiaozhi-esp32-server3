@@ -46,10 +46,12 @@ class AuthResolver:
             logger.info(f"🔑 [AUTH_RESOLVER] Resolving auth for identifier: {identifier}")
             
             # 1. 識別子の種類を判定
+            logger.info(f"🔑 [AUTH_RESOLVER_DEBUG] About to detect identifier type for: {identifier}")
             identifier_type = self._detect_identifier_type(identifier)
             logger.info(f"🔑 [AUTH_RESOLVER] Detected identifier type: {identifier_type}")
             
             # 2. 端末番号に統一
+            logger.info(f"🔑 [AUTH_RESOLVER_DEBUG] About to normalize identifier: {identifier} (type: {identifier_type})")
             device_number = await self._normalize_to_device_number(identifier, identifier_type)
             logger.info(f"🔑 [AUTH_RESOLVER_DEBUG] Normalized device_number: {device_number}")
             if not device_number:
@@ -78,12 +80,18 @@ class AuthResolver:
     
     def _detect_identifier_type(self, identifier: str) -> str:
         """識別子の種類を判定"""
+        logger.info(f"🔑 [AUTH_RESOLVER_DEBUG] _detect_identifier_type called with: {identifier}")
+        logger.info(f"🔑 [AUTH_RESOLVER_DEBUG] Identifier length: {len(identifier)}")
+        logger.info(f"🔑 [AUTH_RESOLVER_DEBUG] Hyphen count: {identifier.count('-')}")
+        
         # UUID形式の判定（36文字でハイフンが4つ）
         if len(identifier) == 36 and identifier.count('-') == 4:
+            logger.info(f"🔑 [AUTH_RESOLVER_DEBUG] Detected as UUID")
             return "uuid"
         
         # 数値のみの場合は端末番号
         if identifier.isdigit():
+            logger.info(f"🔑 [AUTH_RESOLVER_DEBUG] Detected as device_number")
             return "device_number"
         
         # レガシー形式の判定
@@ -105,12 +113,15 @@ class AuthResolver:
     
     async def _normalize_to_device_number(self, identifier: str, identifier_type: str) -> Optional[str]:
         """識別子を端末番号に正規化"""
+        logger.info(f"🔑 [AUTH_RESOLVER_DEBUG] _normalize_to_device_number called with: {identifier}, type: {identifier_type}")
         
         if identifier_type == "device_number":
             # 既に端末番号の場合
+            logger.info(f"🔑 [AUTH_RESOLVER_DEBUG] Already device_number, returning: {identifier}")
             return identifier
         
         elif identifier_type == "uuid":
+            logger.info(f"🔑 [AUTH_RESOLVER_DEBUG] Processing UUID: {identifier}")
             # UUIDの場合、マッピングテーブルを確認
             if identifier in self._uuid_to_device_cache:
                 cached_device = self._uuid_to_device_cache[identifier]
@@ -129,6 +140,7 @@ class AuthResolver:
         
         else:
             logger.warning(f"🔑 [AUTH_RESOLVER] Unknown identifier type: {identifier_type}")
+            logger.info(f"🔑 [AUTH_RESOLVER_DEBUG] Returning None for unknown type")
             return None
     
     async def _resolve_uuid_to_device_number(self, uuid: str) -> Optional[str]:
