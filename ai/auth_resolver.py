@@ -14,7 +14,7 @@ class AuthResolver:
     UUIDと端末番号の両方を受け取り、適切な認証情報を返す
     """
     
-    def __init__(self, nekota_server_url: str = "http://localhost:8090"):
+    def __init__(self, nekota_server_url: str = "https://nekota-server-production.up.railway.app"):
         self.nekota_server_url = nekota_server_url.rstrip('/')
         self.client = httpx.AsyncClient(
             base_url=self.nekota_server_url,
