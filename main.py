@@ -525,7 +525,7 @@ async def main():
                 letter_response = await session.get(
                     f"{nekota_server_url}/api/message/list",
                     params={
-                        "device_id": device_id,
+                        "user_id": user_id,  # device_idではなくuser_idを使用
                         "unread_only": "true",
                         "include_snoozed": "false"  # スルー分は除外
                     },
