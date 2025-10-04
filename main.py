@@ -521,15 +521,20 @@ async def main():
                     logger.error(f"📱 アラーム取得失敗: {alarm_response.status}")
                     alarms = []
                 
-                # 未読レター取得
+                # 未読レター取得（正しい実装）
                 letter_response = await session.get(
-                    f"{nekota_server_url}/api/letter/?to_user_id={user_id}&is_read=false",
+                    f"{nekota_server_url}/api/message/list",
+                    params={
+                        "device_id": device_id,
+                        "unread_only": True,
+                        "include_snoozed": False  # スルー分は除外
+                    },
                     headers=headers
                 )
                 
                 if letter_response.status == 200:
                     letter_data = await letter_response.json()
-                    letters = letter_data.get("letters", [])
+                    letters = letter_data.get("messages", [])
                     
                     logger.info(f"📱 未読レター取得: {len(letters)}件")
                 else:
