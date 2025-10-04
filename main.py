@@ -444,80 +444,64 @@ async def main():
 
     async def device_check_alarms(request):
         """
-        ESP32からの未発火アラームチェック要求（一時的に無効化）
+        ESP32からの未発火アラームチェック要求（再有効化）
         """
-        logger.info(f"⏰ [ALARM_DISABLED] Alarm check disabled, returning empty response")
-        return web.json_response({"alarms": [], "letters": []})
+        logger.info(f"⏰ [ALARM_ENABLED] Alarm check enabled")
         
-        # アラーム機能を一時的に停止中
-        # try:
-        #     data = await request.json()
-        #     request_device_id = data.get('device_id')
-        #     
-        #     if not request_device_id:
-        #         return web.json_response({"error": "device_id required"}, status=400)
-    #                 # 未読レター取得（友達リストから個別に取得）
-    #                 # まず友達リストを取得
-    #                 friends_response = await session.get(
-    #                     f"{nekota_server_url}/api/friend/list",
-    #                     headers=headers
-    #                 )
-    #                 
-    #                 pending_letters = []
-    #                 if friends_response.status == 200:
-    #                     friends_data = await friends_response.json()
-    #                     friends = friends_data.get("friends", [])
-    #                     logger.info(f"📮 友達リスト取得: {len(friends)}人")
-    #                     
-    #                     # 各友達から未読メッセージを取得
-    #                     for friend in friends:
-    #                         friend_id = friend.get("id")
-    #                         friend_name = friend.get("name", "不明")
-    #                         logger.info(f"📮 友達チェック: {friend_name} (ID: {friend_id})")
-    #                         
-    #                         if friend_id:
-    #                             api_url = f"{nekota_server_url}/api/message/list?friend_id={friend_id}&unread_only=true"
-    #                             logger.info(f"📮 API呼び出し: {api_url}")
-    #                             
-    #                             letter_response = await session.get(api_url, headers=headers)
-    #                             logger.info(f"📮 API応答: {letter_response.status}")
-    #                             
-    #                             if letter_response.status == 200:
-    #                                 letter_data = await letter_response.json()
-    #                                 letters = letter_data.get("messages", [])
-    #                                 logger.info(f"📮 {friend_name}からの未読メッセージ: {len(letters)}件")
-    #                                 
-    #                                 for letter in letters:
-    #                                     pending_letters.append({
-    #                                         "id": letter["id"],
-    #                                         "from_user_name": letter.get("from_user_name", friend.get("name", "誰か")),
-    #                                         "message": letter.get("transcribed_text", letter.get("message", ""))
-    #                                     })
-    #                                     logger.info(f"📮 メッセージ追加: {letter.get('transcribed_text', 'なし')}")
-    #                             else:
-    #                                 logger.error(f"📮 {friend_name}のメッセージ取得失敗: {letter_response.status}")
-    #                 else:
-    #                     logger.error(f"📮 友達リスト取得失敗: {friends_response.status}")
-    #                 
-    #                 logger.info(f"📮 未読レター取得: {len(pending_letters)}件")
-    #                 
-    #                 # デバイス別にレター情報を保存
-    #                 from websocket_handler import device_pending_letters
-    #                 device_pending_letters[actual_device_id] = pending_letters
-    #                 logger.info(f"📮 デバイス別レター保存完了: {actual_device_id} = {len(pending_letters)}件")
-    #                 logger.info(f"🔍🔍🔍 [DEBUG_LETTER_SAVE] デバイス別レター保存: {pending_letters} 🔍🔍🔍")
+        try:
+            data = await request.json()
+            device_id = data.get('device_id')
+            
+            if not device_id:
+                return web.json_response({"error": "device_id required"}, status=400)
+            
+            logger.info(f"📱 アラームチェック要求: device_id={device_id}")
+            
+            # nekota-serverから未発火アラーム取得
+            import aiohttp
+            nekota_server_url = "https://nekota-server-production.up.railway.app"
+            
+            # デバイス認証でuser_idを取得
+            async with aiohttp.ClientSession() as session:
+                # デバイス認証
+                auth_response = await session.post(
+                    f"{nekota_server_url}/api/device/exists",
+                    json={"device_number": "327546"}  # 固定デバイス番号
+                )
+                
+                if auth_response.status != 200:
+                    logger.error(f"📱 デバイス認証失敗: {auth_response.status}")
+                    return web.json_response({"alarms": []})
+                
+                auth_data = await auth_response.json()
+                user_id = auth_data.get("user_id")
+                jwt_token = auth_data.get("token")
+                
+                if not user_id or not jwt_token:
+                    logger.error(f"📱 認証情報取得失敗")
+                    return web.json_response({"alarms": []})
+                
+                # 未発火アラーム取得
+                headers = {"Authorization": f"Bearer {jwt_token}"}
+                alarm_response = await session.get(
+                    f"{nekota_server_url}/api/alarm/?user_id={user_id}&fired=false",
+                    headers=headers
+                )
+                
+                if alarm_response.status == 200:
+                    alarm_data = await alarm_response.json()
+                    alarms = alarm_data.get("alarms", [])
                     
-    #                 return web.json_response({
-    #                     "alarms": pending_alarms,
-    #                     "letters": pending_letters
-    #                 })
-    #             else:
-    #                 logger.error(f"📱 アラーム取得失敗: {alarm_response.status}")
-    #                 return web.json_response({"alarms": [], "letters": []})
-    #                 
-    #     except Exception as e:
-    #         logger.error(f"📱 アラームチェックエラー: {e}")
-    #         return web.json_response({"alarms": []})
+                    logger.info(f"📱 未発火アラーム取得: {len(alarms)}件")
+                    
+                    return web.json_response({"alarms": alarms})
+                else:
+                    logger.error(f"📱 アラーム取得失敗: {alarm_response.status}")
+                    return web.json_response({"alarms": []})
+                    
+        except Exception as e:
+            logger.error(f"📱 アラームチェックエラー: {e}")
+            return web.json_response({"alarms": []})
 
     # Create HTTP server with all endpoints BEFORE starting
     app = web.Application()
