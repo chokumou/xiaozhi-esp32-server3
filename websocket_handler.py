@@ -3422,8 +3422,16 @@ Examples:
             sender = letter.get("from_user_name", "不明")
             sender_counts[sender] = sender_counts.get(sender, 0) + 1
         
-        # メッセージ数通知は削除（ハートビートで既に通知済み）
-        # 直接メッセージ内容を読み上げる
+        # メッセージ数通知（複数メッセージの場合）
+        if len(pending_letters) > 1:
+            sender_messages = []
+            for sender, count in sender_counts.items():
+                sender_messages.append(f"{sender}から{count}件")
+            
+            notification = f"{'、'.join(sender_messages)}メッセージがあります"
+            logger.info(f"📮 RID[{rid}] メッセージ数通知: {notification}")
+            await self.send_audio_response(notification, rid)
+            await asyncio.sleep(1)  # 通知後の間隔
         
         # 各メッセージを順次読み上げ
         for i, letter in enumerate(pending_letters):
