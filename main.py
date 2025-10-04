@@ -484,7 +484,29 @@ async def main():
             async with aiohttp.ClientSession() as session:
                 # デバイス認証（動的デバイス番号）
                 # device_idからdevice_numberを取得
-                device_number = "6844"  # 実際のデバイス番号
+                # データベースからdevice_numberを取得
+                import requests
+                supabase_url = os.getenv("SUPABASE_URL", "https://xsglqqywodyqhzktkygq.supabase.co")
+                supabase_key = os.getenv("SUPABASE_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhzZ2xxcXl3b2R5cWh6a3RreWdxIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc0OTAyODEyNywiZXhwIjoyMDY0NjA0MTI3fQ.tmNU7T5N5qe7i2jraods8TD9bdGVhDQAIj0TgcnzQpI")
+                
+                headers_db = {
+                    "apikey": supabase_key,
+                    "Authorization": f"Bearer {supabase_key}",
+                    "Content-Type": "application/json"
+                }
+                
+                device_url = f"{supabase_url}/rest/v1/devices?id=eq.{device_id}"
+                device_response = requests.get(device_url, headers=headers_db)
+                
+                if device_response.status_code == 200:
+                    device_data = device_response.json()
+                    if device_data and len(device_data) > 0:
+                        device_number = device_data[0].get('device_number')
+                    else:
+                        device_number = "68DC"  # フォールバック
+                else:
+                    device_number = "68DC"  # フォールバック
+                
                 logger.info(f"📱 認証要求: device_number={device_number}")
                 
                 auth_response = await session.post(
