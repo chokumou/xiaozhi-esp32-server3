@@ -2623,13 +2623,13 @@ class ConnectionHandler:
 
     async def send_sleep_command(self):
         """
-        ESP32に待機モードコマンドを送信
+        ESP32に待機モードコマンドを送信（SetPowerSaveModeを使用）
         """
         try:
-            # ESP32に送信するメッセージ
+            # ESP32に送信するメッセージ（既存のSetPowerSaveMode機能を使用）
             sleep_command = {
-                "type": "sleep_mode",
-                "action": "enter_sleep"
+                "type": "power_save",
+                "enabled": True
             }
             
             # WebSocketでESP32に送信
