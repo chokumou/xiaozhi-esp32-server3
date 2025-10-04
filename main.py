@@ -67,16 +67,22 @@ async def device_exists_endpoint(request):
                     
                     # usersテーブルからuser_idを取得
                     user_url = f"{supabase_url}/rest/v1/users?device_id=eq.{device_id}"
+                    logger.info(f"🔍 [DEVICE_EXISTS] User search URL: {user_url}")
                     user_response = requests.get(user_url, headers=headers)
+                    logger.info(f"🔍 [DEVICE_EXISTS] User search response: {user_response.status_code}")
                     
                     if user_response.status_code == 200:
                         user_data = user_response.json()
+                        logger.info(f"🔍 [DEVICE_EXISTS] User data: {user_data}")
                         if user_data and len(user_data) > 0:
                             user_id = user_data[0].get('id')
+                            logger.info(f"🔍 [DEVICE_EXISTS] Found user_id: {user_id}")
                         else:
                             user_id = device_id  # フォールバック
+                            logger.warning(f"🔍 [DEVICE_EXISTS] No user found, using device_id as fallback: {user_id}")
                     else:
                         user_id = device_id  # フォールバック
+                        logger.error(f"🔍 [DEVICE_EXISTS] User search failed: {user_response.status_code}, using device_id as fallback: {user_id}")
                     
                     # 認証情報を生成
                     jwt_token = auth_manager.generate_token(device_id)
