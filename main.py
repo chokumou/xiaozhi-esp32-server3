@@ -521,32 +521,54 @@ async def main():
                     logger.error(f"📱 アラーム取得失敗: {alarm_response.status}")
                     alarms = []
                 
-                # 未読レター取得（正しい実装）
-                letter_params = {
-                    "user_id": user_id,  # device_idではなくuser_idを使用
-                    "unread_only": "true",
-                    "include_snoozed": "false"  # スルー分は除外
-                }
-                logger.info(f"📱 レター取得パラメータ: {letter_params}")
-                logger.info(f"📱 レター取得URL: {nekota_server_url}/api/message/list")
-                
-                letter_response = await session.get(
-                    f"{nekota_server_url}/api/message/list",
-                    params=letter_params,
+                # 未読レター取得（友達リスト経由）
+                # まず友達リストを取得
+                friend_response = await session.get(
+                    f"{nekota_server_url}/api/friend/list?user_id={user_id}",
                     headers=headers
                 )
                 
-                logger.info(f"📱 レター取得レスポンス: status={letter_response.status}")
-                
-                if letter_response.status == 200:
-                    letter_data = await letter_response.json()
-                    letters = letter_data.get("messages", [])
+                letters = []
+                if friend_response.status == 200:
+                    friend_data = await friend_response.json()
+                    friends = friend_data.get("friends", [])
                     
-                    logger.info(f"📱 未読レター取得: {len(letters)}件")
+                    logger.info(f"📱 友達リスト取得: {len(friends)}人")
+                    
+                    # 各友達から未読メッセージを取得
+                    for friend in friends:
+                        friend_id = friend.get("id")
+                        friend_name = friend.get("name", "不明")
+                        
+                        if friend_id:
+                            letter_response = await session.get(
+                                f"{nekota_server_url}/api/message/list",
+                                params={
+                                    "friend_id": friend_id,
+                                    "unread_only": "true"
+                                },
+                                headers=headers
+                            )
+                            
+                            if letter_response.status == 200:
+                                letter_data = await letter_response.json()
+                                friend_letters = letter_data.get("messages", [])
+                                
+                                for letter in friend_letters:
+                                    letters.append({
+                                        "id": letter.get("id"),
+                                        "from_user_name": friend_name,
+                                        "message": letter.get("transcribed_text", letter.get("message", "")),
+                                        "created_at": letter.get("created_at")
+                                    })
+                                
+                                logger.info(f"📱 {friend_name}からの未読メッセージ: {len(friend_letters)}件")
+                            else:
+                                logger.error(f"📱 {friend_name}のメッセージ取得失敗: {letter_response.status}")
                 else:
-                    response_text = await letter_response.text()
-                    logger.error(f"📱 レター取得失敗: {letter_response.status}, response: {response_text}")
-                    letters = []
+                    logger.error(f"📱 友達リスト取得失敗: {friend_response.status}")
+                
+                logger.info(f"📱 未読レター取得: {len(letters)}件")
                 
                 return web.json_response({"alarms": alarms, "letters": letters})
                     
