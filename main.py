@@ -569,7 +569,12 @@ async def main():
                         friend_id = friend.get("id")
                         friend_name = friend.get("name", "不明")
                         
+                        logger.info(f"📱 友達チェック: {friend_name} (ID: {friend_id})")
+                        
                         if friend_id:
+                            letter_url = f"{nekota_server_url}/api/message/list?friend_id={friend_id}&unread_only=true"
+                            logger.info(f"📱 メッセージ取得URL: {letter_url}")
+                            
                             letter_response = await session.get(
                                 f"{nekota_server_url}/api/message/list",
                                 params={
@@ -579,9 +584,13 @@ async def main():
                                 headers=headers
                             )
                             
+                            logger.info(f"📱 {friend_name}のメッセージ取得レスポンス: {letter_response.status}")
+                            
                             if letter_response.status == 200:
                                 letter_data = await letter_response.json()
                                 friend_letters = letter_data.get("messages", [])
+                                
+                                logger.info(f"📱 {friend_name}のメッセージデータ: {letter_data}")
                                 
                                 for letter in friend_letters:
                                     letters.append({
@@ -593,7 +602,8 @@ async def main():
                                 
                                 logger.info(f"📱 {friend_name}からの未読メッセージ: {len(friend_letters)}件")
                             else:
-                                logger.error(f"📱 {friend_name}のメッセージ取得失敗: {letter_response.status}")
+                                response_text = await letter_response.text()
+                                logger.error(f"📱 {friend_name}のメッセージ取得失敗: {letter_response.status}, response: {response_text}")
                 else:
                     logger.error(f"📱 友達リスト取得失敗: {friend_response.status}")
                 
