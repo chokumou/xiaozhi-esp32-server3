@@ -466,21 +466,28 @@ async def main():
                 # デバイス認証（動的デバイス番号）
                 # device_idからdevice_numberを取得
                 device_number = "6844"  # 実際のデバイス番号
+                logger.info(f"📱 認証要求: device_number={device_number}")
+                
                 auth_response = await session.post(
                     f"{nekota_server_url}/api/device/exists",
                     json={"device_number": device_number}
                 )
                 
+                logger.info(f"📱 認証レスポンス: status={auth_response.status}")
+                
                 if auth_response.status != 200:
-                    logger.error(f"📱 デバイス認証失敗: {auth_response.status}")
+                    response_text = await auth_response.text()
+                    logger.error(f"📱 デバイス認証失敗: {auth_response.status}, response: {response_text}")
                     return web.json_response({"alarms": []})
                 
                 auth_data = await auth_response.json()
+                logger.info(f"📱 認証データ: {auth_data}")
+                
                 user_id = auth_data.get("user_id")
                 jwt_token = auth_data.get("token")
                 
                 if not user_id or not jwt_token:
-                    logger.error(f"📱 認証情報取得失敗")
+                    logger.error(f"📱 認証情報取得失敗: user_id={user_id}, jwt_token={'あり' if jwt_token else 'なし'}")
                     return web.json_response({"alarms": []})
                 
                 # 未発火アラーム取得
