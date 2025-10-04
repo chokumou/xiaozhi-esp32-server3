@@ -668,7 +668,7 @@ class ConnectionHandler:
                 return
             
             # Check for sleep/wait mode keywords
-            elif any(keyword in text for keyword in ["バイバイ", "さようなら", "おやすみ", "待機して", "待機モード", "スリープ"]):
+            elif any(keyword in text for keyword in ["バイバイ", "ばいばい", "さようなら", "おやすみ", "待機して", "待機モード", "スリープ"]):
                 logger.info(f"😴 [SLEEP_MODE] Sleep mode request detected: '{text}'")
                 await self.send_audio_response("はい、待機モードにしますにゃん！また呼んでくださいね！", rid)
                 await self.send_sleep_command()
