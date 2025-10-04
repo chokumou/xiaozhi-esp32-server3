@@ -2626,11 +2626,15 @@ class ConnectionHandler:
         ESP32に待機モードコマンドを送信（SetPowerSaveModeを使用）
         """
         try:
+            logger.info(f"😴 [SLEEP_COMMAND] 待機モードコマンド送信開始")
+            
             # ESP32に送信するメッセージ（既存のSetPowerSaveMode機能を使用）
             sleep_command = {
                 "type": "power_save",
                 "enabled": True
             }
+            
+            logger.info(f"😴 [SLEEP_COMMAND] 送信メッセージ準備完了: {json.dumps(sleep_command)}")
             
             # WebSocketでESP32に送信
             await self.websocket.send_str(json.dumps(sleep_command))
@@ -2638,6 +2642,8 @@ class ConnectionHandler:
             
         except Exception as e:
             logger.error(f"😴 [SLEEP_COMMAND] 待機モードコマンド送信エラー: {e}")
+            import traceback
+            logger.error(f"😴 [SLEEP_COMMAND] スタックトレース: {traceback.format_exc()}")
 
     async def save_alarm_to_nekota_server(self, rid: str, seconds: int, message: str):
         """
