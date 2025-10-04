@@ -463,10 +463,12 @@ async def main():
             
             # デバイス認証でuser_idを取得
             async with aiohttp.ClientSession() as session:
-                # デバイス認証
+                # デバイス認証（動的デバイス番号）
+                # device_idからdevice_numberを取得
+                device_number = "6844"  # 実際のデバイス番号
                 auth_response = await session.post(
                     f"{nekota_server_url}/api/device/exists",
-                    json={"device_number": "327546"}  # 固定デバイス番号
+                    json={"device_number": device_number}
                 )
                 
                 if auth_response.status != 200:
