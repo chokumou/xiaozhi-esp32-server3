@@ -609,6 +609,12 @@ async def main():
                 
                 logger.info(f"📱 未読レター取得: {len(letters)}件")
                 
+                # device_pending_lettersに保存（WebSocket接続時用）
+                if letters:
+                    from websocket_handler import device_pending_letters
+                    device_pending_letters[device_id] = letters
+                    logger.info(f"📱 device_pending_lettersに保存: {device_id} = {len(letters)}件")
+                
                 return web.json_response({"alarms": alarms, "letters": letters})
                     
         except Exception as e:
