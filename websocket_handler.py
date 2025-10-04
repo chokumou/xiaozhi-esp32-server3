@@ -2732,6 +2732,7 @@ class ConnectionHandler:
                 # より厳格なキーワードマッチング（完全一致のみ）
                 letter_keywords = [
                     "メッセージを送る", "メッセージ送る", "メッセージおくる",
+                    "メッセージを送って", "メッセージ送って", "メッセージおくって",
                     "レターを送って", "レター送って", "レターおくって"
                 ]
                 if any(keyword in text for keyword in letter_keywords):
