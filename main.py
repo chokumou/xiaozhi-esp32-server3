@@ -65,6 +65,19 @@ async def device_exists_endpoint(request):
                     device_id = device_data.get('id')
                     device_number = device_data.get('device_number')
                     
+                    # usersテーブルからuser_idを取得
+                    user_url = f"{supabase_url}/rest/v1/users?device_id=eq.{device_id}"
+                    user_response = requests.get(user_url, headers=headers)
+                    
+                    if user_response.status_code == 200:
+                        user_data = user_response.json()
+                        if user_data and len(user_data) > 0:
+                            user_id = user_data[0].get('id')
+                        else:
+                            user_id = device_id  # フォールバック
+                    else:
+                        user_id = device_id  # フォールバック
+                    
                     # 認証情報を生成
                     jwt_token = auth_manager.generate_token(device_id)
                     
@@ -73,7 +86,7 @@ async def device_exists_endpoint(request):
                         "device_id": device_id,
                         "device_number": device_number,
                         "token": jwt_token,
-                        "user": {"id": device_id}
+                        "user": {"id": user_id}
                     })
                 else:
                     logger.warning(f"🔍 [DEVICE_EXISTS] Device not found")
