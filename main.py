@@ -517,11 +517,26 @@ async def main():
                     alarms = alarm_data.get("alarms", [])
                     
                     logger.info(f"📱 未発火アラーム取得: {len(alarms)}件")
-                    
-                    return web.json_response({"alarms": alarms})
                 else:
                     logger.error(f"📱 アラーム取得失敗: {alarm_response.status}")
-                    return web.json_response({"alarms": []})
+                    alarms = []
+                
+                # 未読レター取得
+                letter_response = await session.get(
+                    f"{nekota_server_url}/api/letter/?to_user_id={user_id}&is_read=false",
+                    headers=headers
+                )
+                
+                if letter_response.status == 200:
+                    letter_data = await letter_response.json()
+                    letters = letter_data.get("letters", [])
+                    
+                    logger.info(f"📱 未読レター取得: {len(letters)}件")
+                else:
+                    logger.error(f"📱 レター取得失敗: {letter_response.status}")
+                    letters = []
+                
+                return web.json_response({"alarms": alarms, "letters": letters})
                     
         except Exception as e:
             logger.error(f"📱 アラームチェックエラー: {e}")
